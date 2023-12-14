@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::mpsc;
 
 use crate::errors::Result;
 
@@ -9,12 +8,10 @@ use crate::control::MonitorArea;
 use crate::control::MonitorAreasList;
 use crate::control::MousePos;
 use crate::control::MouseRelocator;
-use crate::notify;
 use crate::utils::SimpleRatelimit;
 
 use core::cell::OnceCell;
 use log::{debug, error, trace};
-use notify::DeviceNotiEvent;
 use windows::Win32::Devices::HumanInterfaceDevice::HID_USAGE_GENERIC_MOUSE;
 use windows::Win32::Devices::HumanInterfaceDevice::HID_USAGE_GENERIC_POINTER;
 use windows::Win32::Devices::HumanInterfaceDevice::HID_USAGE_PAGE_DIGITIZER;
@@ -459,7 +456,6 @@ impl WinDeviceProcessor {
 }
 
 pub struct WinEventLoop {
-    noti_rx: mpsc::Receiver<DeviceNotiEvent>,
     hook: WinHook,
 }
 
@@ -471,9 +467,8 @@ impl Default for WinEventLoop {
 
 impl WinEventLoop {
     pub fn new() -> Self {
-        let (_noti_tx, noti_rx) = mpsc::channel::<DeviceNotiEvent>();
         let hook = WinHook::new();
-        WinEventLoop { noti_rx, hook }
+        WinEventLoop { hook }
     }
 
     pub fn run(&mut self) -> Result<()> {
