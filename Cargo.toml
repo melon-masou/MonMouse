@@ -1,0 +1,33 @@
+[package]
+name = "monmouse"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[features]
+ui = []
+
+[dependencies]
+thiserror = "1.0"
+log = "0.4"
+env_logger = "0.10"
+
+[dependencies.windows]
+version = "0.52"
+features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Storage",
+    "Win32_Storage_FileSystem",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_Common",
+    "Win32_UI_HiDpi",
+    "Win32_Devices_HumanInterfaceDevice",
+    "Win32_Devices_Properties",
+    "Win32_Devices_DeviceAndDriverInstallation",
+    "Win32_System_LibraryLoader",
+    "Win32_System_SystemInformation",
+    "Win32_Graphics_Gdi",
+]
