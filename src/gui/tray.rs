@@ -1,4 +1,3 @@
-use monmouse::message::UIPendingAction;
 use tray_icon::menu::Menu;
 use tray_icon::menu::MenuEvent;
 use tray_icon::menu::MenuItem;
@@ -15,6 +14,11 @@ pub struct Tray {
     open: MenuItem,
     quit: MenuItem,
     trayicon: TrayIcon,
+}
+
+pub enum TrayEvent {
+    Open,
+    Quit,
 }
 
 impl Tray {
@@ -45,19 +49,19 @@ impl Tray {
         }
     }
 
-    pub fn poll_event(&self) -> Option<UIPendingAction> {
+    pub fn poll_event(&self) -> Option<TrayEvent> {
         if let Ok(event) = TrayIconEvent::receiver().try_recv() {
             if event.click_type == ClickType::Double {
-                return Some(UIPendingAction::Restart);
+                return Some(TrayEvent::Open);
             }
         }
 
         if let Ok(event) = MenuEvent::receiver().try_recv() {
             if event.id == self.quit.id() {
-                return Some(UIPendingAction::Exit);
+                return Some(TrayEvent::Quit);
             }
             if event.id == self.open.id() {
-                return Some(UIPendingAction::Restart);
+                return Some(TrayEvent::Open);
             }
         }
         None

@@ -81,6 +81,9 @@ impl ManagePanel {
 
     pub fn ui(ui: &mut egui::Ui, devices: &mut Vec<DeviceUIState>) {
         ui.horizontal(|ui| {
+            if manage_button(ui, "Refresh").clicked() {
+                // TODO
+            }
             if manage_button(ui, "Unmanage").clicked() {
                 // TODO
             }

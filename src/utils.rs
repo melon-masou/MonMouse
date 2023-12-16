@@ -5,10 +5,7 @@ pub struct SimpleRatelimit {
 
 impl SimpleRatelimit {
     pub fn new(once_per: u64) -> SimpleRatelimit {
-        SimpleRatelimit {
-            next: 0,
-            once_per,
-        }
+        SimpleRatelimit { next: 0, once_per }
     }
     pub fn allow(&mut self, tick: u64) -> bool {
         if tick >= self.next {

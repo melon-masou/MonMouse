@@ -5,7 +5,7 @@ mod state;
 mod styles;
 mod tray;
 
-use std::{rc::Rc, thread};
+use std::{cell::RefCell, panic, process, rc::Rc, thread};
 
 use components::about_panel::AboutPanel;
 use components::config_panel::ConfigPanel;
@@ -15,11 +15,11 @@ use eframe::egui;
 use log::{error, info};
 use monmouse::{
     errors::Error,
-    message::{setup_reactors, MasterReactor, UIPendingAction, UIReactor},
+    message::{setup_reactors, MasterReactor, Message, UIReactor},
 };
 use state::AppState;
 use styles::{gscale, Theme};
-use tray::Tray;
+use tray::{Tray, TrayEvent};
 
 pub fn load_icon() -> egui::IconData {
     let icon_data = include_bytes!("..\\..\\assets\\monmouse.ico");
@@ -41,6 +41,7 @@ fn main() -> Result<(), eframe::Error> {
 
     let (master_reactor, _, ui_reactor) = setup_reactors();
 
+    set_thread_panic_process();
     thread::spawn(move || {
         let eventloop = monmouse::Eventloop::new();
         let tray = Tray::new();
@@ -48,7 +49,6 @@ fn main() -> Result<(), eframe::Error> {
             Ok(_) => info!("mouse control eventloop exited normally"),
             Err(e) => error!("mouse control eventloop exited for error: {}", e),
         }
-        master_reactor.exit_ui();
     });
 
     // winit wrapped by eframe, requires UI eventloop running inside main thread
@@ -63,8 +63,8 @@ fn mouse_control_eventloop(
     eventloop.initialize()?;
     loop {
         match tray.poll_event() {
-            Some(UIPendingAction::Restart) => master_reactor.restart_ui(),
-            Some(UIPendingAction::Exit) => break,
+            Some(TrayEvent::Open) => master_reactor.restart_ui(),
+            Some(TrayEvent::Quit) => break,
             None => (),
         }
         if !eventloop.poll()? {
@@ -72,12 +72,15 @@ fn mouse_control_eventloop(
         }
     }
     eventloop.terminate()?;
-    master_reactor.exit_ui();
+    master_reactor.exit();
     Ok(())
 }
 
 fn egui_eventloop(_ui_reactor: UIReactor) -> Result<(), eframe::Error> {
-    let ui_reactor = Rc::new(_ui_reactor);
+    // FIXME: to gracefully remove the RefCell. Currently depends on
+    // the ui_reactor to brought the consumed Message::Exit out from eframe
+    // eventloop, which needs a mutable borrow.
+    let ui_reactor = Rc::new(RefCell::new(_ui_reactor));
 
     loop {
         let ui_reactor_win = ui_reactor.clone();
@@ -89,15 +92,8 @@ fn egui_eventloop(_ui_reactor: UIReactor) -> Result<(), eframe::Error> {
                 Box::new(App::new(ui_reactor_win))
             }),
         )?;
-        // Once clearing residual pending msg
-        match ui_reactor.recv_pending_msg(false) {
-            monmouse::message::UIPendingAction::Exit => break,
-            monmouse::message::UIPendingAction::Restart => (),
-        }
-        // Actuall wait for restart msg
-        match ui_reactor.recv_pending_msg(true) {
-            monmouse::message::UIPendingAction::Exit => break,
-            monmouse::message::UIPendingAction::Restart => (),
+        if ui_reactor.borrow().wait_for_restart() {
+            break;
         }
     }
     Ok(())
@@ -128,11 +124,11 @@ enum PanelTag {
 struct App {
     state: AppState,
     cur_panel: PanelTag,
-    ui_reactor: Rc<UIReactor>,
+    ui_reactor: Rc<RefCell<UIReactor>>,
 }
 
 impl App {
-    fn new(ui_reactor: Rc<UIReactor>) -> Self {
+    fn new(ui_reactor: Rc<RefCell<UIReactor>>) -> Self {
         Self {
             state: AppState::default(),
             cur_panel: PanelTag::Manage,
@@ -155,12 +151,32 @@ impl App {
     }
 }
 
+impl App {
+    fn dispatch_ui_msg(&mut self, ctx: &egui::Context) {
+        loop {
+            let msg = match self.ui_reactor.borrow().recv_msg() {
+                Some(msg) => msg,
+                None => return,
+            };
+            match msg {
+                Message::Exit => {
+                    self.ui_reactor.borrow_mut().set_should_exit();
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+                Message::CloseUI => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+                Message::RestartUI => drop(msg),
+                Message::InspectDevices(_, _) => todo!(),
+                Message::ApplyDevicesSetting() => todo!(),
+                _ => panic!("recv unexpected ui msg: {}", msg),
+            }
+        }
+    }
+}
+
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.update_ctx(ctx);
-        if self.ui_reactor.check_close() {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-        }
+        self.dispatch_ui_msg(ctx);
 
         egui::SidePanel::left("TabChooser")
             .resizable(false)
@@ -196,4 +212,12 @@ impl eframe::App for App {
         // Maybe by finding out a method to terminate eframe native_run outside its own eventloop.
         ctx.request_repaint();
     }
+}
+
+pub fn set_thread_panic_process() {
+    let orig_hook = panic::take_hook();
+    panic::set_hook(Box::new(move |panic_info| {
+        orig_hook(panic_info);
+        process::exit(1);
+    }));
 }
