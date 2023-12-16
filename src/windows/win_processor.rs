@@ -2,12 +2,12 @@ use std::collections::HashMap;
 
 use crate::errors::Result;
 
-use crate::control::DeviceController;
-use crate::control::DeviceCtrlSetting;
-use crate::control::MonitorArea;
-use crate::control::MonitorAreasList;
-use crate::control::MousePos;
-use crate::control::MouseRelocator;
+use crate::mouse_control::DeviceController;
+use crate::mouse_control::DeviceCtrlSetting;
+use crate::mouse_control::MonitorArea;
+use crate::mouse_control::MonitorAreasList;
+use crate::mouse_control::MousePos;
+use crate::mouse_control::MouseRelocator;
 use crate::utils::SimpleRatelimit;
 
 use core::cell::OnceCell;
@@ -289,9 +289,11 @@ impl WinDeviceProcessor {
 }
 
 impl WinDeviceProcessor {
-    fn init_global() -> &'static mut WinDeviceProcessor {
+    fn init_global_once() -> &'static mut WinDeviceProcessor {
         unsafe {
-            assert!(G_PROCESSOR.set(WinDeviceProcessor::new()).is_ok());
+            if G_PROCESSOR.set(WinDeviceProcessor::new()).is_err() {
+                panic!("WinDeviceProcessor::init_global_once() called twice")
+            }
             G_PROCESSOR.get_mut().unwrap()
         }
     }
@@ -457,6 +459,7 @@ impl WinDeviceProcessor {
 
 pub struct WinEventLoop {
     hook: WinHook,
+    processor: &'static mut WinDeviceProcessor,
 }
 
 impl Default for WinEventLoop {
@@ -468,32 +471,46 @@ impl Default for WinEventLoop {
 impl WinEventLoop {
     pub fn new() -> Self {
         let hook = WinHook::new();
-        WinEventLoop { hook }
+        let processor = WinDeviceProcessor::init_global_once();
+        WinEventLoop { hook, processor }
+    }
+
+    pub fn initialize(&mut self) -> Result<()> {
+        self.processor.initialize()?;
+        self.hook.register()?;
+        Ok(())
+    }
+
+    pub fn terminate(&mut self) -> Result<()> {
+        self.hook.unregister()?;
+        self.processor.terminate()?;
+        Ok(())
+    }
+
+    #[inline]
+    pub fn poll(&mut self) -> Result<bool> {
+        let mut msg = MSG::default();
+        if unsafe { GetMessageW(&mut msg, HWND::default(), 0, 0) }.as_bool() {
+            if msg.message == WM_QUIT {
+                return Ok(false);
+            }
+            self.processor.handle_message(&msg);
+            unsafe {
+                TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
+        }
+        Ok(true)
     }
 
     pub fn run(&mut self) -> Result<()> {
-        let processor = WinDeviceProcessor::init_global();
-
-        processor.initialize()?;
-        self.hook.register()?;
-
+        self.initialize()?;
         loop {
-            let mut msg = MSG::default();
-            if unsafe { GetMessageW(&mut msg, HWND::default(), 0, 0) }.as_bool() {
-                if msg.message == WM_QUIT {
-                    break;
-                }
-                processor.handle_message(&msg);
-                unsafe {
-                    TranslateMessage(&msg);
-                    DispatchMessageW(&msg);
-                }
+            if self.poll()? {
+                break;
             }
         }
-
-        self.hook.unregister()?;
-        processor.terminate()?;
-
+        self.terminate()?;
         Ok(())
     }
 }

@@ -1,5 +1,5 @@
 use eframe::{egui, epaint::Color32};
-use monmouse::bridge::DeviceStatus;
+use monmouse::message::DeviceStatus;
 
 pub fn device_status_color(ui: &egui::Ui, s: DeviceStatus) -> Color32 {
     let idle = ui.style().visuals.widgets.inactive.bg_fill;
@@ -17,7 +17,7 @@ pub fn device_status_color(ui: &egui::Ui, s: DeviceStatus) -> Color32 {
 
 pub fn manage_button(ui: &mut egui::Ui, text: &str) -> egui::Response {
     let text = egui::RichText::new(text).strong();
-    let button = egui::Button::new(text).min_size(egui::vec2(70.0, 30.0));
+    let button = egui::Button::new(text).min_size(egui::vec2(70.0, 25.0));
     ui.add(button)
 }
 

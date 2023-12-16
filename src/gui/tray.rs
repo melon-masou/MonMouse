@@ -1,0 +1,65 @@
+use monmouse::message::UIPendingAction;
+use tray_icon::menu::Menu;
+use tray_icon::menu::MenuEvent;
+use tray_icon::menu::MenuItem;
+use tray_icon::menu::PredefinedMenuItem;
+use tray_icon::ClickType;
+use tray_icon::TrayIcon;
+use tray_icon::TrayIconBuilder;
+use tray_icon::TrayIconEvent;
+
+use crate::load_icon;
+
+#[allow(dead_code)]
+pub struct Tray {
+    open: MenuItem,
+    quit: MenuItem,
+    trayicon: TrayIcon,
+}
+
+impl Tray {
+    pub fn new() -> Self {
+        let icon = load_icon();
+        let tray_menu = Menu::new();
+
+        let open = MenuItem::new("Open", true, None);
+        let quit = MenuItem::new("Quit", true, None);
+
+        tray_menu
+            .append_items(&[&open, &PredefinedMenuItem::separator(), &quit])
+            .unwrap();
+
+        let trayicon = TrayIconBuilder::new()
+            .with_tooltip("MonMouse")
+            .with_menu(Box::new(tray_menu))
+            .with_icon(
+                tray_icon::Icon::from_rgba(icon.rgba, icon.width, icon.height)
+                    .expect("Failed to open icon"),
+            )
+            .build()
+            .unwrap();
+        Self {
+            open,
+            quit,
+            trayicon,
+        }
+    }
+
+    pub fn poll_event(&self) -> Option<UIPendingAction> {
+        if let Ok(event) = TrayIconEvent::receiver().try_recv() {
+            if event.click_type == ClickType::Double {
+                return Some(UIPendingAction::Restart);
+            }
+        }
+
+        if let Ok(event) = MenuEvent::receiver().try_recv() {
+            if event.id == self.quit.id() {
+                return Some(UIPendingAction::Exit);
+            }
+            if event.id == self.open.id() {
+                return Some(UIPendingAction::Restart);
+            }
+        }
+        None
+    }
+}

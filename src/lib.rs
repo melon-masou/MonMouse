@@ -1,9 +1,12 @@
-pub mod bridge;
-pub mod control;
 pub mod errors;
+pub mod message;
+pub mod mouse_control;
 
 mod utils;
 
 #[cfg(target_os = "windows")]
 #[path = "windows/mod.rs"]
 pub mod windows;
+
+#[cfg(target_os = "windows")]
+pub type Eventloop = windows::win_processor::WinEventLoop;

@@ -1,10 +1,12 @@
 use eframe::egui;
 use egui_extras::{Column, Size, StripBuilder, TableBuilder};
-use monmouse::bridge::DeviceStatus;
+use monmouse::message::DeviceStatus;
 
 use crate::{
+    components::widget::{
+        device_status_color, indicator_ui, manage_button, toggle_ui, CollapsingPopup,
+    },
     state::DeviceUIState,
-    widget::{device_status_color, indicator_ui, manage_button, toggle_ui, CollapsingPopup},
 };
 
 pub struct ManagePanel {}
