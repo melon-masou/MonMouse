@@ -5,6 +5,7 @@ mod components;
 mod styles;
 mod tray;
 
+use std::panic::PanicInfo;
 use std::{cell::RefCell, panic, process, rc::Rc, thread};
 
 use app::App;
@@ -203,10 +204,22 @@ impl eframe::App for AppWrap {
     }
 }
 
+#[cfg(target_os = "windows")]
+pub fn windows_panic_hook(panic_info: &PanicInfo) {
+    use monmouse::windows::wintypes::WString;
+    use monmouse::windows::winwrap::popup_message_box;
+
+    let caption = WString::encode_from_str("MonMouse");
+    let text = WString::encode_from_str(format!("Program panic: {}", panic_info).as_str());
+    let _ = popup_message_box(caption, text);
+}
+
 pub fn set_thread_panic_process() {
     let orig_hook = panic::take_hook();
     panic::set_hook(Box::new(move |panic_info| {
         orig_hook(panic_info);
+        #[cfg(target_os = "windows")]
+        windows_panic_hook(panic_info);
         process::exit(1);
     }));
 }

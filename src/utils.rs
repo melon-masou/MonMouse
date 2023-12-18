@@ -32,3 +32,17 @@ impl<T: Copy, const N: usize> ArrayVec<T, N> {
         self.arr.to_vec()
     }
 }
+
+pub fn delay_panic(seconds: u64) {
+    use std::time::{Duration, SystemTime};
+    static mut _DELAY_PANIC_LAST: Option<std::time::SystemTime> = None;
+
+    let now = SystemTime::now();
+    if let Some(t) = unsafe { _DELAY_PANIC_LAST } {
+        if now.duration_since(t).unwrap() > Duration::from_secs(seconds) {
+            panic!("delay panic");
+        }
+    } else {
+        unsafe { _DELAY_PANIC_LAST = Some(now) };
+    }
+}

@@ -5,6 +5,7 @@ use crate::errors::{Error, Result};
 use crate::windows::wintypes::*;
 
 use windows::Win32::UI::Input::RAWINPUT;
+use windows::Win32::UI::WindowsAndMessaging::{MessageBoxExW, MB_TOPMOST, MESSAGEBOX_RESULT};
 use windows::{
     core::GUID,
     Win32::{
@@ -902,5 +903,22 @@ pub fn check_mouse_event_is_absolute(ri: &RAWINPUT) -> Option<bool> {
             Some((ri.data.mouse.usFlags & RAWINPUT_MOUSE_FLAGS_ABSOLUTE) > 0)
         },
         _ => None,
+    }
+}
+
+pub fn popup_message_box(caption: WString, text: WString) -> Result<MESSAGEBOX_RESULT> {
+    let ret = unsafe {
+        MessageBoxExW(
+            HWND(0),
+            text.as_pcwstr(),
+            caption.as_pcwstr(),
+            MB_TOPMOST,
+            0,
+        )
+    };
+    if ret.0 == 0 {
+        Err(get_last_error())
+    } else {
+        Ok(ret)
     }
 }
