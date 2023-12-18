@@ -78,8 +78,6 @@ impl DevicesPanel {
     pub fn table_ui(ui: &mut egui::Ui, devices: &mut Vec<DeviceUIState>) {
         let table = TableBuilder::new(ui)
             .striped(true)
-            .min_scrolled_height(100.0)
-            .max_scroll_height(300.0)
             .drag_to_scroll(true)
             .auto_shrink(false)
             .cell_layout(egui::Layout::left_to_right(egui::Align::LEFT))
@@ -125,8 +123,8 @@ impl DevicesPanel {
 
     pub fn ui(ui: &mut egui::Ui, app: &mut App) {
         ui.horizontal(|ui| {
-            if manage_button(ui, "Refresh").clicked() {
-                app.ui_reactor.trigger_inspect_devices();
+            if manage_button(ui, "Scan").clicked() {
+                app.ui_reactor.trigger_scan_devices();
             }
             if manage_button(ui, "Save").clicked() {
                 // TODO
@@ -135,7 +133,7 @@ impl DevicesPanel {
 
         ui.separator();
         StripBuilder::new(ui)
-            .size(Size::exact(320.0))
+            .size(Size::remainder())
             .vertical(|mut strip| {
                 strip.cell(|ui| {
                     egui::ScrollArea::horizontal().show(ui, |ui| {
@@ -143,8 +141,5 @@ impl DevicesPanel {
                     });
                 });
             });
-        ui.separator();
-
-        ui.label("Help TODO");
     }
 }

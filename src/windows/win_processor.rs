@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::errors::Error;
 use crate::errors::Result;
 
 use crate::message::DeviceType as GenericDeviceType;
@@ -529,7 +530,7 @@ impl WinEventLoop {
             };
             // Is it possible to reuse the msg?
             match msg {
-                Message::InspectDevices(_, _) => {
+                Message::ScanDevices(_, _) => {
                     let ret =
                         self.processor
                             .collect_all_raw_devices()
@@ -539,7 +540,7 @@ impl WinEventLoop {
                                     .map(Self::win_device_to_generic)
                                     .collect()
                             });
-                    mouse_control_reactor.return_msg(Message::InspectDevices((), ret));
+                    mouse_control_reactor.return_msg(Message::ScanDevices((), ret));
                 }
                 Message::ApplyDevicesSetting() => todo!(),
                 _ => panic!("recv unexpected ui msg: {}", msg),

@@ -39,12 +39,15 @@ pub enum Message {
     Exit,
     CloseUI,
     RestartUI,
-    InspectDevices((), Result<Vec<GenericDevice>>),
+    ScanDevices((), Result<Vec<GenericDevice>>),
     ApplyDevicesSetting(),
 }
 
-fn undo<T>() -> Result<T> {
-    Err(Error::MessageUndo)
+impl Message {
+    #[inline]
+    pub fn inited<T>() -> Result<T> {
+        Err(Error::MessageInited)
+    }
 }
 
 impl Display for Message {
@@ -53,7 +56,7 @@ impl Display for Message {
             Self::Exit => write!(f, "Msg(Exit)"),
             Self::CloseUI => write!(f, "Msg(CloseUI)"),
             Self::RestartUI => write!(f, "Msg(RestartUI)"),
-            Self::InspectDevices(_, _) => write!(f, "Msg(InspectDevices)"),
+            Self::ScanDevices(_, _) => write!(f, "Msg(ScanDevices)"),
             Self::ApplyDevicesSetting() => write!(f, "Msg(ApplyDevicesSetting)"),
         }
     }
@@ -148,7 +151,7 @@ impl MouseControlReactor {
             Message::Exit => drop(msg),
             Message::CloseUI => drop(msg),
             Message::RestartUI => drop(msg),
-            Message::InspectDevices(_, _) => self.ui_tx.send(msg).unwrap(),
+            Message::ScanDevices(_, _) => self.ui_tx.send(msg).unwrap(),
             Message::ApplyDevicesSetting() => self.ui_tx.send(msg).unwrap(),
         }
     }
@@ -175,7 +178,7 @@ impl UIReactor {
             Message::Exit => drop(msg),
             Message::CloseUI => drop(msg),
             Message::RestartUI => drop(msg),
-            Message::InspectDevices(_, _) => panic!("return self-generated msg"),
+            Message::ScanDevices(_, _) => panic!("return self-generated msg"),
             Message::ApplyDevicesSetting() => panic!("return self-generated msg"),
         }
     }
@@ -204,9 +207,9 @@ impl UIReactor {
         }
     }
 
-    pub fn trigger_inspect_devices(&self) {
+    pub fn trigger_scan_devices(&self) {
         self.mouse_control_tx
-            .send(Message::InspectDevices((), undo()))
+            .send(Message::ScanDevices((), Message::inited()))
             .unwrap();
     }
 

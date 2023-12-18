@@ -5,11 +5,12 @@ mod state;
 mod styles;
 mod tray;
 
-use std::{cell::RefCell, panic, process, rc::Rc, thread};
+use std::{cell::RefCell, panic, process, rc::Rc, thread, time::SystemTime};
 
 use components::about_panel::AboutPanel;
 use components::config_panel::ConfigPanel;
 use components::devices_panel::DevicesPanel;
+use components::status_bar::status_bar_ui;
 use eframe::egui;
 use log::{error, info};
 use monmouse::{
@@ -102,7 +103,7 @@ fn egui_eventloop(ui_reactor: UIReactor) -> Result<(), eframe::Error> {
 fn ui_options_main_window() -> eframe::NativeOptions {
     eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([gscale(800.0), gscale(560.0)])
+            .with_inner_size([gscale(800.0), gscale(400.0)])
             .with_app_id("monmouse")
             .with_window_level(egui::WindowLevel::Normal)
             .with_icon(load_icon()),
@@ -122,6 +123,7 @@ enum PanelTag {
 
 struct App {
     state: AppState,
+    last_error: Option<String>,
     ui_reactor: UIReactor,
 }
 
@@ -129,11 +131,12 @@ impl App {
     fn new(ui_reactor: UIReactor) -> Self {
         App {
             state: AppState::default(),
+            last_error: None,
             ui_reactor,
         }
     }
 
-    fn merge_inspect_devices(&mut self, mut devs: Vec<GenericDevice>) {
+    fn merge_scanned_devices(&mut self, mut devs: Vec<GenericDevice>) {
         let mut new_one = Vec::<DeviceUIState>::new();
         while let Some(v) = devs.pop() {
             new_one.push(DeviceUIState {
@@ -158,19 +161,24 @@ impl App {
                 }
                 Message::CloseUI => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
                 Message::RestartUI => drop(msg),
-                Message::InspectDevices(_, result) => match result {
-                    Ok(devs) => self.merge_inspect_devices(devs),
-                    Err(e) => (),
+                Message::ScanDevices(_, result) => match result {
+                    Ok(devs) => self.merge_scanned_devices(devs),
+                    Err(e) => self.set_error(format!("Failed to scan devices: {}", e)),
                 },
                 Message::ApplyDevicesSetting() => todo!(),
-                _ => panic!("recv unexpected ui msg: {}", msg),
             }
         }
+    }
+
+    fn set_error(&mut self, err_msg: String) {
+        self.last_error = Some(err_msg);
     }
 }
 struct AppWrap {
     cur_panel: PanelTag,
     app: Rc<RefCell<App>>,
+    #[allow(dead_code)]
+    debug_paint_times: u64,
 }
 
 impl AppWrap {
@@ -178,6 +186,7 @@ impl AppWrap {
         Self {
             cur_panel: PanelTag::Devices,
             app,
+            debug_paint_times: 0,
         }
     }
 }
@@ -199,22 +208,30 @@ impl eframe::App for AppWrap {
 
         app.dispatch_ui_msg(ctx);
 
+        egui::TopBottomPanel::bottom("StatusBar").show(ctx, |ui| {
+            ui.horizontal(|ui| status_bar_ui(ui, &mut app));
+        });
+
         egui::SidePanel::left("TabChooser")
             .resizable(false)
             .show_separator_line(true)
             .min_width(100.0)
             .show(ctx, |ui| {
                 ui.add_space(5.0);
-                ui.vertical(|ui| {
-                    let mut tab_button = |tag| {
-                        let text = format!("{:?}", tag);
-                        let tab = egui::RichText::from(text).heading().strong();
-                        ui.selectable_value(&mut self.cur_panel, tag, tab);
-                    };
-                    tab_button(PanelTag::Devices);
-                    tab_button(PanelTag::Config);
-                    tab_button(PanelTag::About);
-                });
+                let mut tab_button = |tag| {
+                    let text = format!("{:?}", tag);
+                    let tab = egui::RichText::from(text).heading().strong();
+                    ui.selectable_value(&mut self.cur_panel, tag, tab);
+                };
+                tab_button(PanelTag::Devices);
+                tab_button(PanelTag::Config);
+                tab_button(PanelTag::About);
+
+                #[cfg(debug_assertions)]
+                {
+                    self.debug_paint_times += 1;
+                    ui.label(format!("Painted: {}", self.debug_paint_times))
+                };
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {

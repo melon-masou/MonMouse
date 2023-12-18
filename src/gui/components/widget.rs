@@ -1,17 +1,39 @@
 use eframe::{egui, epaint::Color32};
 use monmouse::message::DeviceStatus;
 
-pub fn device_status_color(ui: &egui::Ui, s: DeviceStatus) -> Color32 {
-    let idle = ui.style().visuals.widgets.inactive.bg_fill;
-    let cp: (Color32, Color32) = match s {
-        DeviceStatus::Active => (Color32::LIGHT_GREEN, Color32::DARK_GREEN),
-        DeviceStatus::Idle => (idle, idle),
-        DeviceStatus::Disconnected => (Color32::LIGHT_RED, Color32::DARK_RED),
-    };
-    if ui.style().visuals.dark_mode {
-        cp.1
+#[inline]
+fn theme_red(dark: bool) -> Color32 {
+    if dark {
+        Color32::DARK_RED
     } else {
-        cp.0
+        Color32::LIGHT_RED
+    }
+}
+
+#[inline]
+fn theme_green(dark: bool) -> Color32 {
+    if dark {
+        Color32::DARK_GREEN
+    } else {
+        Color32::LIGHT_GREEN
+    }
+}
+
+pub fn error_color(ui: &egui::Ui, ok: bool) -> Color32 {
+    let dark = ui.style().visuals.dark_mode;
+    if ok {
+        theme_green(dark)
+    } else {
+        theme_red(dark)
+    }
+}
+
+pub fn device_status_color(ui: &egui::Ui, s: DeviceStatus) -> Color32 {
+    let dark = ui.style().visuals.dark_mode;
+    match s {
+        DeviceStatus::Active => theme_green(dark),
+        DeviceStatus::Idle => ui.style().visuals.widgets.inactive.bg_fill,
+        DeviceStatus::Disconnected => theme_red(dark),
     }
 }
 

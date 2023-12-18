@@ -2,8 +2,8 @@ use thiserror::Error as ThisError;
 
 #[derive(ThisError, Debug)]
 pub enum Error {
-    #[error("ErrorMessageUndo")]
-    MessageUndo,
+    #[error("ErrorInited")]
+    MessageInited,
 
     #[error("ErrorWinUnknown")]
     WinUnknown,
