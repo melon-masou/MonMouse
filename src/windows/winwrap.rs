@@ -2,7 +2,6 @@ use std::fmt::{self, Display};
 use std::mem::size_of;
 
 use crate::errors::{Error, Result};
-use crate::windows::constants::*;
 use crate::windows::wintypes::*;
 
 use windows::Win32::UI::Input::RAWINPUT;
@@ -59,6 +58,8 @@ use windows::{
         },
     },
 };
+
+use super::constants::RAWINPUT_MOUSE_FLAGS_ABSOLUTE;
 
 #[derive(PartialEq, Eq, Debug)]
 pub enum DeviceType {
@@ -892,5 +893,14 @@ pub fn rawinput_to_string(ri: &RAWINPUT) -> String {
                 ri.header.dwType, ri.header.hDevice.0
             )
         }
+    }
+}
+
+pub fn check_mouse_event_is_absolute(ri: &RAWINPUT) -> Option<bool> {
+    match RID_DEVICE_INFO_TYPE(ri.header.dwType) {
+        RIM_TYPEMOUSE => unsafe {
+            Some((ri.data.mouse.usFlags & RAWINPUT_MOUSE_FLAGS_ABSOLUTE) > 0)
+        },
+        _ => None,
     }
 }

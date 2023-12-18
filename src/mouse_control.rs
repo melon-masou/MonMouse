@@ -1,5 +1,7 @@
 use std::fmt::Display;
 
+use crate::message::Positioning;
+
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MousePos {
     pub x: i32,
@@ -30,6 +32,7 @@ pub struct DeviceController {
 
     last_active_tick: u64, // in ms
     last_active_pos: MousePos,
+    positioning: Positioning,
     restric_area: Option<MonitorArea>,
 }
 
@@ -40,6 +43,7 @@ impl DeviceController {
             setting,
             last_active_tick: 0,
             last_active_pos: MousePos::default(),
+            positioning: Positioning::Unknown,
             restric_area: None,
         }
     }
@@ -48,18 +52,27 @@ impl DeviceController {
         self.reset_restric_area();
         self.setting = *new_setting;
     }
+
     pub fn reset_restric_area(&mut self) {
         self.restric_area = None;
     }
 
-    fn update_pos(&mut self, p: &MousePos, tick: u64) {
+    pub fn update_positioning(&mut self, p: Positioning) {
+        self.positioning = p;
+    }
+
+    pub fn update_pos(&mut self, p: &MousePos, tick: u64) {
         self.last_active_pos = *p;
         self.last_active_tick = tick;
     }
 
-    fn get_last_pos(&self) -> Option<MousePos> {
+    pub fn get_last_pos(&self) -> Option<(u64, MousePos, Positioning)> {
         if self.last_active_tick > 0 {
-            Some(self.last_active_pos)
+            Some((
+                self.last_active_tick,
+                self.last_active_pos,
+                self.positioning,
+            ))
         } else {
             None
         }
@@ -128,7 +141,7 @@ impl MouseRelocator {
 
             if c.setting.remember_pos {
                 // Has rememberd position
-                if let Some(old_pos) = c.get_last_pos() {
+                if let Some((_, old_pos, _)) = c.get_last_pos() {
                     // Find area to go
                     if let Some(area) = self.monitors.locate(&old_pos) {
                         self.relocate_pos = Some((old_pos, area.scale));

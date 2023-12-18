@@ -42,6 +42,11 @@ impl App {
         self.ui_reactor
             .send_mouse_control(Message::ScanDevices((), Message::inited()));
     }
+
+    pub fn trigger_inspect_devices_status(&mut self) {
+        self.ui_reactor
+            .send_mouse_control(Message::InspectDevicesStatus((), Message::inited()));
+    }
 }
 
 impl App {
@@ -71,6 +76,21 @@ impl App {
         self.state.managed_devices = new_one;
     }
 
+    fn update_devices_status(&mut self, mut devs: Vec<(String, DeviceStatus)>) {
+        self.state
+            .managed_devices
+            .iter_mut()
+            .for_each(|v| v.status = DeviceStatus::Disconnected);
+        while let Some((id, status)) = devs.pop() {
+            for d in &mut self.state.managed_devices {
+                if d.generic.id == id {
+                    d.status = status;
+                    break;
+                }
+            }
+        }
+    }
+
     pub fn dispatch_ui_msg(&mut self, ctx: &egui::Context) {
         loop {
             let msg = match self.ui_reactor.ui_rx.try_recv() {
@@ -97,6 +117,10 @@ impl App {
                         self.result_ok(format!("Scanned {} devices", dev_num))
                     }
                     Err(e) => self.result_error(format!("Failed to scan devices: {}", e)),
+                },
+                Message::InspectDevicesStatus(_, result) => match result {
+                    Ok(devs) => self.update_devices_status(devs),
+                    Err(e) => self.result_error(format!("Failed to update device status: {}", e)),
                 },
                 Message::ApplyDevicesSetting() => todo!(),
             }

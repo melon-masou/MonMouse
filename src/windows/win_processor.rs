@@ -1,20 +1,19 @@
 use std::collections::HashMap;
 use std::sync::mpsc::TryRecvError;
 
-use crate::errors::Error;
 use crate::errors::Result;
-
+use crate::message::DeviceStatus;
 use crate::message::DeviceType as GenericDeviceType;
 use crate::message::GenericDevice;
 use crate::message::Message;
 use crate::message::MouseControlReactor;
+use crate::message::Positioning;
 use crate::mouse_control::DeviceController;
 use crate::mouse_control::DeviceCtrlSetting;
 use crate::mouse_control::MonitorArea;
 use crate::mouse_control::MonitorAreasList;
 use crate::mouse_control::MousePos;
 use crate::mouse_control::MouseRelocator;
-use crate::utils::ArrayVec;
 use crate::utils::SimpleRatelimit;
 
 use core::cell::OnceCell;
@@ -22,6 +21,10 @@ use log::{debug, error, trace};
 use windows::Win32::Devices::HumanInterfaceDevice::HID_USAGE_GENERIC_MOUSE;
 use windows::Win32::Devices::HumanInterfaceDevice::HID_USAGE_GENERIC_POINTER;
 use windows::Win32::Devices::HumanInterfaceDevice::HID_USAGE_PAGE_DIGITIZER;
+use windows::Win32::UI::WindowsAndMessaging::MsgWaitForMultipleObjects;
+use windows::Win32::UI::WindowsAndMessaging::PeekMessageW;
+use windows::Win32::UI::WindowsAndMessaging::PM_REMOVE;
+use windows::Win32::UI::WindowsAndMessaging::QS_ALLINPUT;
 use windows::Win32::{
     Devices::HumanInterfaceDevice::HID_USAGE_PAGE_GENERIC,
     Foundation::{HANDLE, HWND, LPARAM, WPARAM},
@@ -324,11 +327,10 @@ impl WinDeviceProcessor {
         };
         let r: Result<Vec<WinDevice>> = all_devs
             .iter()
-            .filter(|d| match DeviceType::from_rid(d.dwType) {
-                DeviceType::MOUSE | DeviceType::HID => true,
-                DeviceType::KEYBOARD | DeviceType::UNKNOWN => false,
+            .filter_map(|d| match DeviceType::from_rid(d.dwType) {
+                DeviceType::MOUSE | DeviceType::HID => Some(collect_device_infos(d)),
+                DeviceType::KEYBOARD | DeviceType::UNKNOWN => None,
             })
-            .map(collect_device_infos)
             .filter(|r| r.is_ok()) // ignore certain device error
             .collect();
         r
@@ -437,8 +439,14 @@ impl WinDeviceProcessor {
 
         let dev = match self.devices.get_and_update_active(ri.header.hDevice) {
             Some(v) => v,
-            None => return,
+            None => return, // TODO: get devices again
         };
+        dev.ctrl
+            .update_positioning(match check_mouse_event_is_absolute(ri) {
+                Some(true) => Positioning::Absolute,
+                Some(false) => Positioning::Relative,
+                None => Positioning::Unknown,
+            });
         self.relocator.on_mouse_update(&mut dev.ctrl, wtick);
         self.resolve_relocator()
     }
@@ -497,16 +505,19 @@ impl WinEventLoop {
     #[inline]
     pub fn poll(&mut self) -> Result<bool> {
         let mut msg = MSG::default();
-        if unsafe { GetMessageW(&mut msg, HWND::default(), 0, 0) }.as_bool() {
-            if msg.message == WM_QUIT {
-                return Ok(false);
-            }
-            self.processor.handle_message(&msg);
-            unsafe {
+
+        unsafe {
+            MsgWaitForMultipleObjects(None, false, WIN_EVENTLOOP_WAIT_MSG_TIMEOUT_MS, QS_ALLINPUT);
+            if PeekMessageW(&mut msg, HWND::default(), 0, 0, PM_REMOVE).as_bool() {
+                if msg.message == WM_QUIT {
+                    return Ok(false);
+                }
+                self.processor.handle_message(&msg);
                 TranslateMessage(&msg);
                 DispatchMessageW(&msg);
             }
         }
+
         Ok(true)
     }
 
@@ -539,11 +550,28 @@ impl WinEventLoop {
                             .collect_all_raw_devices()
                             .map(|v| -> Vec<GenericDevice> {
                                 v.iter()
-                                    .filter(|&v| Self::win_device_filter(v))
+                                    .filter(|&v| Self::is_valid_win_device(v))
                                     .map(Self::win_device_to_generic)
                                     .collect()
                             });
                     mouse_control_reactor.return_msg(Message::ScanDevices((), ret));
+                }
+                Message::InspectDevicesStatus(_, _) => {
+                    let tick = get_cur_tick();
+                    let ret = self
+                        .processor
+                        .devices
+                        .devs
+                        .iter()
+                        .filter(|&v| Self::is_valid_win_device(v))
+                        .map(|d| {
+                            (
+                                Self::device_id(d).to_string(),
+                                Self::build_device_status(d, tick),
+                            )
+                        })
+                        .collect();
+                    mouse_control_reactor.return_msg(Message::InspectDevicesStatus((), Ok(ret)));
                 }
                 Message::ApplyDevicesSetting() => todo!(),
                 _ => panic!("recv unexpected ui msg: {}", msg),
@@ -551,7 +579,7 @@ impl WinEventLoop {
         }
     }
 
-    pub fn win_device_filter(d: &WinDevice) -> bool {
+    pub fn is_valid_win_device(d: &WinDevice) -> bool {
         d.iface.is_some()
             && match d.rawinput.typ() {
                 DeviceType::MOUSE => true,
@@ -561,12 +589,29 @@ impl WinEventLoop {
             }
     }
 
+    #[inline]
+    pub fn device_id(d: &WinDevice) -> &WString {
+        &d.iface.as_ref().unwrap().instance_id
+    }
+
     pub fn win_device_to_generic(d: &WinDevice) -> GenericDevice {
         GenericDevice {
-            id: d.iface.as_ref().unwrap().instance_id.to_string(),
+            id: Self::device_id(d).to_string(),
             device_type: Self::get_device_type(d),
             product_name: Self::build_product_name(d).trim().into(),
             platform_specific_infos: Self::build_platform_specific_infos(d),
+        }
+    }
+
+    pub fn build_device_status(d: &WinDevice, cur_tick: u64) -> DeviceStatus {
+        if let Some((last_tick, _, positioning)) = d.ctrl.get_last_pos() {
+            if last_tick + MOUSE_EVENT_ACTIVE_LAST_FOR_MS > cur_tick {
+                DeviceStatus::Active(positioning)
+            } else {
+                DeviceStatus::Idle
+            }
+        } else {
+            DeviceStatus::Idle
         }
     }
 

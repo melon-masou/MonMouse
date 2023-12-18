@@ -17,13 +17,14 @@ impl DevicesPanel {
 
     fn active_str(status: &DeviceStatus) -> &str {
         match status {
-            DeviceStatus::Active { positioning } => match positioning {
+            DeviceStatus::Active(positioning) => match positioning {
                 Positioning::Unknown => "Active",
                 Positioning::Relative => "Relative",
                 Positioning::Absolute => "Absolute",
             },
             DeviceStatus::Idle => "Idle",
             DeviceStatus::Disconnected => "Disconnected",
+            DeviceStatus::Unknown => "Unknown",
         }
     }
 

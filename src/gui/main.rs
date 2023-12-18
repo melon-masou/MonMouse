@@ -68,7 +68,6 @@ fn mouse_control_eventloop(
             Some(TrayEvent::Quit) => break,
             None => (),
         }
-        // TODO: don't block here, when no device events
         if !eventloop.poll()? {
             break;
         }
@@ -199,6 +198,8 @@ impl eframe::App for AppWrap {
         // the mouse enter the window area.
         // Maybe by finding out a method to terminate eframe native_run outside its own eventloop.
         ctx.request_repaint();
+        // Eventloop should be also placed there
+        app.trigger_inspect_devices_status();
     }
 }
 

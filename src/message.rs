@@ -1,11 +1,11 @@
 use std::{
     fmt::{Debug, Display},
-    sync::mpsc::{channel, sync_channel, Receiver, RecvError, Sender, SyncSender, TryRecvError},
+    sync::mpsc::{channel, sync_channel, Receiver, Sender, SyncSender, TryRecvError},
 };
 
 use crate::errors::Error;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Positioning {
     Unknown,
     Relative,
@@ -14,9 +14,10 @@ pub enum Positioning {
 
 #[derive(Debug)]
 pub enum DeviceStatus {
-    Active { positioning: Positioning },
+    Active(Positioning),
     Idle,
     Disconnected,
+    Unknown,
 }
 
 #[derive(Debug)]
@@ -40,6 +41,7 @@ pub enum Message {
     CloseUI,
     RestartUI,
     ScanDevices((), Result<Vec<GenericDevice>>),
+    InspectDevicesStatus((), Result<Vec<(String, DeviceStatus)>>),
     ApplyDevicesSetting(),
 }
 
@@ -57,6 +59,7 @@ impl Display for Message {
             Self::CloseUI => write!(f, "Msg(CloseUI)"),
             Self::RestartUI => write!(f, "Msg(RestartUI)"),
             Self::ScanDevices(_, _) => write!(f, "Msg(ScanDevices)"),
+            Self::InspectDevicesStatus(_, _) => write!(f, "Msg(InspectDevicesStatus)"),
             Self::ApplyDevicesSetting() => write!(f, "Msg(ApplyDevicesSetting)"),
         }
     }
@@ -143,6 +146,7 @@ impl MouseControlReactor {
             Message::CloseUI => drop(msg),
             Message::RestartUI => drop(msg),
             Message::ScanDevices(_, _) => self.ui_tx.send(msg).unwrap(),
+            Message::InspectDevicesStatus(_, _) => self.ui_tx.send(msg).unwrap(),
             Message::ApplyDevicesSetting() => self.ui_tx.send(msg).unwrap(),
         }
     }
@@ -161,6 +165,7 @@ impl UIReactor {
             Message::CloseUI => drop(msg),
             Message::RestartUI => drop(msg),
             Message::ScanDevices(_, _) => panic!("return self-generated msg"),
+            Message::InspectDevicesStatus(_, _) => panic!("return self-generated msg"),
             Message::ApplyDevicesSetting() => panic!("return self-generated msg"),
         }
     }
