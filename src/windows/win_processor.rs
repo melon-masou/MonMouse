@@ -31,8 +31,7 @@ use windows::Win32::{
     UI::{
         Input::{RAWINPUT, RAWINPUTDEVICELIST, RIDEV_DEVNOTIFY, RIDEV_INPUTSINK},
         WindowsAndMessaging::{
-            DispatchMessageW, GetMessageW, TranslateMessage, HHOOK, MSG, MSLLHOOKSTRUCT, WM_INPUT,
-            WM_QUIT,
+            DispatchMessageW, TranslateMessage, HHOOK, MSG, MSLLHOOKSTRUCT, WM_INPUT, WM_QUIT,
         },
     },
 };
@@ -267,6 +266,7 @@ impl MouseLowLevelHook for WinHook {
 struct WinDeviceProcessor {
     hwnd: HWND,
     devices: WinDeviceSet,
+    headless: bool,
 
     raw_input_buf: WBuffer,
     tick_widen: TickWiden,
@@ -282,11 +282,12 @@ struct WinDeviceProcessor {
 static mut G_PROCESSOR: OnceCell<WinDeviceProcessor> = OnceCell::new();
 
 impl WinDeviceProcessor {
-    fn new() -> Self {
+    fn new(headless: bool) -> Self {
         WinDeviceProcessor {
             // Window must be created within same thread where eventloop() is called. Value set at init().
             hwnd: HWND::default(),
             devices: WinDeviceSet::new(),
+            headless,
 
             raw_input_buf: WBuffer::new(RAWINPUT_MSG_INIT_BUF_SIZE),
             tick_widen: TickWiden::new(),
@@ -299,9 +300,9 @@ impl WinDeviceProcessor {
 }
 
 impl WinDeviceProcessor {
-    fn init_global_once() -> &'static mut WinDeviceProcessor {
+    fn init_global_once(processor: WinDeviceProcessor) -> &'static mut WinDeviceProcessor {
         unsafe {
-            if G_PROCESSOR.set(WinDeviceProcessor::new()).is_err() {
+            if G_PROCESSOR.set(processor).is_err() {
                 panic!("WinDeviceProcessor::init_global_once() called twice")
             }
             G_PROCESSOR.get_mut().unwrap()
@@ -400,19 +401,24 @@ impl WinDeviceProcessor {
             return Ok(false);
         }
 
-        let mons = match get_all_monitors_info() {
+        let mut mons = match get_all_monitors_info() {
             Ok(v) => v,
             Err(e) => {
                 error!("Update monitors info failed: {}", e);
                 return Err(e);
             }
         };
+        if !self.headless {
+            // If not running under headless mode, EnumDisplayMonitors() returns
+            // right resolution, just clear the scale info.
+            mons.iter_mut().for_each(|v| v.scale = 100);
+        }
         let mon_areas = MonitorAreasList::from(
             mons.iter()
                 .map(WinDeviceProcessor::monitor_area_from)
                 .collect(),
         );
-        trace!("Updated monitors: {}", mon_areas);
+        debug!("Updated monitors: {}", mon_areas);
         self.relocator.update_monitors(mon_areas);
         Ok(true)
     }
@@ -479,14 +485,14 @@ pub struct WinEventLoop {
 
 impl Default for WinEventLoop {
     fn default() -> Self {
-        Self::new()
+        Self::new(false)
     }
 }
 
 impl WinEventLoop {
-    pub fn new() -> Self {
+    pub fn new(headless: bool) -> Self {
         let hook = WinHook::new();
-        let processor = WinDeviceProcessor::init_global_once();
+        let processor = WinDeviceProcessor::init_global_once(WinDeviceProcessor::new(headless));
         WinEventLoop { hook, processor }
     }
 
@@ -524,7 +530,7 @@ impl WinEventLoop {
     pub fn run(&mut self) -> Result<()> {
         self.initialize()?;
         loop {
-            if self.poll()? {
+            if !self.poll()? {
                 break;
             }
         }

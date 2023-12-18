@@ -1,6 +1,6 @@
 use std::{
     fmt::{Debug, Display},
-    sync::mpsc::{channel, sync_channel, Receiver, Sender, SyncSender, TryRecvError},
+    sync::mpsc::{channel, sync_channel, Receiver, SendError, Sender, SyncSender, TryRecvError},
 };
 
 use crate::errors::Error;
@@ -171,7 +171,7 @@ impl UIReactor {
     }
 
     #[inline]
-    pub fn send_mouse_control(&self, msg: Message) {
-        self.mouse_control_tx.send(msg).unwrap();
+    pub fn send_mouse_control(&self, msg: Message) -> std::result::Result<(), SendError<Message>> {
+        self.mouse_control_tx.send(msg)
     }
 }

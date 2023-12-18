@@ -14,7 +14,7 @@ use components::devices_panel::DevicesPanel;
 use components::status_bar::status_bar_ui;
 use components::{about_panel::AboutPanel, debug::DebugInfo};
 use eframe::egui;
-use log::{error, info};
+use log::info;
 use monmouse::{
     errors::Error,
     message::{setup_reactors, MasterReactor, MouseControlReactor, UIReactor},
@@ -36,24 +36,24 @@ pub fn load_icon() -> egui::IconData {
 }
 
 fn main() -> Result<(), eframe::Error> {
-    env_logger::builder()
-        .filter_level(log::LevelFilter::Info)
-        .init();
+    env_logger::builder().init();
 
     let (master_reactor, mouse_control_reactor, ui_reactor) = setup_reactors();
 
     set_thread_panic_process();
-    thread::spawn(move || {
-        let eventloop = monmouse::Eventloop::new();
+    let mouse_control_thread = thread::spawn(move || {
+        let eventloop = monmouse::Eventloop::new(false);
         let tray = Tray::new();
         match mouse_control_eventloop(eventloop, tray, &master_reactor, &mouse_control_reactor) {
             Ok(_) => info!("mouse control eventloop exited normally"),
-            Err(e) => error!("mouse control eventloop exited for error: {}", e),
+            Err(e) => panic!("mouse control eventloop exited for error: {}", e),
         }
     });
 
     // winit wrapped by eframe, requires UI eventloop running inside main thread
-    egui_eventloop(ui_reactor)
+    let result = egui_eventloop(ui_reactor);
+    let _ = mouse_control_thread.join();
+    result
 }
 
 fn mouse_control_eventloop(

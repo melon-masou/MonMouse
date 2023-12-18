@@ -40,11 +40,13 @@ impl App {
     pub fn trigger_scan_devices(&mut self) {
         self.result_clear();
         self.ui_reactor
-            .send_mouse_control(Message::ScanDevices((), Message::inited()));
+            .send_mouse_control(Message::ScanDevices((), Message::inited()))
+            .unwrap();
     }
 
     pub fn trigger_inspect_devices_status(&mut self) {
-        self.ui_reactor
+        let _ = self
+            .ui_reactor
             .send_mouse_control(Message::InspectDevicesStatus((), Message::inited()));
     }
 }

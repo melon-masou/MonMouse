@@ -818,6 +818,7 @@ pub fn get_monitor_scale_factor(hm: HMONITOR) -> Result<u32> {
     // Ref: https://stackoverflow.com/questions/31348823/getscalefactorformonitor-value-doesnt-match-actual-scale-applied
     //      https://learn.microsoft.com/en-us/windows/win32/hidpi/wm-dpichanged
 
+    // use windows::Win32::UI::Shell::GetScaleFactorForMonitor;
     // match unsafe { GetScaleFactorForMonitor(hm) } {
     //     Ok(v) => Ok(v.0 as u32),
     //     Err(e) => Err(core_error(e)),
@@ -843,16 +844,10 @@ pub fn get_all_monitors_info() -> Result<Vec<MonitorInfo>> {
         lparam: LPARAM,
     ) -> BOOL {
         let hms = lparam_ref::<Vec<MonitorInfo>>(&lparam);
-
-        let scale = match get_monitor_scale_factor(hm) {
-            Ok(v) => v,
-            Err(_) => return BOOL(1),
-        };
-
         hms.push(MonitorInfo {
             handle: hm,
             rect: *rect,
-            scale,
+            scale: 0,
         });
         BOOL(1)
     }
@@ -864,6 +859,14 @@ pub fn get_all_monitors_info() -> Result<Vec<MonitorInfo>> {
         true => (),
         false => return Err(Error::WinUnknown),
     }
+
+    for m in &mut hms {
+        match get_monitor_scale_factor(m.handle) {
+            Ok(scale) => m.scale = scale,
+            Err(e) => return Err(e),
+        }
+    }
+
     Ok(hms)
 }
 

@@ -1,19 +1,25 @@
 use clap::Parser;
-use log::debug;
+use log::{error, info};
+use monmouse::errors::Error;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {}
 
-fn setup_logger() {
-    env_logger::builder()
-        .filter_level(log::LevelFilter::Debug)
-        .init();
-}
+// fn setup_logger() {
+//     env_logger::builder()
+//         .filter_level(log::LevelFilter::Debug)
+//         .init();
+// }
 
-fn main() {
-    setup_logger();
+fn main() -> Result<(), Error> {
+    env_logger::builder().init();
 
-    debug!("monmouse-cli started");
-    debug!("monmouse-cli ended normally")
+    info!("monmouse-cli started");
+    let result = monmouse::Eventloop::new(true).run();
+    match &result {
+        Ok(_) => info!("monmouse-cli ended normally"),
+        Err(e) => error!("monmouse-cli ended with error: {}", e),
+    }
+    result
 }
