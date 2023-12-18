@@ -25,7 +25,6 @@ pub struct GlobalConfig {
 }
 
 pub struct DeviceUIState {
-    pub checked: bool,
     pub locked: bool,
     pub switch: bool,
     pub generic: GenericDevice,

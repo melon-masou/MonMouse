@@ -562,7 +562,7 @@ impl WinEventLoop {
             id: d.iface.as_ref().unwrap().instance_id.to_string(),
             device_type: Self::get_device_type(d),
             product_name: Self::build_product_name(d).trim().into(),
-            platform_specific_infos: Vec::new(),
+            platform_specific_infos: Self::build_platform_specific_infos(d),
         }
     }
 
@@ -574,10 +574,6 @@ impl WinEventLoop {
                 name.push(' ');
             }
             if let WStringOption::Some(s) = &hid.product {
-                name.push_str(s.to_string().as_str());
-                name.push(' ');
-            }
-            if let WStringOption::Some(s) = &hid.serial_number {
                 name.push_str(s.to_string().as_str());
                 name.push(' ');
             }
@@ -605,5 +601,61 @@ impl WinEventLoop {
             DeviceType::HID => GenericDeviceType::HIDUnknown,
             DeviceType::UNKNOWN => GenericDeviceType::Unknown,
         }
+    }
+
+    pub fn build_platform_specific_infos(d: &WinDevice) -> Vec<(String, String)> {
+        let tag = |s: &str| s.to_owned();
+
+        let mut vs = vec![
+            (tag("interface"), d.rawinput.iface.to_string()),
+            (tag("dwType"), d.rawinput.rid_info.dwType.0.to_string()),
+        ];
+
+        if let Some(hm) = &d.hid {
+            if let WStringOption::Some(s) = &hm.manufacturer {
+                vs.push((tag("hidManufacurer"), s.to_string()));
+            }
+            if let WStringOption::Some(s) = &hm.product {
+                vs.push((tag("hidProduct"), s.to_string()));
+            }
+            if let WStringOption::Some(s) = &hm.serial_number {
+                vs.push((tag("hidSerialNumber"), s.to_string()));
+            }
+        }
+
+        let im = &d.iface.as_ref().unwrap();
+        if let WStringOption::Some(s) = &im.manufacurer {
+            vs.push((tag("manufacurer"), s.to_string()));
+        }
+        if let WStringOption::Some(s) = &im.name {
+            vs.push((tag("name"), s.to_string()));
+        }
+        if let WStringOption::Some(s) = &im.service {
+            vs.push((tag("service"), s.to_string()));
+        }
+        if let WStringOption::Some(s) = &im.class {
+            vs.push((tag("class"), s.to_string()));
+        }
+
+        match d.rawinput.typ() {
+            DeviceType::MOUSE => {
+                let m = &d.rawinput.get_mouse();
+                vs.push((tag("dwId"), m.dwId.to_string()));
+                vs.push((tag("dwNumberOfButtons"), m.dwNumberOfButtons.to_string()));
+                vs.push((tag("dwSampleRate"), m.dwSampleRate.to_string()));
+            }
+            DeviceType::KEYBOARD => (),
+            DeviceType::HID => {
+                let m = &d.rawinput.get_hid();
+                vs.push((tag("dwProductId"), m.dwProductId.to_string()));
+                vs.push((tag("dwVendorId"), m.dwVendorId.to_string()));
+                vs.push((tag("dwVersionNumber"), m.dwVersionNumber.to_string()));
+                vs.push((tag("usUsagePage"), m.usUsagePage.to_string()));
+                vs.push((tag("usUsage"), m.usUsage.to_string()));
+            }
+            DeviceType::UNKNOWN => (),
+        }
+
+        vs
     }
 }

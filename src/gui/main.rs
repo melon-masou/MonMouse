@@ -9,7 +9,7 @@ use std::{cell::RefCell, panic, process, rc::Rc, thread};
 
 use components::about_panel::AboutPanel;
 use components::config_panel::ConfigPanel;
-use components::manage_panel::ManagePanel;
+use components::devices_panel::DevicesPanel;
 use eframe::egui;
 use log::{error, info};
 use monmouse::{
@@ -115,7 +115,7 @@ fn ui_options_main_window() -> eframe::NativeOptions {
 
 #[derive(PartialEq, Eq, Debug, Copy, Clone)]
 enum PanelTag {
-    Manage,
+    Devices,
     Config,
     About,
 }
@@ -137,7 +137,6 @@ impl App {
         let mut new_one = Vec::<DeviceUIState>::new();
         while let Some(v) = devs.pop() {
             new_one.push(DeviceUIState {
-                checked: false,
                 locked: false,
                 switch: false,
                 generic: v,
@@ -177,7 +176,7 @@ struct AppWrap {
 impl AppWrap {
     fn new(app: Rc<RefCell<App>>) -> Self {
         Self {
-            cur_panel: PanelTag::Manage,
+            cur_panel: PanelTag::Devices,
             app,
         }
     }
@@ -212,7 +211,7 @@ impl eframe::App for AppWrap {
                         let tab = egui::RichText::from(text).heading().strong();
                         ui.selectable_value(&mut self.cur_panel, tag, tab);
                     };
-                    tab_button(PanelTag::Manage);
+                    tab_button(PanelTag::Devices);
                     tab_button(PanelTag::Config);
                     tab_button(PanelTag::About);
                 });
@@ -220,7 +219,7 @@ impl eframe::App for AppWrap {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             match self.cur_panel {
-                PanelTag::Manage => ManagePanel::ui(ui, &mut app),
+                PanelTag::Devices => DevicesPanel::ui(ui, &mut app),
                 PanelTag::Config => ConfigPanel::ui(ui, &mut app.state.global_config),
                 PanelTag::About => AboutPanel::ui(ui),
             };

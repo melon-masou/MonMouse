@@ -5,18 +5,21 @@ use std::{
 
 use crate::errors::Error;
 
+#[derive(Debug)]
 pub enum DeviceStatus {
     Active,
     Idle,
     Disconnected,
 }
 
+#[derive(Debug)]
 pub enum Positioning {
     Unknown,
     Relative,
     Absolute,
 }
 
+#[derive(Debug)]
 pub enum DeviceType {
     Mouse,
     HIDUnknown,

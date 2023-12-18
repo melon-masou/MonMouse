@@ -191,7 +191,7 @@ impl WString {
         r
     }
     pub fn str_before_null(&self) -> WString {
-        WString(self.0.split(|v| *v == 0).nth(0).unwrap().to_vec())
+        WString(self.0.split(|v| *v == 0).next().unwrap().to_vec())
     }
 
     pub fn to_wbuffer(&self) -> WBuffer {
@@ -211,7 +211,8 @@ impl WString {
 
 impl std::fmt::Display for WString {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match OsString::from_wide(self.as_slice()).into_string() {
+        let before_null = self.as_slice().split(|v| *v == 0).next().unwrap();
+        match OsString::from_wide(before_null).into_string() {
             Ok(v) => write!(f, "{}", v),
             Err(_) => write!(f, "{}", STR_INVALID_WIN_WIDE_OS_STR),
         }

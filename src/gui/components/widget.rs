@@ -77,6 +77,7 @@ pub struct CollapsingPopup {
     width: f32,
     focus: bool,
     fixed_pos: Option<egui::Pos2>,
+    fit_in_frame: bool,
 }
 
 impl CollapsingPopup {
@@ -86,6 +87,7 @@ impl CollapsingPopup {
             width: 300.0,
             focus: true,
             fixed_pos: None,
+            fit_in_frame: true,
         }
     }
 
@@ -93,6 +95,11 @@ impl CollapsingPopup {
     #[allow(dead_code)]
     pub fn focus(mut self, value: bool) -> Self {
         self.focus = value;
+        self
+    }
+    #[allow(dead_code)]
+    pub fn fit_in_frame(mut self, value: bool) -> Self {
+        self.fit_in_frame = value;
         self
     }
     // Set fixed position of the popup window
@@ -119,10 +126,12 @@ impl CollapsingPopup {
             + ui.style().spacing.item_spacing.x
             + ui.style().spacing.window_margin.left
             + ui.style().spacing.window_margin.right;
-        pos.x = pos
-            .x
-            .min(ui.clip_rect().right() - width_with_padding)
-            .max(ui.clip_rect().left() + ui.style().spacing.window_margin.left);
+        if self.fit_in_frame {
+            pos.x = pos
+                .x
+                .min(ui.clip_rect().right() - width_with_padding)
+                .max(ui.clip_rect().left() + ui.style().spacing.window_margin.left);
+        }
         pos
     }
 
@@ -130,7 +139,7 @@ impl CollapsingPopup {
         self,
         ui: &mut egui::Ui,
         text: impl Into<egui::WidgetText>,
-        popup_ui: impl Fn(&mut egui::Ui),
+        popup_ui: impl FnOnce(&mut egui::Ui) -> bool,
     ) -> egui::Response {
         let id = ui.make_persistent_id(self.id_source);
         let mut state = ui
@@ -156,23 +165,26 @@ impl CollapsingPopup {
         if fully_open {
             let pos = self.popup_pos(ui, &collapsing_response.header_response.rect);
 
-            let egui::InnerResponse {
-                inner: _,
-                response: area_response,
-            } = egui::Area::new(id)
+            let mut area = egui::Area::new(id)
                 .order(egui::Order::Foreground)
-                .fixed_pos(pos)
-                .constrain_to(ui.ctx().screen_rect())
-                .show(ui.ctx(), |ui| {
-                    let frame = egui::Frame::popup(ui.style());
-                    frame.show(ui, |ui| {
-                        ui.set_min_width(self.width);
-                        ui.set_max_width(self.width);
-                        popup_ui(ui)
-                    });
-                });
+                .fixed_pos(pos);
+            if self.fit_in_frame {
+                area = area.constrain_to(ui.ctx().screen_rect());
+            }
+            let egui::InnerResponse {
+                inner: popup_return_close,
+                response: area_response,
+            } = area.show(ui.ctx(), |ui| {
+                let frame = egui::Frame::popup(ui.style());
+                frame.show(ui, |ui| {
+                    ui.set_min_width(self.width);
+                    ui.set_max_width(self.width);
+                    popup_ui(ui)
+                })
+            });
 
-            let will_close = ui.input(|i| i.key_pressed(egui::Key::Escape))
+            let will_close = popup_return_close.inner
+                || ui.input(|i| i.key_pressed(egui::Key::Escape))
                 || (self.focus && area_response.clicked_elsewhere());
             if will_close {
                 state.will_close = true;
