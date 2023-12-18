@@ -1,12 +1,12 @@
 use eframe::egui;
 use egui_extras::{Column, Size, StripBuilder, TableBuilder};
-use monmouse::message::{DeviceStatus, GenericDevice};
+use monmouse::message::{DeviceStatus, GenericDevice, Positioning};
 
 use crate::{
+    app::DeviceUIState,
     components::widget::{
         device_status_color, indicator_ui, manage_button, toggle_ui, CollapsingPopup,
     },
-    state::DeviceUIState,
     App,
 };
 
@@ -15,7 +15,19 @@ pub struct DevicesPanel {}
 impl DevicesPanel {
     const MIN_DEVICES_ROW: usize = 15;
 
-    pub fn device_details_text(d: &GenericDevice) -> String {
+    fn active_str(status: &DeviceStatus) -> &str {
+        match status {
+            DeviceStatus::Active { positioning } => match positioning {
+                Positioning::Unknown => "Active",
+                Positioning::Relative => "Relative",
+                Positioning::Absolute => "Absolute",
+            },
+            DeviceStatus::Idle => "Idle",
+            DeviceStatus::Disconnected => "Disconnected",
+        }
+    }
+
+    fn device_details_text(d: &GenericDevice) -> String {
         let mut st = String::new();
         use std::fmt::Write;
         writeln!(st, "id: {}", d.id).unwrap();
@@ -29,11 +41,11 @@ impl DevicesPanel {
         st
     }
 
-    pub fn device_line_ui(i: usize, row: &mut egui_extras::TableRow, device: &mut DeviceUIState) {
+    fn device_line_ui(i: usize, row: &mut egui_extras::TableRow, device: &mut DeviceUIState) {
         let d = &device.generic;
         row.col(|ui| {
-            indicator_ui(ui, device_status_color(ui, DeviceStatus::Active));
-            ui.label("Relative");
+            indicator_ui(ui, device_status_color(ui, &device.status));
+            ui.label(Self::active_str(&device.status));
         });
         row.col(|ui| {
             toggle_ui(ui, &mut device.switch, "switch");
@@ -75,13 +87,13 @@ impl DevicesPanel {
         });
     }
 
-    pub fn table_ui(ui: &mut egui::Ui, devices: &mut Vec<DeviceUIState>) {
+    fn table_ui(ui: &mut egui::Ui, devices: &mut Vec<DeviceUIState>) {
         let table = TableBuilder::new(ui)
             .striped(true)
             .drag_to_scroll(true)
             .auto_shrink(false)
             .cell_layout(egui::Layout::left_to_right(egui::Align::LEFT))
-            .column(Column::exact(60.0))
+            .column(Column::exact(100.0))
             .columns(Column::auto(), 2)
             .column(Column::exact(60.0))
             .column(Column::remainder());
@@ -89,13 +101,13 @@ impl DevicesPanel {
         table
             .header(20.0, |mut header| {
                 header.col(|ui| {
-                    ui.strong("Active");
-                });
-                header.col(|ui| {
-                    ui.strong("Locked");
+                    ui.strong("Activity");
                 });
                 header.col(|ui| {
                     ui.strong("Switch");
+                });
+                header.col(|ui| {
+                    ui.strong("Locked");
                 });
                 header.col(|ui| {
                     ui.strong("Type");
@@ -124,7 +136,7 @@ impl DevicesPanel {
     pub fn ui(ui: &mut egui::Ui, app: &mut App) {
         ui.horizontal(|ui| {
             if manage_button(ui, "Scan").clicked() {
-                app.ui_reactor.trigger_scan_devices();
+                app.trigger_scan_devices();
             }
             if manage_button(ui, "Save").clicked() {
                 // TODO

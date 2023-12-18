@@ -28,10 +28,10 @@ pub fn error_color(ui: &egui::Ui, ok: bool) -> Color32 {
     }
 }
 
-pub fn device_status_color(ui: &egui::Ui, s: DeviceStatus) -> Color32 {
+pub fn device_status_color(ui: &egui::Ui, s: &DeviceStatus) -> Color32 {
     let dark = ui.style().visuals.dark_mode;
     match s {
-        DeviceStatus::Active => theme_green(dark),
+        DeviceStatus::Active { .. } => theme_green(dark),
         DeviceStatus::Idle => ui.style().visuals.widgets.inactive.bg_fill,
         DeviceStatus::Disconnected => theme_red(dark),
     }

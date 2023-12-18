@@ -1,8 +1,7 @@
 pub mod errors;
 pub mod message;
 pub mod mouse_control;
-
-mod utils;
+pub mod utils;
 
 #[cfg(target_os = "windows")]
 #[path = "windows/mod.rs"]

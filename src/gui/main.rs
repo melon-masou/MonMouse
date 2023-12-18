@@ -1,25 +1,23 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
+mod app;
 mod components;
-mod state;
 mod styles;
 mod tray;
 
-use std::{cell::RefCell, panic, process, rc::Rc, thread, time::SystemTime};
+use std::{cell::RefCell, panic, process, rc::Rc, thread};
 
-use components::about_panel::AboutPanel;
+use app::App;
 use components::config_panel::ConfigPanel;
 use components::devices_panel::DevicesPanel;
 use components::status_bar::status_bar_ui;
+use components::{about_panel::AboutPanel, debug::DebugInfo};
 use eframe::egui;
 use log::{error, info};
 use monmouse::{
     errors::Error,
-    message::{
-        setup_reactors, GenericDevice, MasterReactor, Message, MouseControlReactor, UIReactor,
-    },
+    message::{setup_reactors, MasterReactor, MouseControlReactor, UIReactor},
 };
-use state::{AppState, DeviceUIState};
 use styles::{gscale, Theme};
 use tray::{Tray, TrayEvent};
 
@@ -70,6 +68,7 @@ fn mouse_control_eventloop(
             Some(TrayEvent::Quit) => break,
             None => (),
         }
+        // TODO: don't block here, when no device events
         if !eventloop.poll()? {
             break;
         }
@@ -82,7 +81,6 @@ fn mouse_control_eventloop(
 
 fn egui_eventloop(ui_reactor: UIReactor) -> Result<(), eframe::Error> {
     let app = Rc::new(RefCell::new(App::new(ui_reactor)));
-
     loop {
         let app_ref = app.clone();
         eframe::run_native(
@@ -93,7 +91,7 @@ fn egui_eventloop(ui_reactor: UIReactor) -> Result<(), eframe::Error> {
                 Box::new(AppWrap::new(app_ref))
             }),
         )?;
-        if app.borrow().ui_reactor.wait_for_restart() {
+        if app.borrow().wait_for_restart() {
             break;
         }
     }
@@ -121,64 +119,11 @@ enum PanelTag {
     About,
 }
 
-struct App {
-    state: AppState,
-    last_error: Option<String>,
-    ui_reactor: UIReactor,
-}
-
-impl App {
-    fn new(ui_reactor: UIReactor) -> Self {
-        App {
-            state: AppState::default(),
-            last_error: None,
-            ui_reactor,
-        }
-    }
-
-    fn merge_scanned_devices(&mut self, mut devs: Vec<GenericDevice>) {
-        let mut new_one = Vec::<DeviceUIState>::new();
-        while let Some(v) = devs.pop() {
-            new_one.push(DeviceUIState {
-                locked: false,
-                switch: false,
-                generic: v,
-            });
-        }
-        self.state.managed_devices = new_one;
-    }
-
-    fn dispatch_ui_msg(&mut self, ctx: &egui::Context) {
-        loop {
-            let msg = match self.ui_reactor.recv_msg() {
-                Some(msg) => msg,
-                None => return,
-            };
-            match msg {
-                Message::Exit => {
-                    self.ui_reactor.set_should_exit();
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                }
-                Message::CloseUI => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
-                Message::RestartUI => drop(msg),
-                Message::ScanDevices(_, result) => match result {
-                    Ok(devs) => self.merge_scanned_devices(devs),
-                    Err(e) => self.set_error(format!("Failed to scan devices: {}", e)),
-                },
-                Message::ApplyDevicesSetting() => todo!(),
-            }
-        }
-    }
-
-    fn set_error(&mut self, err_msg: String) {
-        self.last_error = Some(err_msg);
-    }
-}
 struct AppWrap {
     cur_panel: PanelTag,
     app: Rc<RefCell<App>>,
-    #[allow(dead_code)]
-    debug_paint_times: u64,
+    #[cfg(debug_assertions)]
+    debug_info: DebugInfo,
 }
 
 impl AppWrap {
@@ -186,7 +131,8 @@ impl AppWrap {
         Self {
             cur_panel: PanelTag::Devices,
             app,
-            debug_paint_times: 0,
+            #[cfg(debug_assertions)]
+            debug_info: DebugInfo::default(),
         }
     }
 }
@@ -195,16 +141,20 @@ impl AppWrap {
     fn init_ctx(ctx: &egui::Context) {
         ctx.set_zoom_factor(gscale(1.0));
     }
+
+    fn init_visuals(ctx: &egui::Context, theme: Theme) {
+        match theme {
+            Theme::Light => ctx.set_visuals(egui::Visuals::light()),
+            Theme::Dark => ctx.set_visuals(egui::Visuals::dark()),
+            Theme::Auto => (),
+        };
+    }
 }
 
 impl eframe::App for AppWrap {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let mut app = self.app.borrow_mut();
-        let visual = match Theme::from_string(app.state.global_config.theme.as_str()) {
-            Theme::Light => egui::Visuals::light(),
-            Theme::Dark => egui::Visuals::dark(),
-        };
-        ctx.set_visuals(visual);
+        Self::init_visuals(ctx, app.get_theme());
 
         app.dispatch_ui_msg(ctx);
 
@@ -212,6 +162,8 @@ impl eframe::App for AppWrap {
             ui.horizontal(|ui| status_bar_ui(ui, &mut app));
         });
 
+        #[cfg(debug_assertions)]
+        let debug_info = &self.debug_info;
         egui::SidePanel::left("TabChooser")
             .resizable(false)
             .show_separator_line(true)
@@ -228,10 +180,7 @@ impl eframe::App for AppWrap {
                 tab_button(PanelTag::About);
 
                 #[cfg(debug_assertions)]
-                {
-                    self.debug_paint_times += 1;
-                    ui.label(format!("Painted: {}", self.debug_paint_times))
-                };
+                debug_info.ui(ui);
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -241,6 +190,9 @@ impl eframe::App for AppWrap {
                 PanelTag::About => AboutPanel::ui(ui),
             };
         });
+
+        #[cfg(debug_assertions)]
+        self.debug_info.on_paint();
 
         // FIXME: It is a tricky way to keep triggering update(), even when the mouse is
         // outside the window area. Or else the "Exit" button in tray won't work, until

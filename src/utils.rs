@@ -21,10 +21,13 @@ pub struct ArrayVec<T: Copy, const N: usize> {
     arr: [Option<T>; N],
 }
 
-impl<T: Copy, const N: usize> ArrayVec<T, N> {
-    pub fn new() -> Self {
+impl<T: Copy, const N: usize> Default for ArrayVec<T, N> {
+    fn default() -> Self {
         Self { arr: [None; N] }
     }
+}
+
+impl<T: Copy, const N: usize> ArrayVec<T, N> {
     pub fn to_vec(&self) -> Vec<Option<T>> {
         self.arr.to_vec()
     }

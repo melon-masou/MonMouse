@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::mpsc::TryRecvError;
 
 use crate::errors::Error;
 use crate::errors::Result;
@@ -524,10 +525,12 @@ impl WinEventLoop {
 impl WinEventLoop {
     pub fn poll_message(&mut self, mouse_control_reactor: &MouseControlReactor) {
         loop {
-            let msg = match mouse_control_reactor.recv_msg() {
-                Some(msg) => msg,
-                None => return,
+            let msg = match mouse_control_reactor.mouse_control_rx.try_recv() {
+                Ok(msg) => msg,
+                Err(TryRecvError::Empty) => return,
+                Err(TryRecvError::Disconnected) => return,
             };
+
             // Is it possible to reuse the msg?
             match msg {
                 Message::ScanDevices(_, _) => {

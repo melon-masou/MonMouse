@@ -7,6 +7,7 @@ pub fn gscale(v: f32) -> f32 {
 
 #[derive(Debug)]
 pub enum Theme {
+    Auto,
     Light,
     Dark,
 }
@@ -16,7 +17,7 @@ impl Theme {
         match s {
             "Light" => Theme::Light,
             "Dark" => Theme::Dark,
-            _ => Theme::Light,
+            _ => Theme::Auto,
         }
     }
 }

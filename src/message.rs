@@ -6,17 +6,17 @@ use std::{
 use crate::errors::Error;
 
 #[derive(Debug)]
-pub enum DeviceStatus {
-    Active,
-    Idle,
-    Disconnected,
-}
-
-#[derive(Debug)]
 pub enum Positioning {
     Unknown,
     Relative,
     Absolute,
+}
+
+#[derive(Debug)]
+pub enum DeviceStatus {
+    Active { positioning: Positioning },
+    Idle,
+    Disconnected,
 }
 
 #[derive(Debug)]
@@ -108,7 +108,6 @@ pub fn setup_reactors() -> (MasterReactor, MouseControlReactor, UIReactor) {
     let ui = UIReactor {
         ui_rx,
         mouse_control_tx,
-        should_exit: false,
     };
 
     (master, mouse_ctrl, ui)
@@ -132,20 +131,12 @@ impl MasterReactor {
 }
 
 pub struct MouseControlReactor {
-    ui_tx: Sender<Message>,
-    mouse_control_rx: Receiver<Message>,
+    pub ui_tx: Sender<Message>,
+    pub mouse_control_rx: Receiver<Message>,
 }
 
 impl MouseControlReactor {
     #[inline]
-    pub fn recv_msg(&self) -> Option<Message> {
-        match self.mouse_control_rx.try_recv() {
-            Ok(msg) => Some(msg),
-            Err(TryRecvError::Empty) => None,
-            Err(TryRecvError::Disconnected) => None,
-        }
-    }
-
     pub fn return_msg(&self, msg: Message) {
         match msg {
             Message::Exit => drop(msg),
@@ -158,21 +149,12 @@ impl MouseControlReactor {
 }
 
 pub struct UIReactor {
-    ui_rx: Receiver<Message>,
-    mouse_control_tx: Sender<Message>,
-    should_exit: bool,
+    pub ui_rx: Receiver<Message>,
+    pub mouse_control_tx: Sender<Message>,
 }
 
 impl UIReactor {
     #[inline]
-    pub fn recv_msg(&self) -> Option<Message> {
-        match self.ui_rx.try_recv() {
-            Ok(msg) => Some(msg),
-            Err(TryRecvError::Empty) => None,
-            Err(TryRecvError::Disconnected) => None,
-        }
-    }
-
     pub fn return_msg(&self, msg: Message) {
         match msg {
             Message::Exit => drop(msg),
@@ -183,37 +165,8 @@ impl UIReactor {
         }
     }
 
-    pub fn wait_for_restart(&self) -> bool /* exit? */ {
-        if self.should_exit {
-            return true;
-        }
-        // Once clearing residual pending msg
-        loop {
-            match self.ui_rx.try_recv() {
-                Ok(Message::Exit) => return true,
-                Ok(msg) => drop(msg),
-                Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => return true,
-            }
-        }
-        // Actuall wait for restart msg
-        loop {
-            match self.ui_rx.recv() {
-                Ok(Message::Exit) => return true,
-                Ok(Message::RestartUI) => return false,
-                Ok(msg) => drop(msg),
-                Err(RecvError) => return true,
-            }
-        }
-    }
-
-    pub fn trigger_scan_devices(&self) {
-        self.mouse_control_tx
-            .send(Message::ScanDevices((), Message::inited()))
-            .unwrap();
-    }
-
-    pub fn set_should_exit(&mut self) {
-        self.should_exit = true;
+    #[inline]
+    pub fn send_mouse_control(&self, msg: Message) {
+        self.mouse_control_tx.send(msg).unwrap();
     }
 }
