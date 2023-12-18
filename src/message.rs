@@ -3,6 +3,8 @@ use std::{
     sync::mpsc::{channel, sync_channel, Receiver, SendError, Sender, SyncSender, TryRecvError},
 };
 
+use log::debug;
+
 use crate::errors::Error;
 
 #[derive(Debug, Clone, Copy)]
@@ -34,6 +36,26 @@ pub struct GenericDevice {
     pub platform_specific_infos: Vec<(String, String)>,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct DeviceSetting {
+    pub locked_in_monitor: bool,
+    pub remember_pos: bool,
+}
+
+impl Display for DeviceSetting {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "DeviceSetting{{locked={},remember={}}}",
+            self.locked_in_monitor, self.remember_pos
+        )
+    }
+}
+
+pub struct Settings {
+    pub devices: Vec<(String, DeviceSetting)>,
+}
+
 pub type Result<T> = std::result::Result<T, Error>;
 
 pub enum Message {
@@ -42,7 +64,7 @@ pub enum Message {
     RestartUI,
     ScanDevices((), Result<Vec<GenericDevice>>),
     InspectDevicesStatus((), Result<Vec<(String, DeviceStatus)>>),
-    ApplyDevicesSetting(),
+    ApplyDevicesSetting(Option<Settings>, Result<()>),
 }
 
 impl Message {
@@ -60,7 +82,7 @@ impl Display for Message {
             Self::RestartUI => write!(f, "Msg(RestartUI)"),
             Self::ScanDevices(_, _) => write!(f, "Msg(ScanDevices)"),
             Self::InspectDevicesStatus(_, _) => write!(f, "Msg(InspectDevicesStatus)"),
-            Self::ApplyDevicesSetting() => write!(f, "Msg(ApplyDevicesSetting)"),
+            Self::ApplyDevicesSetting(_, _) => write!(f, "Msg(ApplyDevicesSetting)"),
         }
     }
 }
@@ -147,7 +169,7 @@ impl MouseControlReactor {
             Message::RestartUI => drop(msg),
             Message::ScanDevices(_, _) => self.ui_tx.send(msg).unwrap(),
             Message::InspectDevicesStatus(_, _) => self.ui_tx.send(msg).unwrap(),
-            Message::ApplyDevicesSetting() => self.ui_tx.send(msg).unwrap(),
+            Message::ApplyDevicesSetting(_, _) => self.ui_tx.send(msg).unwrap(),
         }
     }
 }
@@ -166,7 +188,7 @@ impl UIReactor {
             Message::RestartUI => drop(msg),
             Message::ScanDevices(_, _) => panic!("return self-generated msg"),
             Message::InspectDevicesStatus(_, _) => panic!("return self-generated msg"),
-            Message::ApplyDevicesSetting() => panic!("return self-generated msg"),
+            Message::ApplyDevicesSetting(_, _) => panic!("return self-generated msg"),
         }
     }
 

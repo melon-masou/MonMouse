@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::message::Positioning;
+use crate::message::{DeviceSetting, Positioning};
 
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MousePos {
@@ -20,41 +20,35 @@ impl Display for MousePos {
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct DeviceCtrlSetting {
-    pub restrict_in_monitor: bool,
-    pub remember_pos: bool,
-}
-
 pub struct DeviceController {
     id: u64,
-    setting: DeviceCtrlSetting,
+    setting: DeviceSetting,
 
     last_active_tick: u64, // in ms
     last_active_pos: MousePos,
     positioning: Positioning,
-    restric_area: Option<MonitorArea>,
+    locked_area: Option<MonitorArea>,
 }
 
 impl DeviceController {
-    pub fn new(id: u64, setting: DeviceCtrlSetting) -> DeviceController {
+    pub fn new(id: u64, setting: DeviceSetting) -> DeviceController {
         DeviceController {
             id,
             setting,
             last_active_tick: 0,
             last_active_pos: MousePos::default(),
             positioning: Positioning::Unknown,
-            restric_area: None,
+            locked_area: None,
         }
     }
 
-    pub fn update_settings(&mut self, new_setting: &DeviceCtrlSetting) {
-        self.reset_restric_area();
+    pub fn update_settings(&mut self, new_setting: &DeviceSetting) {
+        self.reset_locked_area();
         self.setting = *new_setting;
     }
 
-    pub fn reset_restric_area(&mut self) {
-        self.restric_area = None;
+    pub fn reset_locked_area(&mut self) {
+        self.locked_area = None;
     }
 
     pub fn update_positioning(&mut self, p: Positioning) {
@@ -112,9 +106,9 @@ impl MouseRelocator {
 
     pub fn on_pos_update(&mut self, optc: Option<&mut DeviceController>, pos: MousePos) {
         if let Some(c) = optc {
-            if c.setting.restrict_in_monitor {
-                // Has been restricted into one area
-                if let Some(area) = &c.restric_area {
+            if c.setting.locked_in_monitor {
+                // Has been lockedted into one area
+                if let Some(area) = &c.locked_area {
                     // If leaving area
                     let new_pos = area.capture_pos(&pos);
                     if new_pos != pos {
@@ -122,9 +116,9 @@ impl MouseRelocator {
                         return;
                     }
                 } else {
-                    // Find area to be restricted
+                    // Find area to be lockedted
                     if let Some(area) = self.monitors.locate(&pos) {
-                        c.restric_area = Some(*area);
+                        c.locked_area = Some(*area);
                     } else {
                         self.to_update_monitors = true;
                         return;

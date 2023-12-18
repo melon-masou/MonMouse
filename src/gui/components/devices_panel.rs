@@ -42,17 +42,26 @@ impl DevicesPanel {
         st
     }
 
-    fn device_line_ui(i: usize, row: &mut egui_extras::TableRow, device: &mut DeviceUIState) {
+    fn device_line_ui(
+        i: usize,
+        row: &mut egui_extras::TableRow,
+        device: &mut DeviceUIState,
+    ) -> bool {
         let d = &device.generic;
+        let mut changed = false;
         row.col(|ui| {
             indicator_ui(ui, device_status_color(ui, &device.status));
             ui.label(Self::active_str(&device.status));
         });
         row.col(|ui| {
-            toggle_ui(ui, &mut device.switch, "switch");
+            if toggle_ui(ui, &mut device.switch, "switch").changed() {
+                changed = true;
+            }
         });
         row.col(|ui| {
-            toggle_ui(ui, &mut device.locked, "locked");
+            if toggle_ui(ui, &mut device.locked, "locked").changed() {
+                changed = true;
+            }
         });
         row.col(|ui| {
             ui.label("Touch");
@@ -86,9 +95,10 @@ impl DevicesPanel {
             });
             ui.add_space(10.0);
         });
+        changed
     }
 
-    fn table_ui(ui: &mut egui::Ui, devices: &mut Vec<DeviceUIState>) {
+    fn table_ui(ui: &mut egui::Ui, devices: &mut Vec<DeviceUIState>) -> bool {
         let table = TableBuilder::new(ui)
             .striped(true)
             .drag_to_scroll(true)
@@ -98,6 +108,7 @@ impl DevicesPanel {
             .columns(Column::auto(), 2)
             .column(Column::exact(60.0))
             .column(Column::remainder());
+        let mut changed = false;
 
         table
             .header(20.0, |mut header| {
@@ -121,7 +132,9 @@ impl DevicesPanel {
                 let row_height = 20.0;
                 devices.iter_mut().enumerate().for_each(|(i, device)| {
                     body.row(row_height, |mut row| {
-                        Self::device_line_ui(i, &mut row, device);
+                        if Self::device_line_ui(i, &mut row, device) {
+                            changed = true;
+                        }
                     });
                 });
                 for _ in 0..(Self::MIN_DEVICES_ROW as isize - devices.len() as isize) {
@@ -132,6 +145,7 @@ impl DevicesPanel {
                     });
                 }
             });
+        changed
     }
 
     pub fn ui(ui: &mut egui::Ui, app: &mut App) {
@@ -150,7 +164,10 @@ impl DevicesPanel {
             .vertical(|mut strip| {
                 strip.cell(|ui| {
                     egui::ScrollArea::horizontal().show(ui, |ui| {
-                        Self::table_ui(ui, &mut app.state.managed_devices);
+                        let changed = Self::table_ui(ui, &mut app.state.managed_devices);
+                        if changed {
+                            app.trigger_settings_changed();
+                        }
                     });
                 });
             });

@@ -2,14 +2,15 @@ use std::collections::HashMap;
 use std::sync::mpsc::TryRecvError;
 
 use crate::errors::Result;
+use crate::message::DeviceSetting;
 use crate::message::DeviceStatus;
 use crate::message::DeviceType as GenericDeviceType;
 use crate::message::GenericDevice;
 use crate::message::Message;
 use crate::message::MouseControlReactor;
 use crate::message::Positioning;
+use crate::message::Settings;
 use crate::mouse_control::DeviceController;
-use crate::mouse_control::DeviceCtrlSetting;
 use crate::mouse_control::MonitorArea;
 use crate::mouse_control::MonitorAreasList;
 use crate::mouse_control::MousePos;
@@ -42,6 +43,7 @@ use super::winwrap::*;
 
 pub struct WinDevice {
     pub handle: HANDLE,
+    pub id: Option<String>,
     pub rawinput: RawinputInfo,
     pub iface: Option<DeviceIfaceInfo>,
     pub parents: Vec<WString>,
@@ -105,17 +107,16 @@ impl std::fmt::Display for WinDevice {
 }
 
 fn init_device_control(handle: HANDLE, rawinput: &RawinputInfo) -> DeviceController {
-    // TODO: set setting values
-    let setting = DeviceCtrlSetting {
-        restrict_in_monitor: false,
-        remember_pos: rawinput.typ() == DeviceType::MOUSE,
+    let setting = DeviceSetting {
+        locked_in_monitor: false,
+        remember_pos: false,
     };
-
     DeviceController::new(handle.0 as u64, setting)
 }
 
 fn collect_device_infos(dev: &RAWINPUTDEVICELIST) -> Result<WinDevice> {
     let handlev = dev.hDevice.0;
+    let mut id = None;
     let rawinput = match device_collect_rawinput_infos(dev.hDevice) {
         Ok(v) => v,
         Err(e) => {
@@ -125,7 +126,10 @@ fn collect_device_infos(dev: &RAWINPUTDEVICELIST) -> Result<WinDevice> {
     };
 
     let iface = match device_get_iface_infos(&rawinput.iface) {
-        Ok(v) => Some(v),
+        Ok(v) => {
+            id = Some(v.instance_id.to_string());
+            Some(v)
+        }
         Err(e) => {
             error!(
                 "Get iface info failed({}): {}. interface={}",
@@ -164,6 +168,7 @@ fn collect_device_infos(dev: &RAWINPUTDEVICELIST) -> Result<WinDevice> {
 
     Ok(WinDevice {
         handle: dev.hDevice,
+        id,
         rawinput,
         iface,
         parents,
@@ -171,6 +176,11 @@ fn collect_device_infos(dev: &RAWINPUTDEVICELIST) -> Result<WinDevice> {
         ctrl,
     })
 }
+
+// #[inline]
+// pub fn device_id(d: &WinDevice) -> Option<&WString> {
+//     d.iface.map(|v| &v.instance_id)
+// }
 
 struct WinDeviceSet {
     devs: Vec<WinDevice>,
@@ -271,6 +281,7 @@ struct WinDeviceProcessor {
     raw_input_buf: WBuffer,
     tick_widen: TickWiden,
     relocator: MouseRelocator,
+    cached_settings: Option<Settings>,
 
     rl_update_mon: SimpleRatelimit,
     rl_update_dev: SimpleRatelimit,
@@ -292,6 +303,7 @@ impl WinDeviceProcessor {
             raw_input_buf: WBuffer::new(RAWINPUT_MSG_INIT_BUF_SIZE),
             tick_widen: TickWiden::new(),
             relocator: MouseRelocator::new(),
+            cached_settings: None,
 
             rl_update_mon: SimpleRatelimit::new(RATELIMIT_UPDATE_MONITOR_ONCE_MS),
             rl_update_dev: SimpleRatelimit::new(RATELIMIT_UPDATE_DEVICE_ONCE_MS),
@@ -421,6 +433,51 @@ impl WinDeviceProcessor {
         debug!("Updated monitors: {}", mon_areas);
         self.relocator.update_monitors(mon_areas);
         Ok(true)
+    }
+
+    fn try_apply_settings(&mut self) {
+        let mut settings = match self.cached_settings.take() {
+            Some(v) => v,
+            None => return,
+        };
+
+        let mut applyed: usize = 0;
+        let rest_settings: Vec<(String, DeviceSetting)> = settings
+            .devices
+            .into_iter()
+            .filter_map(|dev_setting| {
+                let found_dev = self.devices.devs.iter_mut().find(|v| {
+                    if let Some(id) = &v.id {
+                        if id == &dev_setting.0 {
+                            return true;
+                        }
+                    }
+                    false
+                });
+                match found_dev {
+                    Some(d) => {
+                        debug!(
+                            "device {} apply settings: {}",
+                            dev_setting.0,
+                            format!("{}", dev_setting.1)
+                        );
+                        applyed += 1;
+                        d.ctrl.update_settings(&dev_setting.1);
+                        None
+                    }
+                    None => Some(dev_setting),
+                }
+            })
+            .collect();
+
+        if !rest_settings.is_empty() {
+            debug!(
+                "{} devices in cached_settings has not been applyed",
+                rest_settings.len()
+            );
+            settings.devices = rest_settings;
+            self.cached_settings = Some(settings);
+        }
     }
 
     fn on_raw_input(&mut self, _wparam: WPARAM, lparam: LPARAM, tick: u32) {
@@ -572,21 +629,25 @@ impl WinEventLoop {
                         .filter(|&v| Self::is_valid_win_device(v))
                         .map(|d| {
                             (
-                                Self::device_id(d).to_string(),
+                                d.id.as_ref().unwrap().clone(),
                                 Self::build_device_status(d, tick),
                             )
                         })
                         .collect();
                     mouse_control_reactor.return_msg(Message::InspectDevicesStatus((), Ok(ret)));
                 }
-                Message::ApplyDevicesSetting() => todo!(),
+                Message::ApplyDevicesSetting(settings, _) => {
+                    self.processor.cached_settings = Some(settings.unwrap());
+                    self.processor.try_apply_settings();
+                    mouse_control_reactor.return_msg(Message::ApplyDevicesSetting(None, Ok(())));
+                }
                 _ => panic!("recv unexpected ui msg: {}", msg),
             }
         }
     }
 
     pub fn is_valid_win_device(d: &WinDevice) -> bool {
-        d.iface.is_some()
+        d.id.is_some()
             && match d.rawinput.typ() {
                 DeviceType::MOUSE => true,
                 DeviceType::KEYBOARD => false,
@@ -595,14 +656,9 @@ impl WinEventLoop {
             }
     }
 
-    #[inline]
-    pub fn device_id(d: &WinDevice) -> &WString {
-        &d.iface.as_ref().unwrap().instance_id
-    }
-
     pub fn win_device_to_generic(d: &WinDevice) -> GenericDevice {
         GenericDevice {
-            id: Self::device_id(d).to_string(),
+            id: d.id.as_ref().unwrap().to_string(),
             device_type: Self::get_device_type(d),
             product_name: Self::build_product_name(d).trim().into(),
             platform_specific_infos: Self::build_platform_specific_infos(d),
@@ -678,18 +734,19 @@ impl WinEventLoop {
             }
         }
 
-        let im = &d.iface.as_ref().unwrap();
-        if let WStringOption::Some(s) = &im.manufacurer {
-            vs.push((tag("manufacurer"), s.to_string()));
-        }
-        if let WStringOption::Some(s) = &im.name {
-            vs.push((tag("name"), s.to_string()));
-        }
-        if let WStringOption::Some(s) = &im.service {
-            vs.push((tag("service"), s.to_string()));
-        }
-        if let WStringOption::Some(s) = &im.class {
-            vs.push((tag("class"), s.to_string()));
+        if let Some(im) = &d.iface {
+            if let WStringOption::Some(s) = &im.manufacurer {
+                vs.push((tag("manufacurer"), s.to_string()));
+            }
+            if let WStringOption::Some(s) = &im.name {
+                vs.push((tag("name"), s.to_string()));
+            }
+            if let WStringOption::Some(s) = &im.service {
+                vs.push((tag("service"), s.to_string()));
+            }
+            if let WStringOption::Some(s) = &im.class {
+                vs.push((tag("class"), s.to_string()));
+            }
         }
 
         match d.rawinput.typ() {

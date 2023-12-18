@@ -1,7 +1,7 @@
 use std::sync::mpsc::{RecvError, TryRecvError};
 
 use eframe::egui;
-use monmouse::message::{DeviceStatus, GenericDevice, Message, UIReactor};
+use monmouse::message::{DeviceSetting, DeviceStatus, GenericDevice, Message, Settings, UIReactor};
 
 use crate::styles::Theme;
 
@@ -49,6 +49,16 @@ impl App {
             .ui_reactor
             .send_mouse_control(Message::InspectDevicesStatus((), Message::inited()));
     }
+
+    pub fn trigger_settings_changed(&mut self) {
+        self.result_clear();
+        self.ui_reactor
+            .send_mouse_control(Message::ApplyDevicesSetting(
+                Some(self.collect_settings()),
+                Message::inited(),
+            ))
+            .unwrap();
+    }
 }
 
 impl App {
@@ -65,31 +75,50 @@ impl App {
         Theme::from_string(self.state.global_config.theme.as_str())
     }
 
-    fn merge_scanned_devices(&mut self, mut devs: Vec<GenericDevice>) {
-        let mut new_one = Vec::<DeviceUIState>::new();
-        while let Some(v) = devs.pop() {
-            new_one.push(DeviceUIState {
+    fn merge_scanned_devices(&mut self, devs: Vec<GenericDevice>) {
+        self.state.managed_devices = devs
+            .into_iter()
+            .map(|v| DeviceUIState {
                 locked: false,
                 switch: false,
                 generic: v,
                 status: DeviceStatus::Disconnected,
-            });
-        }
-        self.state.managed_devices = new_one;
+            })
+            .collect();
     }
 
-    fn update_devices_status(&mut self, mut devs: Vec<(String, DeviceStatus)>) {
+    fn update_devices_status(&mut self, devs: Vec<(String, DeviceStatus)>) {
         self.state
             .managed_devices
             .iter_mut()
             .for_each(|v| v.status = DeviceStatus::Disconnected);
-        while let Some((id, status)) = devs.pop() {
+
+        devs.into_iter().for_each(|(id, status)| {
             for d in &mut self.state.managed_devices {
                 if d.generic.id == id {
                     d.status = status;
                     break;
                 }
             }
+        });
+    }
+
+    fn collect_settings(&self) -> Settings {
+        Settings {
+            devices: self
+                .state
+                .managed_devices
+                .iter()
+                .map(|d| {
+                    (
+                        d.generic.id.clone(),
+                        DeviceSetting {
+                            locked_in_monitor: d.locked,
+                            remember_pos: d.switch,
+                        },
+                    )
+                })
+                .collect(),
         }
     }
 
@@ -124,7 +153,10 @@ impl App {
                     Ok(devs) => self.update_devices_status(devs),
                     Err(e) => self.result_error(format!("Failed to update device status: {}", e)),
                 },
-                Message::ApplyDevicesSetting() => todo!(),
+                Message::ApplyDevicesSetting(_, result) => match result {
+                    Ok(_) => self.result_ok("New settings applyed".to_owned()),
+                    Err(e) => self.result_error(format!("Failed to apply settings: {}", e)),
+                },
             }
         }
     }
@@ -143,7 +175,6 @@ impl App {
 pub struct AppState {
     pub global_config: GlobalConfig,
     pub managed_devices: Vec<DeviceUIState>,
-    pub found_devices: Vec<DeviceUIState>,
 }
 
 impl Default for AppState {
@@ -153,7 +184,6 @@ impl Default for AppState {
                 theme: Theme::Auto.to_string(),
             },
             managed_devices: Vec::<DeviceUIState>::new(),
-            found_devices: Vec::<DeviceUIState>::new(),
         }
     }
 }
