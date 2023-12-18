@@ -1,4 +1,4 @@
-use std::fmt;
+use std::fmt::{self, Display};
 use std::mem::size_of;
 
 use crate::errors::{Error, Result};
@@ -107,18 +107,34 @@ impl RawinputInfo {
     }
 }
 
+pub enum WStringOption {
+    Some(WString),
+    NoValue,
+    GetErr(Error),
+}
+
+impl Display for WStringOption {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            WStringOption::Some(s) => write!(f, "{}", s),
+            WStringOption::NoValue => write!(f, "NoValue"),
+            WStringOption::GetErr(e) => write!(f, "GetPropErr({})", e),
+        }
+    }
+}
+
 pub struct HidDeviceInfo {
-    pub serial_number: WString,
-    pub manufacturer: WString,
-    pub product: WString,
+    pub serial_number: WStringOption,
+    pub manufacturer: WStringOption,
+    pub product: WStringOption,
 }
 
 pub struct DeviceIfaceInfo {
     pub instance_id: WString,
-    pub name: WString,
-    pub service: WString,
-    pub class: WString,
-    pub manufacurer: WString,
+    pub name: WStringOption,
+    pub service: WStringOption,
+    pub class: WStringOption,
+    pub manufacurer: WStringOption,
 }
 
 pub trait MouseLowLevelHook {
@@ -366,13 +382,13 @@ pub fn device_get_iface_infos(iface: &WString) -> Result<DeviceIfaceInfo> {
         .to_wstring();
     let devinst = locate_devnode_handle(&instance_id)?;
 
-    let getf = |key| -> WString {
+    let getf = |key| -> WStringOption {
         match device_get_node_prop(devinst, key, DEVPROP_TYPE_STRING) {
             Ok(opt) => match opt {
-                Some(v) => v.to_wstring(),
-                None => WString::encode_from_str(STR_NO_VALUE),
+                Some(v) => WStringOption::Some(v.to_wstring()),
+                None => WStringOption::NoValue,
             },
-            Err(_) => WString::encode_from_str(STR_FAIL_GET_DEVICE_PROP),
+            Err(e) => WStringOption::GetErr(e),
         }
     };
 
@@ -520,11 +536,11 @@ pub fn device_get_hid_info(instance_id: &WString, present: bool) -> Result<HidDe
     let iface_hdl = device_open_iface(iface, true)?;
 
     let mut data = WString::new(256);
-    let result_as_str = |ok: BOOLEAN, buf: &WString| -> WString {
+    let result_as_str = |ok: BOOLEAN, buf: &WString| -> WStringOption {
         if ok.as_bool() {
-            buf.str_before_null()
+            WStringOption::Some(buf.str_before_null())
         } else {
-            WString::encode_from_str(STR_NO_VALUE)
+            WStringOption::NoValue
         }
     };
 

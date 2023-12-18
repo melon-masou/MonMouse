@@ -9,15 +9,16 @@ use std::{cell::RefCell, panic, process, rc::Rc, thread};
 
 use components::about_panel::AboutPanel;
 use components::config_panel::ConfigPanel;
-use components::find_panel::FindPanel;
 use components::manage_panel::ManagePanel;
 use eframe::egui;
 use log::{error, info};
 use monmouse::{
     errors::Error,
-    message::{setup_reactors, MasterReactor, Message, UIReactor},
+    message::{
+        setup_reactors, GenericDevice, MasterReactor, Message, MouseControlReactor, UIReactor,
+    },
 };
-use state::AppState;
+use state::{AppState, DeviceUIState};
 use styles::{gscale, Theme};
 use tray::{Tray, TrayEvent};
 
@@ -36,16 +37,16 @@ pub fn load_icon() -> egui::IconData {
 
 fn main() -> Result<(), eframe::Error> {
     env_logger::builder()
-        .filter_level(log::LevelFilter::Debug)
+        .filter_level(log::LevelFilter::Info)
         .init();
 
-    let (master_reactor, _, ui_reactor) = setup_reactors();
+    let (master_reactor, mouse_control_reactor, ui_reactor) = setup_reactors();
 
     set_thread_panic_process();
     thread::spawn(move || {
         let eventloop = monmouse::Eventloop::new();
         let tray = Tray::new();
-        match mouse_control_eventloop(eventloop, tray, &master_reactor) {
+        match mouse_control_eventloop(eventloop, tray, &master_reactor, &mouse_control_reactor) {
             Ok(_) => info!("mouse control eventloop exited normally"),
             Err(e) => error!("mouse control eventloop exited for error: {}", e),
         }
@@ -59,6 +60,7 @@ fn mouse_control_eventloop(
     mut eventloop: monmouse::Eventloop,
     tray: Tray,
     master_reactor: &MasterReactor,
+    mouse_control_reactor: &MouseControlReactor,
 ) -> Result<(), Error> {
     eventloop.initialize()?;
     loop {
@@ -70,29 +72,27 @@ fn mouse_control_eventloop(
         if !eventloop.poll()? {
             break;
         }
+        eventloop.poll_message(mouse_control_reactor);
     }
     eventloop.terminate()?;
     master_reactor.exit();
     Ok(())
 }
 
-fn egui_eventloop(_ui_reactor: UIReactor) -> Result<(), eframe::Error> {
-    // FIXME: to gracefully remove the RefCell. Currently depends on
-    // the ui_reactor to brought the consumed Message::Exit out from eframe
-    // eventloop, which needs a mutable borrow.
-    let ui_reactor = Rc::new(RefCell::new(_ui_reactor));
+fn egui_eventloop(ui_reactor: UIReactor) -> Result<(), eframe::Error> {
+    let app = Rc::new(RefCell::new(App::new(ui_reactor)));
 
     loop {
-        let ui_reactor_win = ui_reactor.clone();
+        let app_ref = app.clone();
         eframe::run_native(
             "MonMouse",
             ui_options_main_window(),
             Box::new(move |c| {
-                App::init_ctx(&c.egui_ctx);
-                Box::new(App::new(ui_reactor_win))
+                AppWrap::init_ctx(&c.egui_ctx);
+                Box::new(AppWrap::new(app_ref))
             }),
         )?;
-        if ui_reactor.borrow().wait_for_restart() {
+        if app.borrow().ui_reactor.wait_for_restart() {
             break;
         }
     }
@@ -113,70 +113,92 @@ fn ui_options_main_window() -> eframe::NativeOptions {
     }
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Copy, Clone)]
 enum PanelTag {
     Manage,
-    Find,
     Config,
     About,
 }
 
 struct App {
     state: AppState,
-    cur_panel: PanelTag,
-    ui_reactor: Rc<RefCell<UIReactor>>,
+    ui_reactor: UIReactor,
 }
 
 impl App {
-    fn new(ui_reactor: Rc<RefCell<UIReactor>>) -> Self {
-        Self {
+    fn new(ui_reactor: UIReactor) -> Self {
+        App {
             state: AppState::default(),
-            cur_panel: PanelTag::Manage,
             ui_reactor,
         }
     }
-}
 
-impl App {
-    fn init_ctx(ctx: &egui::Context) {
-        ctx.set_zoom_factor(gscale(1.0));
+    fn merge_inspect_devices(&mut self, mut devs: Vec<GenericDevice>) {
+        let mut new_one = Vec::<DeviceUIState>::new();
+        while let Some(v) = devs.pop() {
+            new_one.push(DeviceUIState {
+                checked: false,
+                locked: false,
+                switch: false,
+                generic: v,
+            });
+        }
+        self.state.managed_devices = new_one;
     }
 
-    fn update_ctx(&mut self, ctx: &egui::Context) {
-        let visual = match Theme::from_string(self.state.global_config.theme.as_str()) {
-            Theme::Light => egui::Visuals::light(),
-            Theme::Dark => egui::Visuals::dark(),
-        };
-        ctx.set_visuals(visual);
-    }
-}
-
-impl App {
     fn dispatch_ui_msg(&mut self, ctx: &egui::Context) {
         loop {
-            let msg = match self.ui_reactor.borrow().recv_msg() {
+            let msg = match self.ui_reactor.recv_msg() {
                 Some(msg) => msg,
                 None => return,
             };
             match msg {
                 Message::Exit => {
-                    self.ui_reactor.borrow_mut().set_should_exit();
+                    self.ui_reactor.set_should_exit();
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
                 Message::CloseUI => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
                 Message::RestartUI => drop(msg),
-                Message::InspectDevices(_, _) => todo!(),
+                Message::InspectDevices(_, result) => match result {
+                    Ok(devs) => self.merge_inspect_devices(devs),
+                    Err(e) => (),
+                },
                 Message::ApplyDevicesSetting() => todo!(),
                 _ => panic!("recv unexpected ui msg: {}", msg),
             }
         }
     }
 }
+struct AppWrap {
+    cur_panel: PanelTag,
+    app: Rc<RefCell<App>>,
+}
 
-impl eframe::App for App {
+impl AppWrap {
+    fn new(app: Rc<RefCell<App>>) -> Self {
+        Self {
+            cur_panel: PanelTag::Manage,
+            app,
+        }
+    }
+}
+
+impl AppWrap {
+    fn init_ctx(ctx: &egui::Context) {
+        ctx.set_zoom_factor(gscale(1.0));
+    }
+}
+
+impl eframe::App for AppWrap {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.update_ctx(ctx);
-        self.dispatch_ui_msg(ctx);
+        let mut app = self.app.borrow_mut();
+        let visual = match Theme::from_string(app.state.global_config.theme.as_str()) {
+            Theme::Light => egui::Visuals::light(),
+            Theme::Dark => egui::Visuals::dark(),
+        };
+        ctx.set_visuals(visual);
+
+        app.dispatch_ui_msg(ctx);
 
         egui::SidePanel::left("TabChooser")
             .resizable(false)
@@ -191,7 +213,6 @@ impl eframe::App for App {
                         ui.selectable_value(&mut self.cur_panel, tag, tab);
                     };
                     tab_button(PanelTag::Manage);
-                    tab_button(PanelTag::Find);
                     tab_button(PanelTag::Config);
                     tab_button(PanelTag::About);
                 });
@@ -199,9 +220,8 @@ impl eframe::App for App {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             match self.cur_panel {
-                PanelTag::Manage => ManagePanel::ui(ui, &mut self.state.managed_devices),
-                PanelTag::Find => FindPanel::ui(ui),
-                PanelTag::Config => ConfigPanel::ui(ui, &mut self.state.global_config),
+                PanelTag::Manage => ManagePanel::ui(ui, &mut app),
+                PanelTag::Config => ConfigPanel::ui(ui, &mut app.state.global_config),
                 PanelTag::About => AboutPanel::ui(ui),
             };
         });

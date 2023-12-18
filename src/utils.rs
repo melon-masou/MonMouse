@@ -16,3 +16,16 @@ impl SimpleRatelimit {
         }
     }
 }
+
+pub struct ArrayVec<T: Copy, const N: usize> {
+    arr: [Option<T>; N],
+}
+
+impl<T: Copy, const N: usize> ArrayVec<T, N> {
+    pub fn new() -> Self {
+        Self { arr: [None; N] }
+    }
+    pub fn to_vec(&self) -> Vec<Option<T>> {
+        self.arr.to_vec()
+    }
+}

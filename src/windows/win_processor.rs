@@ -2,12 +2,17 @@ use std::collections::HashMap;
 
 use crate::errors::Result;
 
+use crate::message::DeviceType as GenericDeviceType;
+use crate::message::GenericDevice;
+use crate::message::Message;
+use crate::message::MouseControlReactor;
 use crate::mouse_control::DeviceController;
 use crate::mouse_control::DeviceCtrlSetting;
 use crate::mouse_control::MonitorArea;
 use crate::mouse_control::MonitorAreasList;
 use crate::mouse_control::MousePos;
 use crate::mouse_control::MouseRelocator;
+use crate::utils::ArrayVec;
 use crate::utils::SimpleRatelimit;
 
 use core::cell::OnceCell;
@@ -512,5 +517,93 @@ impl WinEventLoop {
         }
         self.terminate()?;
         Ok(())
+    }
+}
+
+impl WinEventLoop {
+    pub fn poll_message(&mut self, mouse_control_reactor: &MouseControlReactor) {
+        loop {
+            let msg = match mouse_control_reactor.recv_msg() {
+                Some(msg) => msg,
+                None => return,
+            };
+            // Is it possible to reuse the msg?
+            match msg {
+                Message::InspectDevices(_, _) => {
+                    let ret =
+                        self.processor
+                            .collect_all_raw_devices()
+                            .map(|v| -> Vec<GenericDevice> {
+                                v.iter()
+                                    .filter(|&v| Self::win_device_filter(v))
+                                    .map(Self::win_device_to_generic)
+                                    .collect()
+                            });
+                    mouse_control_reactor.return_msg(Message::InspectDevices((), ret));
+                }
+                Message::ApplyDevicesSetting() => todo!(),
+                _ => panic!("recv unexpected ui msg: {}", msg),
+            }
+        }
+    }
+
+    pub fn win_device_filter(d: &WinDevice) -> bool {
+        d.iface.is_some()
+            && match d.rawinput.typ() {
+                DeviceType::MOUSE => true,
+                DeviceType::KEYBOARD => false,
+                DeviceType::HID => true,
+                DeviceType::UNKNOWN => false,
+            }
+    }
+
+    pub fn win_device_to_generic(d: &WinDevice) -> GenericDevice {
+        GenericDevice {
+            id: d.iface.as_ref().unwrap().instance_id.to_string(),
+            device_type: Self::get_device_type(d),
+            product_name: Self::build_product_name(d).trim().into(),
+            platform_specific_infos: Vec::new(),
+        }
+    }
+
+    pub fn build_product_name(d: &WinDevice) -> String {
+        if let Some(hid) = &d.hid {
+            let mut name = String::new();
+            if let WStringOption::Some(s) = &hid.manufacturer {
+                name.push_str(s.to_string().as_str());
+                name.push(' ');
+            }
+            if let WStringOption::Some(s) = &hid.product {
+                name.push_str(s.to_string().as_str());
+                name.push(' ');
+            }
+            if let WStringOption::Some(s) = &hid.serial_number {
+                name.push_str(s.to_string().as_str());
+                name.push(' ');
+            }
+            if !name.is_empty() {
+                return name;
+            }
+        };
+
+        let iface = d.iface.as_ref().unwrap();
+        let mut name = if let WStringOption::Some(s) = &iface.manufacurer {
+            let mut s = s.to_string();
+            s.push(' ');
+            s
+        } else {
+            String::new()
+        };
+        name.push_str(iface.name.to_string().as_str());
+        name
+    }
+
+    pub fn get_device_type(d: &WinDevice) -> GenericDeviceType {
+        match d.rawinput.typ() {
+            DeviceType::MOUSE => GenericDeviceType::Mouse,
+            DeviceType::KEYBOARD => GenericDeviceType::Unknown,
+            DeviceType::HID => GenericDeviceType::HIDUnknown,
+            DeviceType::UNKNOWN => GenericDeviceType::Unknown,
+        }
     }
 }

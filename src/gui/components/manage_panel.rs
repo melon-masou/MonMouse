@@ -7,12 +7,15 @@ use crate::{
         device_status_color, indicator_ui, manage_button, toggle_ui, CollapsingPopup,
     },
     state::DeviceUIState,
+    App,
 };
 
 pub struct ManagePanel {}
 
 impl ManagePanel {
+    const MIN_ROW: usize = 15;
     pub fn device_line_ui(i: usize, row: &mut egui_extras::TableRow, device: &mut DeviceUIState) {
+        let d = &device.generic;
         row.col(|ui| {
             ui.checkbox(&mut device.checked, "");
         });
@@ -32,8 +35,9 @@ impl ManagePanel {
         });
         row.col(|ui| {
             let details_popup = CollapsingPopup::new(format!("ManagedDeviceIdx{}", i)).focus(true);
-            details_popup.ui(ui, "TestDevice A-100", |ui| {
-                ui.label("TODO");
+            details_popup.ui(ui, d.product_name.clone(), |ui| {
+                ui.label("id: ");
+                ui.label(d.id.clone());
             });
             ui.add_space(10.0);
         });
@@ -46,6 +50,7 @@ impl ManagePanel {
             .min_scrolled_height(100.0)
             .max_scroll_height(300.0)
             .drag_to_scroll(true)
+            .auto_shrink(false)
             .cell_layout(egui::Layout::left_to_right(egui::Align::LEFT))
             .column(Column::auto())
             .column(Column::exact(60.0))
@@ -72,17 +77,25 @@ impl ManagePanel {
                     ui.strong("Product");
                 });
             })
-            .body(|body| {
-                body.rows(20.0, devices.len(), |i, mut row| {
-                    Self::device_line_ui(i, &mut row, devices.get_mut(i).unwrap());
-                });
+            .body(|mut body| {
+                for i in 0..devices.len().max(Self::MIN_ROW) {
+                    body.row(20.0, |mut row| {
+                        if i < devices.len() {
+                            Self::device_line_ui(i, &mut row, devices.get_mut(i).unwrap());
+                        } else {
+                            for _ in 0..6 {
+                                row.col(|_| {});
+                            }
+                        }
+                    });
+                }
             });
     }
 
-    pub fn ui(ui: &mut egui::Ui, devices: &mut Vec<DeviceUIState>) {
+    pub fn ui(ui: &mut egui::Ui, app: &mut App) {
         ui.horizontal(|ui| {
             if manage_button(ui, "Refresh").clicked() {
-                // TODO
+                app.ui_reactor.trigger_inspect_devices();
             }
             if manage_button(ui, "Unmanage").clicked() {
                 // TODO
@@ -98,7 +111,7 @@ impl ManagePanel {
             .vertical(|mut strip| {
                 strip.cell(|ui| {
                     egui::ScrollArea::horizontal().show(ui, |ui| {
-                        Self::table_ui(ui, devices);
+                        Self::table_ui(ui, &mut app.state.managed_devices);
                     });
                 });
             });

@@ -2,6 +2,9 @@ use thiserror::Error as ThisError;
 
 #[derive(ThisError, Debug)]
 pub enum Error {
+    #[error("ErrorMessageUndo")]
+    MessageUndo,
+
     #[error("ErrorWinUnknown")]
     WinUnknown,
     #[error("ErrorWinCore(code={0})")]

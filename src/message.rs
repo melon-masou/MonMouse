@@ -19,15 +19,14 @@ pub enum Positioning {
 
 pub enum DeviceType {
     Mouse,
-    UnknownHID,
+    HIDUnknown,
+    Unknown,
 }
 
-pub struct DeviceDetail {
+pub struct GenericDevice {
     pub id: String,
     pub device_type: DeviceType,
     pub product_name: String,
-    pub active: bool,
-    pub positioning: Positioning,
     pub platform_specific_infos: Vec<(String, String)>,
 }
 
@@ -37,8 +36,12 @@ pub enum Message {
     Exit,
     CloseUI,
     RestartUI,
-    InspectDevices((), Result<Vec<DeviceDetail>>),
+    InspectDevices((), Result<Vec<GenericDevice>>),
     ApplyDevicesSetting(),
+}
+
+fn undo<T>() -> Result<T> {
+    Err(Error::MessageUndo)
 }
 
 impl Display for Message {
@@ -137,13 +140,13 @@ impl MouseControlReactor {
         }
     }
 
-    pub fn return_msg(msg: Message) {
+    pub fn return_msg(&self, msg: Message) {
         match msg {
             Message::Exit => drop(msg),
             Message::CloseUI => drop(msg),
             Message::RestartUI => drop(msg),
-            Message::InspectDevices(_, _) => panic!("return self-generated msg"),
-            Message::ApplyDevicesSetting() => panic!("return self-generated msg"),
+            Message::InspectDevices(_, _) => self.ui_tx.send(msg).unwrap(),
+            Message::ApplyDevicesSetting() => self.ui_tx.send(msg).unwrap(),
         }
     }
 }
@@ -196,6 +199,12 @@ impl UIReactor {
                 Err(RecvError) => return true,
             }
         }
+    }
+
+    pub fn trigger_inspect_devices(&self) {
+        self.mouse_control_tx
+            .send(Message::InspectDevices((), undo()))
+            .unwrap();
     }
 
     pub fn set_should_exit(&mut self) {
