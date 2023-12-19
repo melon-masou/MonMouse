@@ -44,10 +44,9 @@ use windows::{
             Input::{
                 GetRawInputData, GetRawInputDeviceInfoW, GetRawInputDeviceList,
                 RegisterRawInputDevices, HRAWINPUT, RAWINPUTDEVICE, RAWINPUTDEVICELIST,
-                RAWINPUTDEVICE_FLAGS, RAWINPUTHEADER, RAW_INPUT_DEVICE_INFO_COMMAND,
-                RIDI_DEVICEINFO, RIDI_DEVICENAME, RID_DEVICE_INFO, RID_DEVICE_INFO_HID,
-                RID_DEVICE_INFO_MOUSE, RID_DEVICE_INFO_TYPE, RID_INPUT, RIM_TYPEHID,
-                RIM_TYPEKEYBOARD, RIM_TYPEMOUSE,
+                RAWINPUTHEADER, RAW_INPUT_DEVICE_INFO_COMMAND, RIDI_DEVICEINFO, RIDI_DEVICENAME,
+                RID_DEVICE_INFO, RID_DEVICE_INFO_HID, RID_DEVICE_INFO_MOUSE, RID_DEVICE_INFO_TYPE,
+                RID_INPUT, RIM_TYPEHID, RIM_TYPEKEYBOARD, RIM_TYPEMOUSE,
             },
             Shell::{DefSubclassProc, SetWindowSubclass},
             WindowsAndMessaging::{
@@ -63,25 +62,25 @@ use windows::{
 use super::constants::RAWINPUT_MOUSE_FLAGS_ABSOLUTE;
 
 #[derive(PartialEq, Eq, Debug)]
-pub enum DeviceType {
+pub enum RawDeviceType {
     MOUSE,
     KEYBOARD,
     HID,
     UNKNOWN,
 }
 
-impl DeviceType {
+impl RawDeviceType {
     pub fn from_rid(t: RID_DEVICE_INFO_TYPE) -> Self {
         match t {
-            RIM_TYPEMOUSE => DeviceType::MOUSE,
-            RIM_TYPEKEYBOARD => DeviceType::KEYBOARD,
-            RIM_TYPEHID => DeviceType::HID,
-            _ => DeviceType::UNKNOWN,
+            RIM_TYPEMOUSE => RawDeviceType::MOUSE,
+            RIM_TYPEKEYBOARD => RawDeviceType::KEYBOARD,
+            RIM_TYPEHID => RawDeviceType::HID,
+            _ => RawDeviceType::UNKNOWN,
         }
     }
 }
 
-impl fmt::Display for DeviceType {
+impl fmt::Display for RawDeviceType {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         write!(formatter, "{}", format!("{:?}", self).to_lowercase())
     }
@@ -94,17 +93,17 @@ pub struct RawinputInfo {
 
 impl RawinputInfo {
     #[inline]
-    pub fn typ(&self) -> DeviceType {
-        DeviceType::from_rid(self.rid_info.dwType)
+    pub fn typ(&self) -> RawDeviceType {
+        RawDeviceType::from_rid(self.rid_info.dwType)
     }
     #[inline]
     pub fn get_mouse(&self) -> &RID_DEVICE_INFO_MOUSE {
-        assert!(self.typ() == DeviceType::MOUSE);
+        assert!(self.typ() == RawDeviceType::MOUSE);
         unsafe { &self.rid_info.Anonymous.mouse }
     }
     #[inline]
     pub fn get_hid(&self) -> &RID_DEVICE_INFO_HID {
-        assert!(self.typ() == DeviceType::HID);
+        assert!(self.typ() == RawDeviceType::HID);
         unsafe { &self.rid_info.Anonymous.hid }
     }
 }
@@ -654,20 +653,6 @@ pub fn set_subclass<T: SubclassHandler>(
         Ok(())
     } else {
         Err(get_last_error())
-    }
-}
-
-pub fn rawinput_reg(
-    hwnd: HWND,
-    usage: u16,
-    page: u16,
-    flags: RAWINPUTDEVICE_FLAGS,
-) -> RAWINPUTDEVICE {
-    RAWINPUTDEVICE {
-        usUsage: usage,
-        usUsagePage: page,
-        dwFlags: flags,
-        hwndTarget: hwnd,
     }
 }
 

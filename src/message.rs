@@ -3,7 +3,7 @@ use std::{
     sync::mpsc::{channel, sync_channel, Receiver, SendError, Sender, SyncSender, TryRecvError},
 };
 
-use crate::errors::Error;
+use crate::{device_type::DeviceType, errors::Error};
 
 #[derive(Debug, Clone, Copy)]
 pub enum Positioning {
@@ -18,30 +18,6 @@ pub enum DeviceStatus {
     Idle,
     Disconnected,
     Unknown,
-}
-
-#[derive(Debug)]
-pub enum DeviceType {
-    Mouse,
-    Keyboard,
-    HIDUnknown,
-    Unknown,
-    DummyPointer,
-}
-
-impl DeviceType {
-    pub fn is_pointer(&self) -> bool {
-        match self {
-            DeviceType::Mouse | DeviceType::HIDUnknown | DeviceType::DummyPointer => true,
-            DeviceType::Keyboard | DeviceType::Unknown => false,
-        }
-    }
-}
-
-impl Display for DeviceType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
 }
 
 pub struct GenericDevice {
