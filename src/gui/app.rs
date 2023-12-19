@@ -1,7 +1,10 @@
 use std::sync::mpsc::{RecvError, TryRecvError};
 
 use eframe::egui;
-use monmouse::message::{DeviceSetting, DeviceStatus, GenericDevice, Message, Settings, UIReactor};
+use monmouse::{
+    message::{DeviceSetting, DeviceStatus, GenericDevice, Message, Settings, UIReactor},
+    utils::SimpleRatelimit,
+};
 
 use crate::styles::Theme;
 
@@ -10,6 +13,7 @@ pub struct App {
     pub last_result: StatusBarResult,
     should_exit: bool,
     ui_reactor: UIReactor,
+    rl_inspect_devices_status: SimpleRatelimit,
 }
 
 impl App {
@@ -44,10 +48,12 @@ impl App {
             .unwrap();
     }
 
-    pub fn trigger_inspect_devices_status(&mut self) {
-        let _ = self
-            .ui_reactor
-            .send_mouse_control(Message::InspectDevicesStatus((), Message::inited()));
+    pub fn trigger_inspect_devices_status(&mut self, tick: u64) {
+        if self.rl_inspect_devices_status.allow(tick) {
+            let _ = self
+                .ui_reactor
+                .send_mouse_control(Message::InspectDevicesStatus((), Message::inited()));
+        }
     }
 
     pub fn trigger_settings_changed(&mut self) {
@@ -63,11 +69,16 @@ impl App {
 
 impl App {
     pub fn new(ui_reactor: UIReactor) -> Self {
+        let state = AppState::default();
+        let rl_inspect_devices_status =
+            SimpleRatelimit::new(state.global_config.inspect_device_activity_interval_ms);
+
         App {
-            state: AppState::default(),
+            state,
             last_result: StatusBarResult::None,
             should_exit: false,
             ui_reactor,
+            rl_inspect_devices_status,
         }
     }
 
@@ -105,6 +116,10 @@ impl App {
 
     fn collect_settings(&self) -> Settings {
         Settings {
+            merge_unassociated_events_within_next_ms: self
+                .state
+                .global_config
+                .merge_unassociated_events_within_next_ms,
             devices: self
                 .state
                 .managed_devices
@@ -182,6 +197,8 @@ impl Default for AppState {
         Self {
             global_config: GlobalConfig {
                 theme: Theme::Auto.to_string(),
+                inspect_device_activity_interval_ms: 100,
+                merge_unassociated_events_within_next_ms: Some(5),
             },
             managed_devices: Vec::<DeviceUIState>::new(),
         }
@@ -190,6 +207,8 @@ impl Default for AppState {
 
 pub struct GlobalConfig {
     pub theme: String,
+    pub inspect_device_activity_interval_ms: u64,
+    pub merge_unassociated_events_within_next_ms: Option<u64>,
 }
 
 pub struct DeviceUIState {

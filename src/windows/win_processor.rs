@@ -326,7 +326,7 @@ struct WinDeviceProcessor {
     raw_input_buf: WBuffer,
     tick_widen: TickWiden,
     relocator: MouseRelocator,
-    cached_settings: Option<Settings>,
+    settings: Settings,
     to_update_devices: bool,
 
     rl_update_mon: SimpleRatelimit,
@@ -349,7 +349,7 @@ impl WinDeviceProcessor {
             raw_input_buf: WBuffer::new(RAWINPUT_MSG_INIT_BUF_SIZE),
             tick_widen: TickWiden::new(),
             relocator: MouseRelocator::new(),
-            cached_settings: None,
+            settings: Settings::default(),
             to_update_devices: false,
 
             rl_update_mon: SimpleRatelimit::new(RATELIMIT_UPDATE_MONITOR_ONCE_MS),
@@ -488,7 +488,7 @@ impl WinDeviceProcessor {
             debug!("Device: {}", d);
         }
         self.devices.rebuild(rawdevices);
-        self.try_apply_settings(); // Apply cached settings again
+        self.apply_settings(); // Apply settings again
         self.to_update_devices = false;
         Ok(())
     }
@@ -520,12 +520,8 @@ impl WinDeviceProcessor {
         Ok(true)
     }
 
-    fn try_apply_settings(&mut self) {
-        let settings = match &self.cached_settings {
-            Some(v) => v,
-            None => return,
-        };
-
+    fn apply_settings(&mut self) {
+        let settings = &self.settings;
         let applyed: usize = settings.devices.iter().fold(0, |applyed, dev_setting| {
             let found_dev = self.devices.iter_mut().find(|v| {
                 if let Some(id) = &v.id {
@@ -547,7 +543,7 @@ impl WinDeviceProcessor {
 
         if applyed < settings.devices.len() {
             debug!(
-                "{} devices in cached_settings has not been applyed",
+                "{} devices in settings has not been found",
                 settings.devices.len() - applyed
             );
         }
@@ -564,6 +560,11 @@ impl WinDeviceProcessor {
 
         let ri = self.raw_input_buf.get_ref::<RAWINPUT>();
         let wtick = self.tick_widen.widen(tick);
+        let positioning = match check_mouse_event_is_absolute(ri) {
+            Some(true) => Positioning::Absolute,
+            Some(false) => Positioning::Relative,
+            None => Positioning::Unknown,
+        };
 
         trace!(
             "rawinput msg: tick={} msg {}",
@@ -571,14 +572,28 @@ impl WinDeviceProcessor {
             rawinput_to_string(ri)
         );
 
+        // Try merging unassociated event
+        if ri.header.hDevice == HANDLE(0) {
+            // If configured
+            if let Some(merge_within) = self.settings.merge_unassociated_events_within_next_ms {
+                // If active device exists
+                if let Some(active_dev) = self.devices.active() {
+                    if let Some((active_tick, _, _)) = active_dev.ctrl.get_last_pos() {
+                        // If within time range
+                        if active_tick + merge_within >= wtick {
+                            // Eat the unassociated event
+                            active_dev.ctrl.update_positioning(positioning);
+                            self.relocator.on_mouse_update(&mut active_dev.ctrl, wtick);
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+
         match self.devices.get_and_update_active(ri.header.hDevice) {
             Some(dev) => {
-                dev.ctrl
-                    .update_positioning(match check_mouse_event_is_absolute(ri) {
-                        Some(true) => Positioning::Absolute,
-                        Some(false) => Positioning::Relative,
-                        None => Positioning::Unknown,
-                    });
+                dev.ctrl.update_positioning(positioning);
                 self.relocator.on_mouse_update(&mut dev.ctrl, wtick);
             }
             None => {
@@ -729,8 +744,8 @@ impl WinEventLoop {
                     mouse_control_reactor.return_msg(Message::InspectDevicesStatus((), Ok(ret)));
                 }
                 Message::ApplyDevicesSetting(settings, _) => {
-                    self.processor.cached_settings = Some(settings.unwrap());
-                    self.processor.try_apply_settings();
+                    self.processor.settings = settings.unwrap();
+                    self.processor.apply_settings();
                     mouse_control_reactor.return_msg(Message::ApplyDevicesSetting(None, Ok(())));
                 }
                 _ => panic!("recv unexpected ui msg: {}", msg),

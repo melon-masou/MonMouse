@@ -195,8 +195,10 @@ impl eframe::App for AppWrap {
             };
         });
 
+        let tick_ms = ctx.input(|input| (input.time * 1000.0).round()) as u64;
+
         #[cfg(debug_assertions)]
-        self.debug_info.on_paint();
+        self.debug_info.on_paint(tick_ms);
 
         // FIXME: It is a tricky way to keep triggering update(), even when the mouse is
         // outside the window area. Or else the "Exit" button in tray won't work, until
@@ -204,7 +206,7 @@ impl eframe::App for AppWrap {
         // Maybe by finding out a method to terminate eframe native_run outside its own eventloop.
         ctx.request_repaint();
         // Eventloop should be also placed there
-        app.trigger_inspect_devices_status();
+        app.trigger_inspect_devices_status(tick_ms);
     }
 }
 
