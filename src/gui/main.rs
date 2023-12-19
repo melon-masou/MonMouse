@@ -9,10 +9,10 @@ use std::panic::PanicInfo;
 use std::{cell::RefCell, panic, process, rc::Rc, thread};
 
 use app::App;
+use components::about_panel::AboutPanel;
 use components::config_panel::ConfigPanel;
 use components::devices_panel::DevicesPanel;
 use components::status_bar::status_bar_ui;
-use components::{about_panel::AboutPanel, debug::DebugInfo};
 use eframe::egui;
 use log::info;
 use monmouse::{
@@ -21,6 +21,9 @@ use monmouse::{
 };
 use styles::{gscale, Theme};
 use tray::{Tray, TrayEvent};
+
+#[cfg(debug_assertions)]
+use crate::components::debug::DebugInfo;
 
 pub fn load_icon() -> egui::IconData {
     let icon_data = include_bytes!("..\\..\\assets\\monmouse.ico");

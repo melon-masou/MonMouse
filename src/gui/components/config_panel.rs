@@ -1,6 +1,6 @@
 use eframe::egui;
 
-use crate::{app::GlobalConfig, styles::Theme};
+use crate::app::GlobalConfig;
 
 pub struct ConfigPanel {}
 
@@ -10,6 +10,7 @@ impl ConfigPanel {
             // For debugging colors Only
             #[cfg(debug_assertions)]
             ui.horizontal(|ui| {
+                use crate::styles::Theme;
                 ui.label("Theme: ");
                 egui::ComboBox::from_id_source("ThemeChooser")
                     .selected_text(config.theme.to_string())
