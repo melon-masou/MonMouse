@@ -26,6 +26,7 @@ use windows::Win32::UI::WindowsAndMessaging::MsgWaitForMultipleObjects;
 use windows::Win32::UI::WindowsAndMessaging::PeekMessageW;
 use windows::Win32::UI::WindowsAndMessaging::PM_REMOVE;
 use windows::Win32::UI::WindowsAndMessaging::QS_ALLINPUT;
+use windows::Win32::UI::WindowsAndMessaging::WM_DEVICECHANGE;
 use windows::Win32::{
     Devices::HumanInterfaceDevice::HID_USAGE_PAGE_GENERIC,
     Foundation::{HANDLE, HWND, LPARAM, WPARAM},
@@ -106,7 +107,7 @@ impl std::fmt::Display for WinDevice {
     }
 }
 
-fn init_device_control(handle: HANDLE, rawinput: &RawinputInfo) -> DeviceController {
+fn init_device_control(handle: HANDLE) -> DeviceController {
     let setting = DeviceSetting {
         locked_in_monitor: false,
         remember_pos: false,
@@ -164,7 +165,7 @@ fn collect_device_infos(dev: &RAWINPUTDEVICELIST) -> Result<WinDevice> {
         },
         _ => None,
     };
-    let ctrl = init_device_control(dev.hDevice, &rawinput);
+    let ctrl = init_device_control(dev.hDevice);
 
     Ok(WinDevice {
         handle: dev.hDevice,
@@ -176,11 +177,6 @@ fn collect_device_infos(dev: &RAWINPUTDEVICELIST) -> Result<WinDevice> {
         ctrl,
     })
 }
-
-// #[inline]
-// pub fn device_id(d: &WinDevice) -> Option<&WString> {
-//     d.iface.map(|v| &v.instance_id)
-// }
 
 struct WinDeviceSet {
     devs: Vec<WinDevice>,
@@ -229,6 +225,13 @@ impl WinDeviceSet {
             .map(|(i, d)| (WinDeviceSet::map_key(d.handle), i))
             .collect();
         self.active_id = None;
+    }
+
+    pub fn iter(&self) -> std::slice::Iter<'_, WinDevice> {
+        self.devs.iter()
+    }
+    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, WinDevice> {
+        self.devs.iter_mut()
     }
 }
 
@@ -282,6 +285,7 @@ struct WinDeviceProcessor {
     tick_widen: TickWiden,
     relocator: MouseRelocator,
     cached_settings: Option<Settings>,
+    to_update_devices: bool,
 
     rl_update_mon: SimpleRatelimit,
     rl_update_dev: SimpleRatelimit,
@@ -304,6 +308,7 @@ impl WinDeviceProcessor {
             tick_widen: TickWiden::new(),
             relocator: MouseRelocator::new(),
             cached_settings: None,
+            to_update_devices: false,
 
             rl_update_mon: SimpleRatelimit::new(RATELIMIT_UPDATE_MONITOR_ONCE_MS),
             rl_update_dev: SimpleRatelimit::new(RATELIMIT_UPDATE_DEVICE_ONCE_MS),
@@ -397,6 +402,7 @@ impl WinDeviceProcessor {
             debug!("Device: {}", d);
         }
         self.devices.rebuild(rawdevices);
+        self.try_apply_settings(); // Apply cached settings again
 
         match self.register_raw_devices() {
             Ok(_) => (),
@@ -436,47 +442,35 @@ impl WinDeviceProcessor {
     }
 
     fn try_apply_settings(&mut self) {
-        let mut settings = match self.cached_settings.take() {
+        let settings = match &self.cached_settings {
             Some(v) => v,
             None => return,
         };
 
-        let mut applyed: usize = 0;
-        let rest_settings: Vec<(String, DeviceSetting)> = settings
-            .devices
-            .into_iter()
-            .filter_map(|dev_setting| {
-                let found_dev = self.devices.devs.iter_mut().find(|v| {
-                    if let Some(id) = &v.id {
-                        if id == &dev_setting.0 {
-                            return true;
-                        }
+        let applyed: usize = settings.devices.iter().fold(0, |applyed, dev_setting| {
+            let found_dev = self.devices.iter_mut().find(|v| {
+                if let Some(id) = &v.id {
+                    if id == &dev_setting.0 {
+                        return true;
                     }
-                    false
-                });
-                match found_dev {
-                    Some(d) => {
-                        debug!(
-                            "device {} apply settings: {}",
-                            dev_setting.0,
-                            format!("{}", dev_setting.1)
-                        );
-                        applyed += 1;
-                        d.ctrl.update_settings(&dev_setting.1);
-                        None
-                    }
-                    None => Some(dev_setting),
                 }
-            })
-            .collect();
+                false
+            });
+            match found_dev {
+                Some(d) => {
+                    debug!("device {} apply settings: {}", dev_setting.0, dev_setting.1);
+                    d.ctrl.update_settings(&dev_setting.1);
+                    applyed + 1
+                }
+                None => applyed,
+            }
+        });
 
-        if !rest_settings.is_empty() {
+        if applyed < settings.devices.len() {
             debug!(
                 "{} devices in cached_settings has not been applyed",
-                rest_settings.len()
+                settings.devices.len() - applyed
             );
-            settings.devices = rest_settings;
-            self.cached_settings = Some(settings);
         }
     }
 
@@ -500,26 +494,36 @@ impl WinDeviceProcessor {
 
         // TODO: hDevice can be zero if an input is received from a precision touchpad
 
-        let dev = match self.devices.get_and_update_active(ri.header.hDevice) {
-            Some(v) => v,
-            None => return, // TODO: get devices again
+        match self.devices.get_and_update_active(ri.header.hDevice) {
+            Some(dev) => {
+                dev.ctrl
+                    .update_positioning(match check_mouse_event_is_absolute(ri) {
+                        Some(true) => Positioning::Absolute,
+                        Some(false) => Positioning::Relative,
+                        None => Positioning::Unknown,
+                    });
+                self.relocator.on_mouse_update(&mut dev.ctrl, wtick);
+            }
+            None => {
+                self.to_update_devices = true;
+            }
         };
-        dev.ctrl
-            .update_positioning(match check_mouse_event_is_absolute(ri) {
-                Some(true) => Positioning::Absolute,
-                Some(false) => Positioning::Relative,
-                None => Positioning::Unknown,
-            });
-        self.relocator.on_mouse_update(&mut dev.ctrl, wtick);
-        self.resolve_relocator()
+        self.resolve_updating()
     }
 
-    fn resolve_relocator(&mut self) {
+    fn resolve_updating(&mut self) {
+        if self.to_update_devices {
+            if let Ok(true) = self.try_update_devices(false) {
+                self.to_update_devices = false;
+            }
+        }
+
         if self.relocator.need_update_monitors() {
             if let Ok(true) = self.try_update_monitors(false) {
                 self.relocator.done_update_monitors();
             }
         }
+
         if let Some((new_pos, scale)) = self.relocator.pop_relocate_pos() {
             let (x, y) = WinDeviceProcessor::phy_pos_from(&new_pos, scale);
             let _ = set_cursor_pos(x, y);
@@ -530,6 +534,10 @@ impl WinDeviceProcessor {
     fn handle_message(&mut self, msg: &MSG) {
         match msg.message {
             WM_INPUT => self.on_raw_input(msg.wParam, msg.lParam, msg.time),
+            WM_DEVICECHANGE => {
+                debug!("Trigger updating devices by WM_DEVICECHANGE");
+                let _ = self.try_update_devices(true);
+            }
             _ => (),
         }
     }
@@ -608,15 +616,16 @@ impl WinEventLoop {
             // Is it possible to reuse the msg?
             match msg {
                 Message::ScanDevices(_, _) => {
-                    let ret =
-                        self.processor
-                            .collect_all_raw_devices()
-                            .map(|v| -> Vec<GenericDevice> {
-                                v.iter()
-                                    .filter(|&v| Self::is_valid_win_device(v))
-                                    .map(Self::win_device_to_generic)
-                                    .collect()
-                            });
+                    let ret = match self.processor.try_update_devices(true) {
+                        Ok(_) => Ok(self
+                            .processor
+                            .devices
+                            .iter()
+                            .filter(|&v| Self::is_valid_win_device(v))
+                            .map(Self::win_device_to_generic)
+                            .collect()),
+                        Err(e) => Err(e),
+                    };
                     mouse_control_reactor.return_msg(Message::ScanDevices((), ret));
                 }
                 Message::InspectDevicesStatus(_, _) => {
@@ -624,7 +633,6 @@ impl WinEventLoop {
                     let ret = self
                         .processor
                         .devices
-                        .devs
                         .iter()
                         .filter(|&v| Self::is_valid_win_device(v))
                         .map(|d| {

@@ -7,7 +7,7 @@ pub enum Error {
 
     #[error("ErrorWinUnknown")]
     WinUnknown,
-    #[error("ErrorWinCore(code={0})")]
+    #[error("ErrorWinCore(code={0:x})")]
     WinCore(i32),
     #[error("ErrorWinConfigRet(cr={0})")]
     WinConfigRet(u32),

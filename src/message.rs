@@ -3,8 +3,6 @@ use std::{
     sync::mpsc::{channel, sync_channel, Receiver, SendError, Sender, SyncSender, TryRecvError},
 };
 
-use log::debug;
-
 use crate::errors::Error;
 
 #[derive(Debug, Clone, Copy)]
