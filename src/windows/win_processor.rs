@@ -120,16 +120,16 @@ fn init_device_control(handle: HANDLE) -> DeviceController {
     DeviceController::new(handle.0 as u64, setting)
 }
 
-// A dummy device for WM_INPUT events which have RAWINPUT.hDevice is null.
+// A dummy device for WM_INPUT events which have null RAWINPUT.hDevice.
 // Those may be from some precision touchpads. Official documents lack pages about this.
 // Ref: https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-rawinputheader
 //      https://stackoverflow.com/questions/57552844/rawinputheader-hdevice-null-on-wm-input-for-laptop-trackpad
-fn dummy_device_for_unclassified_events() -> WinDevice {
+fn unassociated_events_capture_device() -> WinDevice {
     let handle = HANDLE(0);
     WinDevice {
         handle,
-        id: Some(String::from("DummyDeviceForUnclassifiedEvents")),
-        device_type: DeviceType::DummyPointer,
+        id: Some(String::from("UnassociatedEventsCapture")),
+        device_type: DeviceType::Dummy,
         rawinput: None,
         iface: None,
         parents: Vec::new(),
@@ -481,7 +481,7 @@ impl WinDeviceProcessor {
                 return Err(e);
             }
         };
-        rawdevices.push(dummy_device_for_unclassified_events());
+        rawdevices.push(unassociated_events_capture_device());
 
         debug!("Updated rawdevices list: num={}", rawdevices.len());
         for d in rawdevices.iter() {

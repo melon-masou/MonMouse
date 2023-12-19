@@ -7,7 +7,7 @@ use std::fmt::Display;
 #[derive(Debug, Clone, Copy)]
 pub enum DeviceType {
     Unknown,
-    DummyPointer,
+    Dummy,
     UnknownHID,
 
     // Generic Desktop Page(0x01)
@@ -63,7 +63,7 @@ impl DeviceType {
     pub fn is_pointer(&self) -> bool {
         matches!(
             self,
-            DeviceType::DummyPointer
+            DeviceType::Dummy
                 | DeviceType::Pointer
                 | DeviceType::Mouse
                 | DeviceType::Digitizer
