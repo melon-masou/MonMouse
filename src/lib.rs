@@ -2,6 +2,7 @@ pub mod device_type;
 pub mod errors;
 pub mod message;
 pub mod mouse_control;
+pub mod setting;
 pub mod utils;
 
 #[cfg(target_os = "windows")]

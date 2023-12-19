@@ -4,18 +4,18 @@ use std::sync::mpsc::TryRecvError;
 use crate::device_type::DeviceType;
 use crate::device_type::WindowsRawinput;
 use crate::errors::Result;
-use crate::message::DeviceSetting;
 use crate::message::DeviceStatus;
 use crate::message::GenericDevice;
 use crate::message::Message;
 use crate::message::MouseControlReactor;
 use crate::message::Positioning;
-use crate::message::Settings;
 use crate::mouse_control::DeviceController;
 use crate::mouse_control::MonitorArea;
 use crate::mouse_control::MonitorAreasList;
 use crate::mouse_control::MousePos;
 use crate::mouse_control::MouseRelocator;
+use crate::setting::DeviceSetting;
+use crate::setting::Settings;
 use crate::utils::SimpleRatelimit;
 
 use core::cell::OnceCell;
@@ -115,7 +115,7 @@ impl std::fmt::Display for WinDevice {
 fn init_device_control(handle: HANDLE) -> DeviceController {
     let setting = DeviceSetting {
         locked_in_monitor: false,
-        remember_pos: false,
+        switch: false,
     };
     DeviceController::new(handle.0 as u64, setting)
 }
@@ -522,7 +522,7 @@ impl WinDeviceProcessor {
 
     fn apply_settings(&mut self) {
         let settings = &self.settings;
-        let applyed: usize = settings.devices.iter().fold(0, |applyed, dev_setting| {
+        let applied: usize = settings.devices.iter().fold(0, |applied, dev_setting| {
             let found_dev = self.devices.iter_mut().find(|v| {
                 if let Some(id) = &v.id {
                     if id == &dev_setting.0 {
@@ -533,20 +533,18 @@ impl WinDeviceProcessor {
             });
             match found_dev {
                 Some(d) => {
-                    debug!("device {} apply settings: {}", dev_setting.0, dev_setting.1);
                     d.ctrl.update_settings(&dev_setting.1);
-                    applyed + 1
+                    applied + 1
                 }
-                None => applyed,
+                None => applied,
             }
         });
 
-        if applyed < settings.devices.len() {
-            debug!(
-                "{} devices in settings has not been found",
-                settings.devices.len() - applyed
-            );
-        }
+        debug!(
+            "{} in {} devices' setting has not applied",
+            applied,
+            settings.devices.len()
+        );
     }
 
     fn on_raw_input(&mut self, _wparam: WPARAM, lparam: LPARAM, tick: u32) {

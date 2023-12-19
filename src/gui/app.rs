@@ -2,11 +2,12 @@ use std::sync::mpsc::{RecvError, TryRecvError};
 
 use eframe::egui;
 use monmouse::{
-    message::{DeviceSetting, DeviceStatus, GenericDevice, Message, Settings, UIReactor},
+    message::{DeviceStatus, GenericDevice, Message, UIReactor},
+    setting::{DeviceSetting, Settings},
     utils::SimpleRatelimit,
 };
 
-use crate::styles::Theme;
+use crate::{components::config_panel::ConfigInputState, styles::Theme};
 
 pub struct App {
     pub state: AppState,
@@ -129,7 +130,7 @@ impl App {
                         d.generic.id.clone(),
                         DeviceSetting {
                             locked_in_monitor: d.locked,
-                            remember_pos: d.switch,
+                            switch: d.switch,
                         },
                     )
                 })
@@ -190,6 +191,7 @@ impl App {
 pub struct AppState {
     pub global_config: GlobalConfig,
     pub managed_devices: Vec<DeviceUIState>,
+    pub config_input: ConfigInputState,
 }
 
 impl Default for AppState {
@@ -201,6 +203,7 @@ impl Default for AppState {
                 merge_unassociated_events_within_next_ms: Some(5),
             },
             managed_devices: Vec::<DeviceUIState>::new(),
+            config_input: ConfigInputState::default(),
         }
     }
 }

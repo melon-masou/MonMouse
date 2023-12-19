@@ -3,7 +3,7 @@ use std::{
     sync::mpsc::{channel, sync_channel, Receiver, SendError, Sender, SyncSender, TryRecvError},
 };
 
-use crate::{device_type::DeviceType, errors::Error};
+use crate::{device_type::DeviceType, errors::Error, setting::Settings};
 
 #[derive(Debug, Clone, Copy)]
 pub enum Positioning {
@@ -25,36 +25,6 @@ pub struct GenericDevice {
     pub device_type: DeviceType,
     pub product_name: String,
     pub platform_specific_infos: Vec<(String, String)>,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct DeviceSetting {
-    pub locked_in_monitor: bool,
-    pub remember_pos: bool,
-}
-
-impl Display for DeviceSetting {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "DeviceSetting{{locked={},remember={}}}",
-            self.locked_in_monitor, self.remember_pos
-        )
-    }
-}
-
-pub struct Settings {
-    pub merge_unassociated_events_within_next_ms: Option<u64>,
-    pub devices: Vec<(String, DeviceSetting)>,
-}
-
-impl Default for Settings {
-    fn default() -> Self {
-        Self {
-            merge_unassociated_events_within_next_ms: Some(5),
-            devices: Vec::new(),
-        }
-    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

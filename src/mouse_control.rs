@@ -1,6 +1,7 @@
 use std::fmt::Display;
 
-use crate::message::{DeviceSetting, Positioning};
+use crate::message::Positioning;
+use crate::setting::DeviceSetting;
 
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MousePos {
@@ -133,7 +134,7 @@ impl MouseRelocator {
         if self.cur_mouse != c.id {
             self.cur_mouse = c.id;
 
-            if c.setting.remember_pos {
+            if c.setting.switch {
                 // Has rememberd position
                 if let Some((_, old_pos, _)) = c.get_last_pos() {
                     // Find area to go

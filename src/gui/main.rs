@@ -190,7 +190,7 @@ impl eframe::App for AppWrap {
         egui::CentralPanel::default().show(ctx, |ui| {
             match self.cur_panel {
                 PanelTag::Devices => DevicesPanel::ui(ui, &mut app),
-                PanelTag::Config => ConfigPanel::ui(ui, &mut app.state.global_config),
+                PanelTag::Config => ConfigPanel::ui(ui, &mut app),
                 PanelTag::About => AboutPanel::ui(ui),
             };
         });
