@@ -19,6 +19,7 @@ use monmouse::{
     errors::Error,
     message::{setup_reactors, MasterReactor, MouseControlReactor, UIReactor},
 };
+use monmouse::{POLL_MSGS, POLL_TIMEOUT};
 use styles::{gscale, Theme};
 use tray::{Tray, TrayEvent};
 
@@ -72,7 +73,7 @@ fn mouse_control_eventloop(
             Some(TrayEvent::Quit) => break,
             None => (),
         }
-        if !eventloop.poll()? {
+        if !eventloop.poll(POLL_MSGS, POLL_TIMEOUT)? {
             break;
         }
         eventloop.poll_message(mouse_control_reactor);

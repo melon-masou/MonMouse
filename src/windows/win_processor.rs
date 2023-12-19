@@ -26,7 +26,7 @@ use windows::Win32::UI::WindowsAndMessaging::MsgWaitForMultipleObjects;
 use windows::Win32::UI::WindowsAndMessaging::PeekMessageW;
 use windows::Win32::UI::WindowsAndMessaging::PM_REMOVE;
 use windows::Win32::UI::WindowsAndMessaging::QS_ALLINPUT;
-use windows::Win32::UI::WindowsAndMessaging::WM_DEVICECHANGE;
+use windows::Win32::UI::WindowsAndMessaging::WM_INPUT_DEVICE_CHANGE;
 use windows::Win32::{
     Foundation::{HANDLE, HWND, LPARAM, WPARAM},
     UI::{
@@ -368,10 +368,34 @@ impl WinDeviceProcessor {
         }
     }
     fn initialize(&mut self) -> Result<()> {
-        self.hwnd = create_dummy_window(None, None)?;
-        self.try_update_monitors(true)?;
-        self.try_update_devices(true)?;
-
+        self.hwnd = match create_dummy_window(None, None) {
+            Ok(v) => v,
+            Err(e) => {
+                error!("Create dummy window failed: {}", e);
+                return Err(e);
+            }
+        };
+        match self.register_raw_devices() {
+            Ok(_) => (),
+            Err(e) => {
+                error!("Register raw devices failed: {}", e);
+                return Err(e);
+            }
+        };
+        match self.try_update_monitors(true) {
+            Ok(_) => (),
+            Err(e) => {
+                error!("Init monitors info failed: {}", e);
+                return Err(e);
+            }
+        }
+        match self.try_update_devices(true) {
+            Ok(_) => (),
+            Err(e) => {
+                error!("Init devices info failed: {}", e);
+                return Err(e);
+            }
+        }
         Ok(())
     }
     fn terminate(&mut self) -> Result<()> {
@@ -445,9 +469,9 @@ impl WinDeviceProcessor {
         (p.x * 100 / scale as i32, p.y * 100 / scale as i32)
     }
 
-    fn try_update_devices(&mut self, must: bool) -> Result<bool> {
+    fn try_update_devices(&mut self, must: bool) -> Result<()> {
         if !must && !self.rl_update_dev.allow(get_cur_tick()) {
-            return Ok(false);
+            return Ok(());
         }
 
         let mut rawdevices = match self.collect_all_raw_devices() {
@@ -465,15 +489,8 @@ impl WinDeviceProcessor {
         }
         self.devices.rebuild(rawdevices);
         self.try_apply_settings(); // Apply cached settings again
-
-        match self.register_raw_devices() {
-            Ok(_) => (),
-            Err(e) => {
-                error!("Register raw devices failed: {}", e)
-            }
-        };
-
-        Ok(true)
+        self.to_update_devices = false;
+        Ok(())
     }
 
     fn try_update_monitors(&mut self, must: bool) -> Result<bool> {
@@ -568,14 +585,12 @@ impl WinDeviceProcessor {
                 self.to_update_devices = true;
             }
         };
-        self.resolve_updating()
+        self.resolve_pending_updating_task()
     }
 
-    fn resolve_updating(&mut self) {
+    fn resolve_pending_updating_task(&mut self) {
         if self.to_update_devices {
-            if let Ok(true) = self.try_update_devices(false) {
-                self.to_update_devices = false;
-            }
+            let _ = self.try_update_devices(false);
         }
 
         if self.relocator.need_update_monitors() {
@@ -594,9 +609,9 @@ impl WinDeviceProcessor {
     fn handle_message(&mut self, msg: &MSG) {
         match msg.message {
             WM_INPUT => self.on_raw_input(msg.wParam, msg.lParam, msg.time),
-            WM_DEVICECHANGE => {
-                debug!("Trigger updating devices by WM_DEVICECHANGE");
-                let _ = self.try_update_devices(true);
+            WM_INPUT_DEVICE_CHANGE => {
+                debug!("Trigger updating devices by WM_INPUT_DEVICE_CHANGE");
+                self.to_update_devices = true;
             }
             _ => (),
         }
@@ -634,20 +649,26 @@ impl WinEventLoop {
     }
 
     #[inline]
-    pub fn poll(&mut self) -> Result<bool> {
+    pub fn poll(&mut self, mut max_events: u32, timeout_ms: u32) -> Result<bool> {
         let mut msg = MSG::default();
 
         unsafe {
-            MsgWaitForMultipleObjects(None, false, WIN_EVENTLOOP_WAIT_MSG_TIMEOUT_MS, QS_ALLINPUT);
-            if PeekMessageW(&mut msg, HWND::default(), 0, 0, PM_REMOVE).as_bool() {
+            MsgWaitForMultipleObjects(None, false, timeout_ms, QS_ALLINPUT);
+            while max_events > 0
+                && PeekMessageW(&mut msg, HWND::default(), 0, 0, PM_REMOVE).as_bool()
+            {
                 if msg.message == WM_QUIT {
                     return Ok(false);
                 }
                 self.processor.handle_message(&msg);
                 TranslateMessage(&msg);
                 DispatchMessageW(&msg);
+                max_events -= 1;
             }
         }
+
+        // Also try to update resources if need, though no external messages come
+        self.processor.resolve_pending_updating_task();
 
         Ok(true)
     }
@@ -655,7 +676,10 @@ impl WinEventLoop {
     pub fn run(&mut self) -> Result<()> {
         self.initialize()?;
         loop {
-            if !self.poll()? {
+            if !self.poll(
+                WIN_EVENTLOOP_POLL_MAX_MESSAGES,
+                WIN_EVENTLOOP_POLL_WAIT_TIMEOUT_MS,
+            )? {
                 break;
             }
         }

@@ -11,7 +11,7 @@ impl ConfigPanel {
             #[cfg(debug_assertions)]
             ui.horizontal(|ui| {
                 use crate::styles::Theme;
-                ui.label("Theme: ");
+                ui.label("Theme(Debug): ");
                 egui::ComboBox::from_id_source("ThemeChooser")
                     .selected_text(config.theme.to_string())
                     .show_ui(ui, |ui| {
