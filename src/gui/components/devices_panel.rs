@@ -64,7 +64,7 @@ impl DevicesPanel {
             }
         });
         row.col(|ui| {
-            ui.label("Touch");
+            ui.label(device.generic.device_type.to_string());
             ui.add_space(10.0);
         });
         row.col(|ui| {
@@ -105,8 +105,7 @@ impl DevicesPanel {
             .auto_shrink(false)
             .cell_layout(egui::Layout::left_to_right(egui::Align::LEFT))
             .column(Column::exact(100.0))
-            .columns(Column::auto(), 2)
-            .column(Column::exact(60.0))
+            .columns(Column::auto(), 3)
             .column(Column::remainder());
         let mut changed = false;
 

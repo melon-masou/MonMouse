@@ -45,7 +45,7 @@ use super::winwrap::*;
 pub struct WinDevice {
     pub handle: HANDLE,
     pub id: Option<String>,
-    pub rawinput: RawinputInfo,
+    pub rawinput: Option<RawinputInfo>,
     pub iface: Option<DeviceIfaceInfo>,
     pub parents: Vec<WString>,
     pub hid: Option<HidDeviceInfo>,
@@ -56,24 +56,29 @@ impl std::fmt::Display for WinDevice {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Dev({})", self.handle.0)?;
 
-        writeln!(f, "iface: {}", self.rawinput.iface)?;
-        writeln!(f, "dwType: {}", self.rawinput.typ())?;
+        let rawinput = match &self.rawinput {
+            Some(v) => v,
+            None => return writeln!(f, "Is a dummy device"),
+        };
+
+        writeln!(f, "iface: {}", rawinput.iface)?;
+        writeln!(f, "dwType: {}", rawinput.typ())?;
         write!(f, "parents: [ ")?;
         for p in &self.parents {
             write!(f, "{} ", p)?;
         }
         writeln!(f, "]")?;
 
-        match self.rawinput.typ() {
+        match rawinput.typ() {
             DeviceType::MOUSE => {
-                let mouse = self.rawinput.get_mouse();
+                let mouse = rawinput.get_mouse();
                 writeln!(f, "Is a Mouse")?;
                 writeln!(f, "dwId: {}", mouse.dwId)?;
                 writeln!(f, "dwNumberOfButtons: {}", mouse.dwNumberOfButtons)?;
                 writeln!(f, "dwSampleRate: {}", mouse.dwSampleRate)?;
             }
             DeviceType::KEYBOARD => {
-                let hid = self.rawinput.get_hid();
+                let hid = rawinput.get_hid();
                 writeln!(f, "Is HID")?;
                 writeln!(f, "dwProductId: {}", hid.dwProductId)?;
                 writeln!(f, "dwVendorId: {}", hid.dwVendorId)?;
@@ -113,6 +118,23 @@ fn init_device_control(handle: HANDLE) -> DeviceController {
         remember_pos: false,
     };
     DeviceController::new(handle.0 as u64, setting)
+}
+
+// A dummy device for WM_INPUT events which have RAWINPUT.hDevice is null.
+// Those may be from some precision touchpads. Official documents lack pages about this.
+// Ref: https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-rawinputheader
+//      https://stackoverflow.com/questions/57552844/rawinputheader-hdevice-null-on-wm-input-for-laptop-trackpad
+fn dummy_device_for_unclassified_events() -> WinDevice {
+    let handle = HANDLE(0);
+    WinDevice {
+        handle,
+        id: Some(String::from("DummyDeviceForUnclassifiedEvents")),
+        rawinput: None,
+        iface: None,
+        parents: Vec::new(),
+        hid: None,
+        ctrl: init_device_control(handle),
+    }
 }
 
 fn collect_device_infos(dev: &RAWINPUTDEVICELIST) -> Result<WinDevice> {
@@ -170,7 +192,7 @@ fn collect_device_infos(dev: &RAWINPUTDEVICELIST) -> Result<WinDevice> {
     Ok(WinDevice {
         handle: dev.hDevice,
         id,
-        rawinput,
+        rawinput: Some(rawinput),
         iface,
         parents,
         hid,
@@ -389,13 +411,14 @@ impl WinDeviceProcessor {
             return Ok(false);
         }
 
-        let rawdevices = match self.collect_all_raw_devices() {
+        let mut rawdevices = match self.collect_all_raw_devices() {
             Ok(v) => v,
             Err(e) => {
                 error!("Collect all raw devices failed: {}", e);
                 return Err(e);
             }
         };
+        rawdevices.push(dummy_device_for_unclassified_events());
 
         debug!("Updated rawdevices list: num={}", rawdevices.len());
         for d in rawdevices.iter() {
@@ -491,8 +514,6 @@ impl WinDeviceProcessor {
             wtick,
             rawinput_to_string(ri)
         );
-
-        // TODO: hDevice can be zero if an input is received from a precision touchpad
 
         match self.devices.get_and_update_active(ri.header.hDevice) {
             Some(dev) => {
@@ -655,13 +676,7 @@ impl WinEventLoop {
     }
 
     pub fn is_valid_win_device(d: &WinDevice) -> bool {
-        d.id.is_some()
-            && match d.rawinput.typ() {
-                DeviceType::MOUSE => true,
-                DeviceType::KEYBOARD => false,
-                DeviceType::HID => true,
-                DeviceType::UNKNOWN => false,
-            }
+        d.id.is_some() && Self::get_device_type(d).is_pointer()
     }
 
     pub fn win_device_to_generic(d: &WinDevice) -> GenericDevice {
@@ -700,36 +715,44 @@ impl WinEventLoop {
                 return name;
             }
         };
-
-        let iface = d.iface.as_ref().unwrap();
-        let mut name = if let WStringOption::Some(s) = &iface.manufacurer {
-            let mut s = s.to_string();
-            s.push(' ');
-            s
-        } else {
-            String::new()
-        };
-        name.push_str(iface.name.to_string().as_str());
-        name
+        if let Some(iface) = &d.iface {
+            let mut name = if let WStringOption::Some(s) = &iface.manufacurer {
+                let mut s = s.to_string();
+                s.push(' ');
+                s
+            } else {
+                String::new()
+            };
+            name.push_str(iface.name.to_string().as_str());
+            return name;
+        }
+        d.id.as_ref().unwrap().clone()
     }
 
     pub fn get_device_type(d: &WinDevice) -> GenericDeviceType {
-        match d.rawinput.typ() {
-            DeviceType::MOUSE => GenericDeviceType::Mouse,
-            DeviceType::KEYBOARD => GenericDeviceType::Unknown,
-            DeviceType::HID => GenericDeviceType::HIDUnknown,
-            DeviceType::UNKNOWN => GenericDeviceType::Unknown,
+        match &d.rawinput {
+            Some(rawinput) => match rawinput.typ() {
+                DeviceType::MOUSE => GenericDeviceType::Mouse,
+                DeviceType::KEYBOARD => GenericDeviceType::Keyboard,
+                DeviceType::HID => GenericDeviceType::HIDUnknown,
+                DeviceType::UNKNOWN => GenericDeviceType::Unknown,
+            },
+            None => GenericDeviceType::DummyPointer,
         }
     }
 
     pub fn build_platform_specific_infos(d: &WinDevice) -> Vec<(String, String)> {
         let tag = |s: &str| s.to_owned();
 
-        let mut vs = vec![
-            (tag("interface"), d.rawinput.iface.to_string()),
-            (tag("dwType"), d.rawinput.rid_info.dwType.0.to_string()),
-        ];
+        let rawinput = match &d.rawinput {
+            Some(v) => v,
+            None => return Vec::new(),
+        };
 
+        let mut vs = vec![
+            (tag("interface"), rawinput.iface.to_string()),
+            (tag("dwType"), rawinput.rid_info.dwType.0.to_string()),
+        ];
         if let Some(hm) = &d.hid {
             if let WStringOption::Some(s) = &hm.manufacturer {
                 vs.push((tag("hidManufacurer"), s.to_string()));
@@ -757,16 +780,16 @@ impl WinEventLoop {
             }
         }
 
-        match d.rawinput.typ() {
+        match rawinput.typ() {
             DeviceType::MOUSE => {
-                let m = &d.rawinput.get_mouse();
+                let m = &rawinput.get_mouse();
                 vs.push((tag("dwId"), m.dwId.to_string()));
                 vs.push((tag("dwNumberOfButtons"), m.dwNumberOfButtons.to_string()));
                 vs.push((tag("dwSampleRate"), m.dwSampleRate.to_string()));
             }
             DeviceType::KEYBOARD => (),
             DeviceType::HID => {
-                let m = &d.rawinput.get_hid();
+                let m = &rawinput.get_hid();
                 vs.push((tag("dwProductId"), m.dwProductId.to_string()));
                 vs.push((tag("dwVendorId"), m.dwVendorId.to_string()));
                 vs.push((tag("dwVersionNumber"), m.dwVersionNumber.to_string()));
