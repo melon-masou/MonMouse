@@ -599,7 +599,8 @@ impl WinDeviceProcessor {
                 self.to_update_devices = true;
             }
         };
-        self.resolve_pending_updating_task()
+        self.resolve_pending_updating_task();
+        self.resolve_relocation();
     }
 
     fn resolve_pending_updating_task(&mut self) {
@@ -612,7 +613,9 @@ impl WinDeviceProcessor {
                 self.relocator.done_update_monitors();
             }
         }
+    }
 
+    fn resolve_relocation(&mut self) {
         if let Some((new_pos, scale)) = self.relocator.pop_relocate_pos() {
             let (x, y) = WinDeviceProcessor::phy_pos_from(&new_pos, scale);
             let _ = set_cursor_pos(x, y);

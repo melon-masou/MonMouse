@@ -117,7 +117,7 @@ impl MouseRelocator {
                         return;
                     }
                 } else {
-                    // Find area to be lockedted
+                    // Find area to be locked
                     if let Some(area) = self.monitors.locate(&pos) {
                         c.locked_area = Some(*area);
                     } else {
@@ -198,15 +198,17 @@ impl MonitorArea {
         (self.lefttop.x <= p.x && p.x <= self.rigtbtm.x)
             && (self.lefttop.y <= p.y && p.y <= self.rigtbtm.y)
     }
+    const RESERVE_PIXEL: i32 = 3;
     pub fn capture_pos(&self, p: &MousePos) -> MousePos {
-        let x1 = match (p.x < self.lefttop.x, p.x > self.rigtbtm.x) {
+        let rp = Self::RESERVE_PIXEL;
+        let x1 = match (p.x < self.lefttop.x, p.x > self.rigtbtm.x - rp) {
             (true, _) => self.lefttop.x,
-            (_, true) => self.rigtbtm.x,
+            (_, true) => self.rigtbtm.x - rp,
             _ => p.x,
         };
-        let y1 = match (p.y < self.lefttop.y, p.y > self.rigtbtm.y) {
+        let y1 = match (p.y < self.lefttop.y, p.y > self.rigtbtm.y - rp) {
             (true, _) => self.lefttop.y,
-            (_, true) => self.rigtbtm.y,
+            (_, true) => self.rigtbtm.y - rp,
             _ => p.y,
         };
         MousePos::from(x1, y1)
