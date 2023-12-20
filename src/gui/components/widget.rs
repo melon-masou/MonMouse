@@ -61,8 +61,34 @@ pub fn indicator_ui(ui: &mut egui::Ui, color: impl Into<Color32>) -> egui::Respo
     response
 }
 
-// Codes derived from, under MIT license:
-//   https://github.com/emilk/egui/blob/0.24.1/crates/egui_demo_lib/src/demo/toggle_switch.rs
+//Codes derived from:
+// https://github.com/emilk/egui/blob/0.24.1/crates/egui_demo_lib/src/demo/toggle_switch.rs
+//Under MIT license:
+// Copyright (c) 2018-2021 Emil Ernerfeldt <emil.ernerfeldt@gmail.com>
+
+// Permission is hereby granted, free of charge, to any
+// person obtaining a copy of this software and associated
+// documentation files (the "Software"), to deal in the
+// Software without restriction, including without
+// limitation the rights to use, copy, modify, merge,
+// publish, distribute, sublicense, and/or sell copies of
+// the Software, and to permit persons to whom the Software
+// is furnished to do so, subject to the following
+// conditions:
+
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions
+// of the Software.
+
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+// DEALINGS IN THE SOFTWARE.
 pub fn toggle_ui(ui: &mut egui::Ui, on: &mut bool, label: impl ToString) -> egui::Response {
     let size = ui.spacing().interact_size.y * (egui::vec2(2.0, 1.0));
     let (rect, mut response) = ui.allocate_exact_size(size, egui::Sense::click());
