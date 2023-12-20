@@ -54,12 +54,12 @@ impl DevicesPanel {
             ui.label(Self::active_str(&device.status));
         });
         row.col(|ui| {
-            if toggle_ui(ui, &mut device.switch, "switch").changed() {
+            if toggle_ui(ui, &mut device.device_setting.switch, "switch").changed() {
                 changed = true;
             }
         });
         row.col(|ui| {
-            if toggle_ui(ui, &mut device.locked, "locked").changed() {
+            if toggle_ui(ui, &mut device.device_setting.locked_in_monitor, "locked").changed() {
                 changed = true;
             }
         });

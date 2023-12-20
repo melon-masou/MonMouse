@@ -3,7 +3,7 @@ use std::{
     sync::mpsc::{channel, sync_channel, Receiver, SendError, Sender, SyncSender, TryRecvError},
 };
 
-use crate::{device_type::DeviceType, errors::Error, setting::Settings};
+use crate::{device_type::DeviceType, errors::Error, setting::ProcessorSettings};
 
 #[derive(Debug, Clone, Copy)]
 pub enum Positioning {
@@ -35,7 +35,7 @@ pub enum Message {
     RestartUI,
     ScanDevices((), Result<Vec<GenericDevice>>),
     InspectDevicesStatus((), Result<Vec<(String, DeviceStatus)>>),
-    ApplyDevicesSetting(Option<Settings>, Result<()>),
+    ApplyDevicesSetting(Option<ProcessorSettings>, Result<()>),
 }
 
 impl Message {

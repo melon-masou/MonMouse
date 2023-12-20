@@ -3,7 +3,7 @@ use std::sync::mpsc::{RecvError, TryRecvError};
 use eframe::egui;
 use monmouse::{
     message::{DeviceStatus, GenericDevice, Message, UIReactor},
-    setting::{DeviceSetting, Settings},
+    setting::{DeviceSetting, DeviceSettingItem, ProcessorSettings, Settings},
     utils::SimpleRatelimit,
 };
 
@@ -61,7 +61,7 @@ impl App {
         self.result_clear();
         self.ui_reactor
             .send_mouse_control(Message::ApplyDevicesSetting(
-                Some(self.collect_settings()),
+                Some(self.collect_processor_settings()),
                 Message::inited(),
             ))
             .unwrap();
@@ -72,7 +72,7 @@ impl App {
     pub fn new(ui_reactor: UIReactor) -> Self {
         let state = AppState::default();
         let rl_inspect_devices_status =
-            SimpleRatelimit::new(state.global_config.inspect_device_activity_interval_ms);
+            SimpleRatelimit::new(state.settings.ui.inspect_device_interval_ms);
 
         App {
             state,
@@ -84,15 +84,14 @@ impl App {
     }
 
     pub fn get_theme(&self) -> Theme {
-        Theme::from_string(self.state.global_config.theme.as_str())
+        Theme::from_string(self.state.settings.ui.theme.as_str())
     }
 
     fn merge_scanned_devices(&mut self, devs: Vec<GenericDevice>) {
         self.state.managed_devices = devs
             .into_iter()
             .map(|v| DeviceUIState {
-                locked: false,
-                switch: false,
+                device_setting: DeviceSetting::default(),
                 generic: v,
                 status: DeviceStatus::Disconnected,
             })
@@ -115,26 +114,18 @@ impl App {
         });
     }
 
-    fn collect_settings(&self) -> Settings {
-        Settings {
-            merge_unassociated_events_within_next_ms: self
-                .state
-                .global_config
-                .merge_unassociated_events_within_next_ms,
+    fn collect_processor_settings(&self) -> ProcessorSettings {
+        ProcessorSettings {
             devices: self
                 .state
                 .managed_devices
                 .iter()
-                .map(|d| {
-                    (
-                        d.generic.id.clone(),
-                        DeviceSetting {
-                            locked_in_monitor: d.locked,
-                            switch: d.switch,
-                        },
-                    )
+                .map(|d| DeviceSettingItem {
+                    id: d.generic.id.clone(),
+                    content: d.device_setting,
                 })
                 .collect(),
+            ..self.state.settings.processor
         }
     }
 
@@ -188,35 +179,15 @@ impl App {
     }
 }
 
+#[derive(Default)]
 pub struct AppState {
-    pub global_config: GlobalConfig,
+    pub settings: Settings,
     pub managed_devices: Vec<DeviceUIState>,
     pub config_input: ConfigInputState,
 }
 
-impl Default for AppState {
-    fn default() -> Self {
-        Self {
-            global_config: GlobalConfig {
-                theme: Theme::Auto.to_string(),
-                inspect_device_activity_interval_ms: 100,
-                merge_unassociated_events_within_next_ms: Some(5),
-            },
-            managed_devices: Vec::<DeviceUIState>::new(),
-            config_input: ConfigInputState::default(),
-        }
-    }
-}
-
-pub struct GlobalConfig {
-    pub theme: String,
-    pub inspect_device_activity_interval_ms: u64,
-    pub merge_unassociated_events_within_next_ms: Option<u64>,
-}
-
 pub struct DeviceUIState {
-    pub locked: bool,
-    pub switch: bool,
+    pub device_setting: DeviceSetting,
     pub generic: GenericDevice,
     pub status: DeviceStatus,
 }

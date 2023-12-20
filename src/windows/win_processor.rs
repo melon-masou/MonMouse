@@ -15,7 +15,7 @@ use crate::mouse_control::MonitorAreasList;
 use crate::mouse_control::MousePos;
 use crate::mouse_control::MouseRelocator;
 use crate::setting::DeviceSetting;
-use crate::setting::Settings;
+use crate::setting::ProcessorSettings;
 use crate::utils::SimpleRatelimit;
 
 use core::cell::OnceCell;
@@ -326,7 +326,7 @@ struct WinDeviceProcessor {
     raw_input_buf: WBuffer,
     tick_widen: TickWiden,
     relocator: MouseRelocator,
-    settings: Settings,
+    settings: ProcessorSettings,
     to_update_devices: bool,
 
     rl_update_mon: SimpleRatelimit,
@@ -349,7 +349,7 @@ impl WinDeviceProcessor {
             raw_input_buf: WBuffer::new(RAWINPUT_MSG_INIT_BUF_SIZE),
             tick_widen: TickWiden::new(),
             relocator: MouseRelocator::new(),
-            settings: Settings::default(),
+            settings: ProcessorSettings::default(),
             to_update_devices: false,
 
             rl_update_mon: SimpleRatelimit::new(RATELIMIT_UPDATE_MONITOR_ONCE_MS),
@@ -525,7 +525,7 @@ impl WinDeviceProcessor {
         let applied: usize = settings.devices.iter().fold(0, |applied, dev_setting| {
             let found_dev = self.devices.iter_mut().find(|v| {
                 if let Some(id) = &v.id {
-                    if id == &dev_setting.0 {
+                    if id == &dev_setting.id {
                         return true;
                     }
                 }
@@ -533,7 +533,7 @@ impl WinDeviceProcessor {
             });
             match found_dev {
                 Some(d) => {
-                    d.ctrl.update_settings(&dev_setting.1);
+                    d.ctrl.update_settings(&dev_setting.content);
                     applied + 1
                 }
                 None => applied,
@@ -541,7 +541,7 @@ impl WinDeviceProcessor {
         });
 
         debug!(
-            "{} in {} devices' setting has not applied",
+            "{} in {} devices setting has not been applied",
             applied,
             settings.devices.len()
         );
@@ -573,7 +573,8 @@ impl WinDeviceProcessor {
         // Try merging unassociated event
         if ri.header.hDevice == HANDLE(0) {
             // If configured
-            if let Some(merge_within) = self.settings.merge_unassociated_events_within_next_ms {
+            if self.settings.merge_unassociated_events_ms >= 0 {
+                let merge_within = self.settings.merge_unassociated_events_ms as u64;
                 // If active device exists
                 if let Some(active_dev) = self.devices.active() {
                     if let Some((active_tick, _, _)) = active_dev.ctrl.get_last_pos() {

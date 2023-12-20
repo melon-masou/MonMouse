@@ -1,0 +1,10 @@
+ui:
+  inspect_device_interval_ms: 100
+processor:
+  merge_unassociated_events_ms: 5
+  devices:
+  - id: "DeviceId1"
+    locked_in_monitor: true
+  - id: "DeviceId2"
+    locked_in_monitor: false
+    switch: true
