@@ -711,6 +711,19 @@ impl WinEventLoop {
 }
 
 impl WinEventLoop {
+    pub fn scan_devices(&mut self) -> Result<Vec<GenericDevice>> {
+        match self.processor.try_update_devices(true) {
+            Ok(_) => Ok(self
+                .processor
+                .devices
+                .iter()
+                .filter(|&v| Self::is_valid_win_device(v))
+                .map(Self::win_device_to_generic)
+                .collect()),
+            Err(e) => Err(e),
+        }
+    }
+
     pub fn poll_message(&mut self, mouse_control_reactor: &MouseControlReactor) {
         loop {
             let msg = match mouse_control_reactor.mouse_control_rx.try_recv() {
@@ -722,17 +735,7 @@ impl WinEventLoop {
             // Is it possible to reuse the msg?
             match msg {
                 Message::ScanDevices(_, _) => {
-                    let ret = match self.processor.try_update_devices(true) {
-                        Ok(_) => Ok(self
-                            .processor
-                            .devices
-                            .iter()
-                            .filter(|&v| Self::is_valid_win_device(v))
-                            .map(Self::win_device_to_generic)
-                            .collect()),
-                        Err(e) => Err(e),
-                    };
-                    mouse_control_reactor.return_msg(Message::ScanDevices((), ret));
+                    mouse_control_reactor.return_msg(Message::ScanDevices((), self.scan_devices()));
                 }
                 Message::InspectDevicesStatus(_, _) => {
                     let tick = get_cur_tick();

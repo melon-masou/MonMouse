@@ -3,6 +3,7 @@ name = "monmouse"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
+authors = ["melon.masou <melon.masou@outlook.com>"]
 default-run = "monmouse"
 build = "build.rs"
 

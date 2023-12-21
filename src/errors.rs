@@ -2,14 +2,17 @@ use thiserror::Error as ThisError;
 
 #[derive(ThisError, Debug)]
 pub enum Error {
-    #[error("ErrorInited")]
-    MessageInited,
     #[error("ErrorNoConfigFile")]
     NoConfigFile,
     #[error("ErrorCannotOpenConfig({0})")]
     CannotOpenConfig(String),
     #[error("ErrorInvalidConfigFile({0})")]
     InvalidConfigFile(String),
+    #[error("ErrorInvalidParam(field={0}; {1})")]
+    InvalidParam(String, String),
+
+    #[error("ErrorInited")]
+    MessageInited,
 
     #[error("ErrorWinUnknown")]
     WinUnknown,
