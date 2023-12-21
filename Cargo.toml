@@ -4,9 +4,7 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 default-run = "monmouse"
-
-[features]
-ui = []
+build = "build.rs"
 
 [[bin]]
 name = "monmouse-cli"
@@ -21,7 +19,7 @@ thiserror = "1.0"
 log = "0.4"
 env_logger = "0.10"
 clap = { version = "4.4.11", features = ["derive"] }
-eframe = "0.24.1"
+eframe = { version = "0.24.1", features = ["persistence"] }
 egui_extras = "0.24.2"
 serde = { version = "1.0.193", features = ["derive"] }
 tray-icon = "0.11.1"
@@ -47,6 +45,9 @@ features = [
     "Win32_System_SystemInformation",
     "Win32_Graphics_Gdi",
 ]
+
+[target.'cfg(target_os = "windows")'.build-dependencies]
+which = "5.0.0"
 
 [profile.release]
 strip = true

@@ -112,6 +112,7 @@ fn ui_options_main_window() -> eframe::NativeOptions {
         follow_system_theme: true,
         run_and_return: true,
         centered: true,
+        persist_window: true,
         ..Default::default()
     }
 }
