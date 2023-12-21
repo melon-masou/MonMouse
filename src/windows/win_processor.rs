@@ -390,13 +390,14 @@ impl WinDeviceProcessor {
                 return Err(e);
             }
         }
-        match self.try_update_devices(true) {
-            Ok(_) => (),
-            Err(e) => {
-                error!("Init devices info failed: {}", e);
-                return Err(e);
-            }
-        }
+        // No need. Register raw devices will trigger RAW_DEVICE_CHANGE
+        // match self.try_update_devices(true) {
+        //     Ok(_) => (),
+        //     Err(e) => {
+        //         error!("Init devices info failed: {}", e);
+        //         return Err(e);
+        //     }
+        // }
         Ok(())
     }
     fn terminate(&mut self) -> Result<()> {

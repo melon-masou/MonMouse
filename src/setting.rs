@@ -104,20 +104,6 @@ impl UISettings {
     }
 }
 
-// pub struct Settings {
-//     pub merge_unassociated_events_within_next_ms: Option<u64>,
-//     pub devices: Vec<(String, DeviceSetting)>,
-// }
-
-// impl Default for Settings {
-//     fn default() -> Self {
-//         Self {
-//             merge_unassociated_events_within_next_ms: Some(5),
-//             devices: Vec::new(),
-//         }
-//     }
-// }
-
 // Some helper functions for serde_derive default
 #[allow(dead_code)]
 const fn u64_const<const V: u64>() -> u64 {

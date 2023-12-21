@@ -149,10 +149,10 @@ impl DevicesPanel {
 
     pub fn ui(ui: &mut egui::Ui, app: &mut App) {
         ui.horizontal(|ui| {
-            if manage_button(ui, "Scan").clicked() {
+            if ui.add(manage_button("Scan")).clicked() {
                 app.trigger_scan_devices();
             }
-            if manage_button(ui, "Save").clicked() {
+            if ui.add(manage_button("Save")).clicked() {
                 // TODO
             }
         });

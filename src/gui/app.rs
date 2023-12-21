@@ -67,6 +67,23 @@ impl App {
             ))
             .unwrap();
     }
+
+    pub fn apply_new_settings(&mut self) {
+        match self.state.config_input.parse_all(&mut self.state.settings) {
+            Ok(_) => {
+                self.trigger_settings_changed();
+            }
+            Err(_) => self.result_error("Not all fields contain valid value".to_owned()),
+        }
+    }
+    pub fn restore_settings(&mut self) {
+        self.state.config_input.set(&self.state.settings);
+        self.result_ok("Settings restored".to_owned());
+    }
+    pub fn set_default_settings(&mut self) {
+        self.state.config_input.set(&Settings::default());
+        self.result_ok("Default settings restored".to_owned());
+    }
 }
 
 impl App {
@@ -89,6 +106,7 @@ impl App {
             Ok(s) => self.state.settings = s,
             Err(e) => self.result_error(format!("Cannot load config, use default config: {}", e)),
         }
+        self.state.config_input.set(&self.state.settings);
         self
     }
 
@@ -196,13 +214,13 @@ impl App {
         }
     }
 
-    fn result_ok(&mut self, msg: String) {
+    pub fn result_ok(&mut self, msg: String) {
         self.last_result = StatusBarResult::Ok(msg);
     }
-    fn result_error(&mut self, msg: String) {
+    pub fn result_error(&mut self, msg: String) {
         self.last_result = StatusBarResult::ErrMsg(msg);
     }
-    fn result_clear(&mut self) {
+    pub fn result_clear(&mut self) {
         self.last_result = StatusBarResult::None;
     }
 }

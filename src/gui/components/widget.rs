@@ -38,10 +38,9 @@ pub fn device_status_color(ui: &egui::Ui, s: &DeviceStatus) -> Color32 {
     }
 }
 
-pub fn manage_button(ui: &mut egui::Ui, text: &str) -> egui::Response {
+pub fn manage_button<'a>(text: &'a str) -> egui::Button<'a> {
     let text = egui::RichText::new(text).strong();
-    let button = egui::Button::new(text).min_size(egui::vec2(70.0, 25.0));
-    ui.add(button)
+    egui::Button::new(text).min_size(egui::vec2(70.0, 25.0))
 }
 
 pub fn indicator_ui(ui: &mut egui::Ui, color: impl Into<Color32>) -> egui::Response {
