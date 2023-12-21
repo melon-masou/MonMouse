@@ -24,7 +24,7 @@ egui_extras = "0.24.2"
 serde = { version = "1.0.193", features = ["derive"] }
 tray-icon = "0.11.1"
 image = "0.24.7"
-config = { version = "0.13.4", features = ["yaml"] }
+serde_yaml = "0.9.28"
 
 [target.'cfg(target_os = "windows")'.dependencies.windows]
 version = "0.52"

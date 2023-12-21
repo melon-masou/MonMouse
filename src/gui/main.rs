@@ -2,6 +2,7 @@
 
 mod app;
 mod components;
+mod config;
 mod styles;
 mod tray;
 
@@ -15,6 +16,7 @@ use components::devices_panel::DevicesPanel;
 use components::status_bar::status_bar_ui;
 use eframe::egui;
 use log::info;
+use monmouse::setting::{read_config, Settings, CONFIG_FILE_NAME};
 use monmouse::{
     errors::Error,
     message::{setup_reactors, MasterReactor, MouseControlReactor, UIReactor},
@@ -25,6 +27,7 @@ use tray::{Tray, TrayEvent};
 
 #[cfg(debug_assertions)]
 use crate::components::debug::DebugInfo;
+use crate::config::get_config_dir;
 
 pub fn load_icon() -> egui::IconData {
     let icon_data = include_bytes!("..\\..\\assets\\monmouse.ico");
@@ -41,6 +44,12 @@ pub fn load_icon() -> egui::IconData {
 
 fn main() -> Result<(), eframe::Error> {
     env_logger::builder().init();
+    let config_file = get_config_dir().map(|v| v.join(CONFIG_FILE_NAME));
+    let config = config_file.and_then(read_config);
+    let config_clone = match &config {
+        Ok(v) => Some(v.clone()),
+        Err(_) => None,
+    };
 
     let (master_reactor, mouse_control_reactor, ui_reactor) = setup_reactors();
 
@@ -48,14 +57,20 @@ fn main() -> Result<(), eframe::Error> {
     let mouse_control_thread = thread::spawn(move || {
         let eventloop = monmouse::Eventloop::new(false);
         let tray = Tray::new();
-        match mouse_control_eventloop(eventloop, tray, &master_reactor, &mouse_control_reactor) {
+        match mouse_control_eventloop(
+            eventloop,
+            tray,
+            &master_reactor,
+            &mouse_control_reactor,
+            config_clone,
+        ) {
             Ok(_) => info!("mouse control eventloop exited normally"),
             Err(e) => panic!("mouse control eventloop exited for error: {}", e),
         }
     });
 
     // winit wrapped by eframe, requires UI eventloop running inside main thread
-    let result = egui_eventloop(ui_reactor);
+    let result = egui_eventloop(ui_reactor, config);
     let _ = mouse_control_thread.join();
     result
 }
@@ -65,8 +80,12 @@ fn mouse_control_eventloop(
     tray: Tray,
     master_reactor: &MasterReactor,
     mouse_control_reactor: &MouseControlReactor,
+    config: Option<Settings>,
 ) -> Result<(), Error> {
     eventloop.initialize()?;
+    if let Some(c) = config {
+        eventloop.load_config(c);
+    }
     loop {
         match tray.poll_event() {
             Some(TrayEvent::Open) => master_reactor.restart_ui(),
@@ -83,8 +102,11 @@ fn mouse_control_eventloop(
     Ok(())
 }
 
-fn egui_eventloop(ui_reactor: UIReactor) -> Result<(), eframe::Error> {
-    let app = Rc::new(RefCell::new(App::new(ui_reactor)));
+fn egui_eventloop(
+    ui_reactor: UIReactor,
+    config: Result<Settings, Error>,
+) -> Result<(), eframe::Error> {
+    let app = Rc::new(RefCell::new(App::new(ui_reactor).load_config(config)));
     loop {
         let app_ref = app.clone();
         eframe::run_native(

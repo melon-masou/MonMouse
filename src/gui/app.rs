@@ -2,6 +2,7 @@ use std::sync::mpsc::{RecvError, TryRecvError};
 
 use eframe::egui;
 use monmouse::{
+    errors::Error,
     message::{DeviceStatus, GenericDevice, Message, UIReactor},
     setting::{DeviceSetting, DeviceSettingItem, ProcessorSettings, Settings},
     utils::SimpleRatelimit,
@@ -83,19 +84,46 @@ impl App {
         }
     }
 
+    pub fn load_config(mut self, config: Result<Settings, Error>) -> Self {
+        match config {
+            Ok(s) => self.state.settings = s,
+            Err(e) => self.result_error(format!("Cannot load config, use default config: {}", e)),
+        }
+        self
+    }
+
     pub fn get_theme(&self) -> Theme {
         Theme::from_string(self.state.settings.ui.theme.as_str())
     }
 
-    fn merge_scanned_devices(&mut self, devs: Vec<GenericDevice>) {
-        self.state.managed_devices = devs
-            .into_iter()
-            .map(|v| DeviceUIState {
-                device_setting: DeviceSetting::default(),
-                generic: v,
-                status: DeviceStatus::Disconnected,
-            })
-            .collect();
+    fn merge_scanned_devices(&mut self, new_devs: Vec<GenericDevice>) {
+        // Mark disconnected
+        for dev in &mut self.state.managed_devices {
+            dev.status = DeviceStatus::Disconnected;
+        }
+        // Merge list
+        for new_dev in new_devs.into_iter() {
+            match self
+                .state
+                .managed_devices
+                .iter_mut()
+                .find(|v| v.generic.id == new_dev.id)
+            {
+                Some(dev) => {
+                    dev.generic = new_dev;
+                    dev.status = DeviceStatus::Idle;
+                }
+                None => self.state.managed_devices.push(DeviceUIState {
+                    device_setting: DeviceSetting::default(),
+                    generic: new_dev,
+                    status: DeviceStatus::Idle,
+                }),
+            }
+        }
+        // Remove disconnected and not managed
+        // self.state.managed_devices.retain(|v| {
+        //     !matches!(v.status, DeviceStatus::Disconnected) || v.device_setting.is_effective()
+        // })
     }
 
     fn update_devices_status(&mut self, devs: Vec<(String, DeviceStatus)>) {

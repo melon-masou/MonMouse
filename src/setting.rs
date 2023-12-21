@@ -1,21 +1,18 @@
-use config::{Config, File};
+use crate::errors::Error;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
-const DEFAULT_CONFIG_PATH: &str = "conf/monmouse.yml";
+pub const CONFIG_FILE_NAME: &str = "monmouse.yml";
 
-pub fn load_config(path: Option<&str>) -> Settings {
-    let (path, required) = if let Some(v) = path {
-        (v, true)
-    } else {
-        (DEFAULT_CONFIG_PATH, false)
-    };
-
-    let settings = Config::builder()
-        .add_source(File::with_name(path).required(required))
-        .build()
-        .unwrap();
-
-    settings.try_deserialize::<Settings>().unwrap()
+pub fn read_config(file: PathBuf) -> Result<Settings, Error> {
+    match std::fs::read_to_string(file) {
+        Ok(v) => Ok(v),
+        Err(e) => Err(Error::CannotOpenConfig(e.to_string())),
+    }
+    .and_then(|content| match serde_yaml::from_str::<Settings>(&content) {
+        Ok(v) => Ok(v),
+        Err(e) => Err(Error::InvalidConfigFile(e.to_string())),
+    })
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -43,8 +40,8 @@ pub struct DeviceSettingItem {
 }
 
 impl DeviceSetting {
-    pub fn is_effective(d: &DeviceSetting) -> bool {
-        d.locked_in_monitor || d.switch
+    pub fn is_effective(&self) -> bool {
+        self.locked_in_monitor || self.switch
     }
 }
 

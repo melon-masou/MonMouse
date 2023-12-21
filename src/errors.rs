@@ -4,6 +4,12 @@ use thiserror::Error as ThisError;
 pub enum Error {
     #[error("ErrorInited")]
     MessageInited,
+    #[error("ErrorNoConfigFile")]
+    NoConfigFile,
+    #[error("ErrorCannotOpenConfig({0})")]
+    CannotOpenConfig(String),
+    #[error("ErrorInvalidConfigFile({0})")]
+    InvalidConfigFile(String),
 
     #[error("ErrorWinUnknown")]
     WinUnknown,

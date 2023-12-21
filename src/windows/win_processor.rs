@@ -16,6 +16,7 @@ use crate::mouse_control::MousePos;
 use crate::mouse_control::MouseRelocator;
 use crate::setting::DeviceSetting;
 use crate::setting::ProcessorSettings;
+use crate::setting::Settings;
 use crate::utils::SimpleRatelimit;
 
 use core::cell::OnceCell;
@@ -657,6 +658,10 @@ impl WinEventLoop {
         self.processor.initialize()?;
         self.hook.register()?;
         Ok(())
+    }
+
+    pub fn load_config(&mut self, config: Settings) {
+        self.processor.settings = config.processor;
     }
 
     pub fn terminate(&mut self) -> Result<()> {
