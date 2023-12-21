@@ -43,48 +43,62 @@ impl ConfigPanel {
     }
 
     pub fn advanced_config(ui: &mut egui::Ui, input: &mut ConfigInputState) {
-        Self::config_item(
+        input.changed |= Self::config_item(
             ui,
             "Inspect device activity internal(MS)",
             &mut input.inspect_device_interval_ms,
             |ui, ist| ui.add(Self::textedit(ist.buf(), 8)),
-        );
+        )
+        .changed();
 
-        Self::config_item(
+        input.changed |= Self::config_item(
             ui,
             "Merge unassociated events within next(MS)",
             &mut input.merge_unassociated_events_ms,
             |ui, ist| ui.add(Self::textedit(ist.buf(), 8)),
-        );
+        )
+        .changed();
 
         // For debugging colors Only
         #[cfg(debug_assertions)]
-        Self::config_item(ui, "Theme(Debug):", &mut input.theme, |ui, ist| {
-            use crate::styles::Theme;
-            egui::ComboBox::from_id_source("ThemeChooser")
-                .selected_text(ist.buf().as_str())
-                .show_ui(ui, |ui| {
-                    let mut add_theme =
-                        |t: Theme| ui.selectable_value(ist.buf(), t.to_string(), t.to_string());
-                    add_theme(Theme::Auto);
-                    add_theme(Theme::Light);
-                    add_theme(Theme::Dark);
-                })
-                .response
-        });
+        {
+            input.changed |= Self::config_item(ui, "Theme(Debug):", &mut input.theme, |ui, ist| {
+                use crate::styles::Theme;
+                egui::ComboBox::from_id_source("ThemeChooser")
+                    .selected_text(ist.buf().as_str())
+                    .show_ui(ui, |ui| {
+                        let mut add_theme =
+                            |t: Theme| ui.selectable_value(ist.buf(), t.to_string(), t.to_string());
+                        add_theme(Theme::Auto).changed();
+                        add_theme(Theme::Light).changed();
+                        add_theme(Theme::Dark).changed();
+                    })
+                    .response
+            })
+            .clicked();
+        }
     }
 
     const SPACING: f32 = 10.0;
     pub fn ui(ui: &mut egui::Ui, app: &mut App) {
         ui.horizontal(|ui| {
-            if ui.add(manage_button("Apply")).clicked() {
+            if ui
+                .add_enabled(app.state.config_input.changed, manage_button("Apply"))
+                .clicked()
+            {
                 app.apply_new_settings();
+                app.state.config_input.changed = false;
             }
-            if ui.add(manage_button("Restore")).clicked() {
+            if ui
+                .add_enabled(app.state.config_input.changed, manage_button("Restore"))
+                .clicked()
+            {
                 app.restore_settings();
+                app.state.config_input.changed = false;
             }
             if ui.add(manage_button("Default")).clicked() {
                 app.set_default_settings();
+                app.state.config_input.changed = true;
             }
         });
 
@@ -168,6 +182,7 @@ impl<T: ToString, P: Parser<T>> InputState<T, P> {
 }
 
 pub struct ConfigInputState {
+    changed: bool,
     theme: InputState<String, NonCheck>,
     inspect_device_interval_ms: InputState<u64, OrderParser<u64>>,
     merge_unassociated_events_ms: InputState<i64, OrderParser<i64>>,
@@ -176,6 +191,7 @@ pub struct ConfigInputState {
 impl Default for ConfigInputState {
     fn default() -> Self {
         Self {
+            changed: false,
             theme: InputState::new(NonCheck()),
             inspect_device_interval_ms: InputState::new(OrderParser::new(20, 1000)),
             merge_unassociated_events_ms: InputState::new(OrderParser::new(-1, 1000)),

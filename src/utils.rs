@@ -15,6 +15,10 @@ impl SimpleRatelimit {
             false
         }
     }
+    pub fn reset(&mut self, v: u64) {
+        self.next = self.next - self.once_per + v;
+        self.once_per = v;
+    }
 }
 
 pub struct ArrayVec<T: Copy, const N: usize> {

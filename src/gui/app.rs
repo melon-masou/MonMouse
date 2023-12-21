@@ -71,6 +71,8 @@ impl App {
     pub fn apply_new_settings(&mut self) {
         match self.state.config_input.parse_all(&mut self.state.settings) {
             Ok(_) => {
+                self.rl_inspect_devices_status
+                    .reset(self.state.settings.ui.inspect_device_interval_ms);
                 self.trigger_settings_changed();
             }
             Err(_) => self.result_error("Not all fields contain valid value".to_owned()),
