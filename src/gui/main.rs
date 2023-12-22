@@ -7,6 +7,7 @@ mod styles;
 mod tray;
 
 use std::panic::PanicInfo;
+use std::path::PathBuf;
 use std::{cell::RefCell, panic, process, rc::Rc, thread};
 
 use app::App;
@@ -44,12 +45,12 @@ pub fn load_icon() -> egui::IconData {
 
 fn main() -> Result<(), eframe::Error> {
     env_logger::builder().init();
+
     let config_file = get_config_dir().map(|v| v.join(CONFIG_FILE_NAME));
-    let config = config_file.and_then(read_config);
-    let config_clone = match &config {
-        Ok(v) => Some(v.clone()),
-        Err(_) => None,
-    };
+    let config_path = config_file.as_ref().ok().cloned();
+
+    let config = config_file.and_then(|v| read_config(&v));
+    let config_clone = config.as_ref().ok().cloned();
 
     let (master_reactor, mouse_control_reactor, ui_reactor) = setup_reactors();
 
@@ -70,7 +71,7 @@ fn main() -> Result<(), eframe::Error> {
     });
 
     // winit wrapped by eframe, requires UI eventloop running inside main thread
-    let result = egui_eventloop(ui_reactor, config);
+    let result = egui_eventloop(ui_reactor, config, config_path);
     let _ = mouse_control_thread.join();
     result
 }
@@ -105,8 +106,11 @@ fn mouse_control_eventloop(
 fn egui_eventloop(
     ui_reactor: UIReactor,
     config: Result<Settings, Error>,
+    config_path: Option<PathBuf>,
 ) -> Result<(), eframe::Error> {
-    let app = Rc::new(RefCell::new(App::new(ui_reactor).load_config(config)));
+    let app = Rc::new(RefCell::new(
+        App::new(ui_reactor).load_config(config, config_path),
+    ));
     loop {
         let app_ref = app.clone();
         eframe::run_native(

@@ -100,6 +100,12 @@ impl ConfigPanel {
                 app.set_default_settings();
                 app.state.config_input.changed = true;
             }
+            if ui
+                .add_enabled(!app.state.config_input.changed, manage_button("Save"))
+                .clicked()
+            {
+                app.save_global_config();
+            }
         });
 
         ui.separator();

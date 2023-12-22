@@ -3,9 +3,9 @@ use thiserror::Error as ThisError;
 #[derive(ThisError, Debug)]
 pub enum Error {
     #[error("ErrorNoConfigFile")]
-    NoConfigFile,
-    #[error("ErrorCannotOpenConfig({0})")]
-    CannotOpenConfig(String),
+    ConfigFileNotExists,
+    #[error("ErrorIO({0})")]
+    IO(std::io::Error),
     #[error("ErrorInvalidConfigFile({0})")]
     InvalidConfigFile(String),
     #[error("ErrorInvalidParam(field={0}; {1})")]

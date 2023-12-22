@@ -49,7 +49,7 @@ fn main() -> Result<(), Error> {
     let args = Args::parse();
 
     setup_logger(args.log_level)?;
-    let config = read_config(PathBuf::from(args.config_file))?;
+    let config = read_config(&PathBuf::from(args.config_file))?;
 
     info!("monmouse-cli started");
     let mut eventloop = monmouse::Eventloop::new(true);

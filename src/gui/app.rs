@@ -1,10 +1,13 @@
-use std::sync::mpsc::{RecvError, TryRecvError};
+use std::{
+    path::PathBuf,
+    sync::mpsc::{RecvError, TryRecvError},
+};
 
 use eframe::egui;
 use monmouse::{
     errors::Error,
     message::{DeviceStatus, GenericDevice, Message, UIReactor},
-    setting::{DeviceSetting, DeviceSettingItem, ProcessorSettings, Settings},
+    setting::{write_config, DeviceSetting, DeviceSettingItem, ProcessorSettings, Settings},
     utils::SimpleRatelimit,
 };
 
@@ -13,6 +16,7 @@ use crate::{components::config_panel::ConfigInputState, styles::Theme};
 pub struct App {
     pub state: AppState,
     pub last_result: StatusBarResult,
+    config_path: Option<PathBuf>,
     should_exit: bool,
     ui_reactor: UIReactor,
     rl_inspect_devices_status: SimpleRatelimit,
@@ -97,18 +101,28 @@ impl App {
         App {
             state,
             last_result: StatusBarResult::None,
+            config_path: None,
             should_exit: false,
             ui_reactor,
             rl_inspect_devices_status,
         }
     }
 
-    pub fn load_config(mut self, config: Result<Settings, Error>) -> Self {
+    pub fn load_config(
+        mut self,
+        config: Result<Settings, Error>,
+        config_path: Option<PathBuf>,
+    ) -> Self {
         match config {
-            Ok(s) => self.state.settings = s,
+            Ok(s) => {
+                self.state.settings = s.clone();
+                self.state.saved_settings = s;
+            }
+            Err(Error::ConfigFileNotExists) => (),
             Err(e) => self.result_error(format!("Cannot load config, use default config: {}", e)),
-        }
+        };
         self.state.config_input.set(&self.state.settings);
+        self.config_path = config_path;
         self
     }
 
@@ -216,6 +230,42 @@ impl App {
         }
     }
 
+    pub fn save_global_config(&mut self) {
+        let mut new_settings = self.state.settings.clone();
+        new_settings.processor.devices = self.state.saved_settings.processor.devices.clone();
+        self.save_config(new_settings);
+    }
+    pub fn save_devices_config(&mut self) {
+        let mut new_settings = self.state.saved_settings.clone();
+        new_settings.processor.devices = self
+            .state
+            .managed_devices
+            .iter()
+            .filter(|d| d.device_setting.is_effective())
+            .map(|d| DeviceSettingItem {
+                id: d.generic.id.clone(),
+                content: d.device_setting,
+            })
+            .collect();
+        self.save_config(new_settings);
+    }
+    fn save_config(&mut self, new_settings: Settings) {
+        let Some(path) = &self.config_path else {
+            self.result_error("No path to save config".to_owned());
+            return;
+        };
+        match write_config(path, &new_settings) {
+            Ok(_) => (),
+            Err(e) => {
+                self.result_error(format!("Failed to write config file: {}", e));
+                return;
+            }
+        }
+        self.result_ok("Config saved".to_owned());
+        self.state.saved_settings = new_settings.clone();
+        self.state.settings = new_settings;
+    }
+
     pub fn result_ok(&mut self, msg: String) {
         self.last_result = StatusBarResult::Ok(msg);
     }
@@ -230,6 +280,7 @@ impl App {
 #[derive(Default)]
 pub struct AppState {
     pub settings: Settings,
+    pub saved_settings: Settings,
     pub managed_devices: Vec<DeviceUIState>,
     pub config_input: ConfigInputState,
 }

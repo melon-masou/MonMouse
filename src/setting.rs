@@ -1,17 +1,32 @@
 use crate::errors::Error;
 use serde::{Deserialize, Serialize};
+use std::io;
 use std::path::PathBuf;
 
 pub const CONFIG_FILE_NAME: &str = "monmouse.yml";
 
-pub fn read_config(file: PathBuf) -> Result<Settings, Error> {
+pub fn read_config(file: &PathBuf) -> Result<Settings, Error> {
     match std::fs::read_to_string(file) {
         Ok(v) => Ok(v),
-        Err(e) => Err(Error::CannotOpenConfig(e.to_string())),
+        Err(e) => match e.kind() {
+            io::ErrorKind::NotFound => Err(Error::ConfigFileNotExists),
+            _ => Err(Error::IO(e)),
+        },
     }
     .and_then(|content| match serde_yaml::from_str::<Settings>(&content) {
         Ok(v) => Ok(v),
         Err(e) => Err(Error::InvalidConfigFile(e.to_string())),
+    })
+}
+
+pub fn write_config(file: &PathBuf, settings: &Settings) -> Result<(), Error> {
+    match serde_yaml::to_string(settings) {
+        Ok(v) => Ok(v),
+        Err(e) => Err(Error::InvalidConfigFile(e.to_string())),
+    }
+    .and_then(|content| match std::fs::write(file, content) {
+        Ok(_) => Ok(()),
+        Err(e) => Err(Error::IO(e)),
     })
 }
 

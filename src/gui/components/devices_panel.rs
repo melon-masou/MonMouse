@@ -153,7 +153,7 @@ impl DevicesPanel {
                 app.trigger_scan_devices();
             }
             if ui.add(manage_button("Save")).clicked() {
-                // TODO
+                app.save_devices_config();
             }
         });
 
