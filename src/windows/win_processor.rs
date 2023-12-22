@@ -3,7 +3,9 @@ use std::sync::mpsc::TryRecvError;
 
 use crate::device_type::DeviceType;
 use crate::device_type::WindowsRawinput;
+use crate::errors::Error;
 use crate::errors::Result;
+use crate::keyboard::key_windows::shortcut_str_to_win;
 use crate::message::DeviceStatus;
 use crate::message::GenericDevice;
 use crate::message::Message;
@@ -27,6 +29,7 @@ use windows::Win32::UI::WindowsAndMessaging::MsgWaitForMultipleObjects;
 use windows::Win32::UI::WindowsAndMessaging::PeekMessageW;
 use windows::Win32::UI::WindowsAndMessaging::PM_REMOVE;
 use windows::Win32::UI::WindowsAndMessaging::QS_ALLINPUT;
+use windows::Win32::UI::WindowsAndMessaging::WM_HOTKEY;
 use windows::Win32::UI::WindowsAndMessaging::WM_INPUT_DEVICE_CHANGE;
 use windows::Win32::{
     Foundation::{HANDLE, HWND, LPARAM, WPARAM},
@@ -329,6 +332,7 @@ struct WinDeviceProcessor {
     relocator: MouseRelocator,
     settings: ProcessorSettings,
     to_update_devices: bool,
+    hotkey_mgr: HotKeyManager<ShortcutID>,
 
     rl_update_mon: SimpleRatelimit,
     rl_update_dev: SimpleRatelimit,
@@ -352,6 +356,7 @@ impl WinDeviceProcessor {
             relocator: MouseRelocator::new(),
             settings: ProcessorSettings::default(),
             to_update_devices: false,
+            hotkey_mgr: HotKeyManager::new(),
 
             rl_update_mon: SimpleRatelimit::new(RATELIMIT_UPDATE_MONITOR_ONCE_MS),
             rl_update_dev: SimpleRatelimit::new(RATELIMIT_UPDATE_DEVICE_ONCE_MS),
@@ -383,6 +388,7 @@ impl WinDeviceProcessor {
                 return Err(e);
             }
         };
+        // No need call self.try_update_devices(). Register raw devices will trigger RAW_DEVICE_CHANGE
         match self.try_update_monitors(true) {
             Ok(_) => (),
             Err(e) => {
@@ -390,18 +396,82 @@ impl WinDeviceProcessor {
                 return Err(e);
             }
         }
-        // No need. Register raw devices will trigger RAW_DEVICE_CHANGE
-        // match self.try_update_devices(true) {
-        //     Ok(_) => (),
-        //     Err(e) => {
-        //         error!("Init devices info failed: {}", e);
-        //         return Err(e);
-        //     }
-        // }
+        match self.register_shortcuts() {
+            Ok(_) => (),
+            Err(e) => {
+                error!("Register shortcuts failed: {}", e);
+                return Err(e);
+            }
+        }
         Ok(())
     }
     fn terminate(&mut self) -> Result<()> {
         Ok(())
+    }
+}
+
+impl WinDeviceProcessor {
+    fn apply_one_shortcut(
+        mgr: &mut HotKeyManager<ShortcutID>,
+        hwnd: HWND,
+        shortcut_str: &str,
+        id: ShortcutID,
+    ) -> Result<()> {
+        if shortcut_str.is_empty() {
+            let _ = mgr.unregister(hwnd, id as i32);
+            return Ok(());
+        }
+        let _ = mgr.unregister(hwnd, id as i32);
+        match shortcut_str_to_win(shortcut_str) {
+            Some((modifier, key)) => mgr.register(hwnd, id as i32, modifier, key, false, id),
+            None => Err(Error::InvalidShortcut(shortcut_str.to_owned())),
+        }
+    }
+
+    fn register_shortcuts(&mut self) -> Result<()> {
+        let shortcuts = &self.settings.shortcuts;
+        let mut last_error: Result<()> = Ok(());
+
+        if let Err(e) = Self::apply_one_shortcut(
+            &mut self.hotkey_mgr,
+            self.hwnd,
+            &shortcuts.cur_mouse_lock,
+            ShortcutID::CurMouseLock,
+        ) {
+            error!("register shortcut cur_mouse_lock error: {}", e);
+            last_error = Err(e);
+        }
+
+        if let Err(e) = Self::apply_one_shortcut(
+            &mut self.hotkey_mgr,
+            self.hwnd,
+            &shortcuts.cur_mouse_jump_next,
+            ShortcutID::CurMouseJumpNext,
+        ) {
+            error!("register shortcut cur_mouse_jump_next error: {}", e);
+            last_error = Err(e);
+        }
+
+        last_error
+    }
+
+    fn on_shortcut(&mut self, cb: u32) {
+        let id = match self.hotkey_mgr.get_callback(cb) {
+            Some(v) => v,
+            None => return,
+        };
+        match id {
+            ShortcutID::CurMouseLock => self.on_shortcut_cur_mouse_lock(),
+            ShortcutID::CurMouseJumpNext => self.on_shortcut_cur_mouse_jump_next(),
+        }
+    }
+
+    fn on_shortcut_cur_mouse_lock(&mut self) {
+        println!("mouse lock")
+    }
+
+    fn on_shortcut_cur_mouse_jump_next(&mut self) {
+        println!("mouse jump next")
     }
 }
 
@@ -490,7 +560,7 @@ impl WinDeviceProcessor {
             debug!("Device: {}", d);
         }
         self.devices.rebuild(rawdevices);
-        self.apply_settings(); // Apply settings again
+        self.apply_devices_settings(); // Apply settings again
         self.to_update_devices = false;
         Ok(())
     }
@@ -522,7 +592,7 @@ impl WinDeviceProcessor {
         Ok(true)
     }
 
-    fn apply_settings(&mut self) {
+    fn apply_devices_settings(&mut self) {
         let settings = &self.settings;
         let applied: usize = settings.devices.iter().fold(0, |applied, dev_setting| {
             let found_dev = self.devices.iter_mut().find(|v| {
@@ -632,6 +702,7 @@ impl WinDeviceProcessor {
                 debug!("Trigger updating devices by WM_INPUT_DEVICE_CHANGE");
                 self.to_update_devices = true;
             }
+            WM_HOTKEY => self.on_shortcut(msg.lParam.0 as u32),
             _ => (),
         }
     }
@@ -754,10 +825,12 @@ impl WinEventLoop {
                         .collect();
                     mouse_control_reactor.return_msg(Message::InspectDevicesStatus((), Ok(ret)));
                 }
-                Message::ApplyDevicesSetting(settings, _) => {
+                Message::ApplyProcessorSetting(settings, _) => {
                     self.processor.settings = settings.unwrap();
-                    self.processor.apply_settings();
-                    mouse_control_reactor.return_msg(Message::ApplyDevicesSetting(None, Ok(())));
+                    self.processor.apply_devices_settings();
+                    let last_error = self.processor.register_shortcuts();
+                    mouse_control_reactor
+                        .return_msg(Message::ApplyProcessorSetting(None, last_error));
                 }
                 _ => panic!("recv unexpected ui msg: {}", msg),
             }

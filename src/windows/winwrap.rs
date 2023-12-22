@@ -1,9 +1,13 @@
+use std::collections::BTreeMap;
 use std::fmt::{self, Display};
 use std::mem::size_of;
 
 use crate::errors::{Error, Result};
 use crate::windows::wintypes::*;
 
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    RegisterHotKey, UnregisterHotKey, HOT_KEY_MODIFIERS, MOD_NOREPEAT, VIRTUAL_KEY,
+};
 use windows::Win32::UI::Input::RAWINPUT;
 use windows::Win32::UI::WindowsAndMessaging::{MessageBoxExW, MB_TOPMOST, MESSAGEBOX_RESULT};
 use windows::{
@@ -911,5 +915,78 @@ pub fn popup_message_box(caption: WString, text: WString) -> Result<MESSAGEBOX_R
         Err(get_last_error())
     } else {
         Ok(ret)
+    }
+}
+
+pub fn register_hot_key(
+    hwnd: HWND,
+    id: i32,
+    mut modifiers: HOT_KEY_MODIFIERS,
+    key: VIRTUAL_KEY,
+    repeat: bool,
+) -> Result<u32> {
+    let callback_lparam = ((key.0 as u32) << 16) | modifiers.0;
+    if !repeat {
+        modifiers |= MOD_NOREPEAT;
+    }
+    match unsafe { RegisterHotKey(hwnd, id, modifiers, key.0 as u32) } {
+        Ok(v) => Ok(callback_lparam),
+        Err(e) => Err(core_error(e)),
+    }
+}
+
+pub fn unregister_hot_key(hwnd: HWND, id: i32) -> Result<()> {
+    match unsafe { UnregisterHotKey(hwnd, id) } {
+        Ok(v) => Ok(v),
+        Err(e) => Err(core_error(e)),
+    }
+}
+
+pub struct HotKeyManager<T> {
+    id_to_lparam: BTreeMap<i32, u32>,
+    lparam_to_cb: BTreeMap<u32, T>,
+}
+
+impl<T> HotKeyManager<T> {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        Self {
+            id_to_lparam: BTreeMap::new(),
+            lparam_to_cb: BTreeMap::new(),
+        }
+    }
+
+    pub fn register(
+        &mut self,
+        hwnd: HWND,
+        id: i32,
+        modifiers: HOT_KEY_MODIFIERS,
+        key: VIRTUAL_KEY,
+        repeat: bool,
+        cb: T,
+    ) -> Result<()> {
+        if let Some(h) = self.id_to_lparam.get(&id) {
+            self.lparam_to_cb.remove(h);
+            self.id_to_lparam.remove(&id);
+        }
+        let _ = unregister_hot_key(hwnd, id);
+
+        let h = register_hot_key(hwnd, id, modifiers, key, repeat)?;
+        self.id_to_lparam.insert(id, h);
+        self.lparam_to_cb.insert(h, cb);
+        Ok(())
+    }
+
+    pub fn unregister(&mut self, hwnd: HWND, id: i32) -> Result<()> {
+        if let Some(h) = self.id_to_lparam.get(&id) {
+            self.lparam_to_cb.remove(h);
+            self.id_to_lparam.remove(&id);
+            return unregister_hot_key(hwnd, id);
+        }
+        Ok(())
+    }
+
+    pub fn get_callback(&mut self, lparam: u32) -> Option<&T> {
+        self.lparam_to_cb.get(&lparam)
     }
 }

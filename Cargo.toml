@@ -26,6 +26,7 @@ serde = { version = "1.0.193", features = ["derive"] }
 tray-icon = "0.11.1"
 image = "0.24.7"
 serde_yaml = "0.9.28"
+keyboard-types = "0.7.0"
 
 [target.'cfg(target_os = "windows")'.dependencies.windows]
 version = "0.52"
@@ -36,6 +37,7 @@ features = [
     "Win32_Storage_FileSystem",
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Input",
+    "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_Shell",
     "Win32_UI_Shell_Common",
     "Win32_UI_HiDpi",

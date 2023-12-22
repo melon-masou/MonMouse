@@ -1,5 +1,6 @@
 pub mod device_type;
 pub mod errors;
+pub mod keyboard;
 pub mod message;
 pub mod mouse_control;
 pub mod setting;

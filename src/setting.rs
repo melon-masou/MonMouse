@@ -69,6 +69,9 @@ pub struct ProcessorSettings {
     #[serde(default = "ProcessorSettings::default_devices")]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub devices: Vec<DeviceSettingItem>,
+
+    #[serde(default = "ShortcutSettings::default")]
+    pub shortcuts: ShortcutSettings,
 }
 
 impl Default for ProcessorSettings {
@@ -76,6 +79,7 @@ impl Default for ProcessorSettings {
         Self {
             merge_unassociated_events_ms: Self::default_merge_unassociated_events_ms(),
             devices: Self::default_devices(),
+            shortcuts: ShortcutSettings::default(),
         }
     }
 }
@@ -87,6 +91,15 @@ impl ProcessorSettings {
     fn default_devices() -> Vec<DeviceSettingItem> {
         Vec::new()
     }
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct ShortcutSettings {
+    #[serde(default = "empty_string")]
+    pub cur_mouse_lock: String,
+
+    #[serde(default = "empty_string")]
+    pub cur_mouse_jump_next: String,
 }
 
 // Settings for UI
@@ -131,4 +144,8 @@ const fn i64_const<const V: i64>() -> i64 {
 #[allow(dead_code)]
 const fn bool_const<const V: bool>() -> bool {
     V
+}
+#[allow(dead_code)]
+fn empty_string() -> String {
+    "".to_owned()
 }

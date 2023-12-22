@@ -10,6 +10,8 @@ pub enum Error {
     InvalidConfigFile(String),
     #[error("ErrorInvalidParam(field={0}; {1})")]
     InvalidParam(String, String),
+    #[error("ErrorInvalidShortCut({0})")]
+    InvalidShortcut(String),
 
     #[error("ErrorInited")]
     MessageInited,

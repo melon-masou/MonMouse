@@ -35,7 +35,7 @@ pub enum Message {
     RestartUI,
     ScanDevices((), Result<Vec<GenericDevice>>),
     InspectDevicesStatus((), Result<Vec<(String, DeviceStatus)>>),
-    ApplyDevicesSetting(Option<ProcessorSettings>, Result<()>),
+    ApplyProcessorSetting(Option<ProcessorSettings>, Result<()>),
 }
 
 impl Message {
@@ -53,7 +53,7 @@ impl Display for Message {
             Self::RestartUI => write!(f, "Msg(RestartUI)"),
             Self::ScanDevices(_, _) => write!(f, "Msg(ScanDevices)"),
             Self::InspectDevicesStatus(_, _) => write!(f, "Msg(InspectDevicesStatus)"),
-            Self::ApplyDevicesSetting(_, _) => write!(f, "Msg(ApplyDevicesSetting)"),
+            Self::ApplyProcessorSetting(_, _) => write!(f, "Msg(ApplyProcessorSetting)"),
         }
     }
 }
@@ -139,7 +139,7 @@ impl MouseControlReactor {
             Message::RestartUI => drop(msg),
             Message::ScanDevices(_, _) => self.ui_tx.send(msg).unwrap(),
             Message::InspectDevicesStatus(_, _) => self.ui_tx.send(msg).unwrap(),
-            Message::ApplyDevicesSetting(_, _) => self.ui_tx.send(msg).unwrap(),
+            Message::ApplyProcessorSetting(_, _) => self.ui_tx.send(msg).unwrap(),
         }
     }
 }
@@ -158,7 +158,7 @@ impl UIReactor {
             Message::RestartUI => drop(msg),
             Message::ScanDevices(_, _) => panic!("return self-generated msg"),
             Message::InspectDevicesStatus(_, _) => panic!("return self-generated msg"),
-            Message::ApplyDevicesSetting(_, _) => panic!("return self-generated msg"),
+            Message::ApplyProcessorSetting(_, _) => panic!("return self-generated msg"),
         }
     }
 

@@ -65,7 +65,7 @@ impl App {
     pub fn trigger_settings_changed(&mut self) {
         self.result_clear();
         self.ui_reactor
-            .send_mouse_control(Message::ApplyDevicesSetting(
+            .send_mouse_control(Message::ApplyProcessorSetting(
                 Some(self.collect_processor_settings()),
                 Message::inited(),
             ))
@@ -187,6 +187,7 @@ impl App {
                     content: d.device_setting,
                 })
                 .collect(),
+            shortcuts: self.state.settings.processor.shortcuts.clone(),
             ..self.state.settings.processor
         }
     }
@@ -222,7 +223,7 @@ impl App {
                     Ok(devs) => self.update_devices_status(devs),
                     Err(e) => self.result_error(format!("Failed to update device status: {}", e)),
                 },
-                Message::ApplyDevicesSetting(_, result) => match result {
+                Message::ApplyProcessorSetting(_, result) => match result {
                     Ok(_) => self.result_ok("New settings applyed".to_owned()),
                     Err(e) => self.result_error(format!("Failed to apply settings: {}", e)),
                 },

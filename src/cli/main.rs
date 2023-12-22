@@ -2,10 +2,11 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use clap::Parser;
-use log::{error, info};
+use log::{debug, error, info};
 use monmouse::errors::Error;
 use monmouse::message::GenericDevice;
 use monmouse::setting::{read_config, CONFIG_FILE_NAME};
+use monmouse::{POLL_MSGS, POLL_TIMEOUT};
 
 #[cfg(not(debug_assertions))]
 const CLI_DEFAULT_CONFIG_DIR: &str = "conf";
@@ -50,8 +51,8 @@ fn main() -> Result<(), Error> {
 
     setup_logger(args.log_level)?;
     let config = read_config(&PathBuf::from(args.config_file))?;
+    debug!("Config loaded: {:?}", config);
 
-    info!("monmouse-cli started");
     let mut eventloop = monmouse::Eventloop::new(true);
 
     if args.print_devices {
@@ -61,6 +62,7 @@ fn main() -> Result<(), Error> {
     }
 
     eventloop.load_config(config);
+    info!("monmouse-cli started");
     let result = eventloop.run();
     match &result {
         Ok(_) => info!("monmouse-cli ended normally"),
