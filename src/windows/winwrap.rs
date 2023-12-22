@@ -230,6 +230,9 @@ pub fn device_get_rawinput_rid_info(handle: HANDLE) -> Result<RID_DEVICE_INFO> {
         GetRawInputDeviceInfoW(handle, RIDI_DEVICEINFO, Some(wmut_obj(&mut dst)), &mut size)
     };
     if r == u32::MAX {
+        if size <= wsize_of_val(&dst) {
+            return Err(get_last_error());
+        }
         return Err(Error::WinPredefineBufSmall(wsize_of_val(&dst), size));
     }
     Ok(dst)
@@ -250,7 +253,7 @@ pub fn device_get_rawinput_info<T: IBuffer>(
         let r = unsafe { GetRawInputDeviceInfoW(handle, cmd, Some(buf.as_mut_data()), &mut size) };
         if r == u32::MAX {
             if size <= buf.capacity() {
-                return Err(Error::WinPredefineBufSmall(buf.capacity(), size));
+                return Err(get_last_error());
             }
             buf.resize(size);
             continue;
