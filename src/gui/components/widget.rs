@@ -1,4 +1,7 @@
-use eframe::{egui, epaint::Color32};
+use eframe::{
+    egui::{self, Widget},
+    epaint::Color32,
+};
 use monmouse::message::DeviceStatus;
 
 #[inline]
@@ -242,4 +245,43 @@ impl CollapsingPopup {
 
         collapsing_response.header_response
     }
+}
+
+pub fn shortcut_input(
+    ui: &mut egui::Ui,
+    buf: &mut String,
+    focus_fn: impl FnOnce(&mut egui::Ui, egui::Modifiers, Option<egui::Key>),
+) -> egui::Response {
+    let mut b = EatInputBuffer::from(buf);
+    let textinput = egui::TextEdit::singleline(&mut b);
+    let resp = textinput.ui(ui);
+    if resp.has_focus() {
+        let (modifiers, key) =
+            ui.input(|input| (input.modifiers, input.keys_down.iter().next().cloned()));
+    }
+    resp
+}
+
+// A workaround to make egui editable TextEdit not "edited" by itself
+pub struct EatInputBuffer<'a> {
+    buf: &'a str,
+}
+
+impl<'a> EatInputBuffer<'a> {
+    pub fn from(buf: &'a str) -> Self {
+        Self { buf }
+    }
+}
+
+impl<'a> egui::TextBuffer for EatInputBuffer<'a> {
+    fn is_mutable(&self) -> bool {
+        true
+    }
+    fn as_str(&self) -> &str {
+        self.buf
+    }
+    fn insert_text(&mut self, text: &str, _char_index: usize) -> usize {
+        text.len()
+    }
+    fn delete_char_range(&mut self, _char_range: std::ops::Range<usize>) {}
 }

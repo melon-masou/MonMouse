@@ -10,6 +10,8 @@ use crate::{
     App,
 };
 
+use super::widget::EatInputBuffer;
+
 pub struct DevicesPanel {}
 
 impl DevicesPanel {
@@ -74,7 +76,7 @@ impl DevicesPanel {
                 .fit_in_frame(true);
 
             details_popup.ui(ui, d.product_name.clone(), |ui| {
-                let mut details_text = Self::device_details_text(&device.generic);
+                let details_text = Self::device_details_text(&device.generic);
                 let mut popup_close = false;
                 ui.horizontal(|ui| {
                     if ui.button("Close").clicked() {
@@ -86,7 +88,7 @@ impl DevicesPanel {
                 });
                 ui.add(
                     // Have tried to use immutable TextEdit, but the frame lost even though .frame(true) is called
-                    egui::TextEdit::multiline(&mut details_text)
+                    egui::TextEdit::multiline(&mut EatInputBuffer::from(&details_text))
                         .clip_text(false)
                         .desired_width(f32::INFINITY)
                         .frame(true),
