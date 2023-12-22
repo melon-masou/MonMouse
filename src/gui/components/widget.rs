@@ -4,8 +4,9 @@ use eframe::{
 };
 use monmouse::{
     keyboard::{
+        build_modifiers,
         key_egui::{egui_to_key, egui_to_modifier},
-        shortcut_to_str,
+        shortcut_to_str, META_STR,
     },
     message::DeviceStatus,
 };
@@ -125,11 +126,17 @@ pub fn toggle_ui(ui: &mut egui::Ui, on: &mut bool, label: impl ToString) -> egui
 }
 
 #[derive(Default, Clone, serde::Deserialize, serde::Serialize)]
-pub struct CollapsingPopupState {
+pub struct CommonPopupState {
     will_close: bool,
+    open: bool,
 }
 
-pub struct CollapsingPopup {
+pub struct CommonPopupResponse<T> {
+    pub header_response: egui::Response,
+    pub popup_response: Option<(bool, T)>,
+}
+
+pub struct CommonPopup {
     id_source: egui::Id,
     width: f32,
     focus: bool,
@@ -137,7 +144,7 @@ pub struct CollapsingPopup {
     fit_in_frame: bool,
 }
 
-impl CollapsingPopup {
+impl CommonPopup {
     pub fn new(id_source: impl std::hash::Hash) -> Self {
         Self {
             id_source: egui::Id::new(id_source),
@@ -192,15 +199,40 @@ impl CollapsingPopup {
         pos
     }
 
-    pub fn ui(
+    pub fn collapsed<T>(
         self,
         ui: &mut egui::Ui,
         text: impl Into<egui::WidgetText>,
-        popup_ui: impl FnOnce(&mut egui::Ui) -> bool,
-    ) -> egui::Response {
+        popup_ui: impl FnOnce(&mut egui::Ui) -> (bool, T),
+    ) -> CommonPopupResponse<T> {
+        let id_source = self.id_source;
+        self.ui(
+            ui,
+            |ui, open_state| {
+                let collapsing = egui::CollapsingHeader::new(text)
+                    .id_source(id_source)
+                    .open(open_state);
+                let collapsing_response = collapsing.show(ui, |_| {
+                    // Add nothing into body, create popup after collapsing is fully opened
+                });
+                (
+                    Some(collapsing_response.fully_open()),
+                    collapsing_response.header_response,
+                )
+            },
+            popup_ui,
+        )
+    }
+
+    pub fn ui<T>(
+        self,
+        ui: &mut egui::Ui,
+        header_ui: impl FnOnce(&mut egui::Ui, Option<bool>) -> (Option<bool>, egui::Response),
+        popup_ui: impl FnOnce(&mut egui::Ui) -> (bool, T),
+    ) -> CommonPopupResponse<T> {
         let id = ui.make_persistent_id(self.id_source);
         let mut state = ui
-            .memory_mut(|mem| mem.data.get_persisted::<CollapsingPopupState>(id))
+            .memory_mut(|mem| mem.data.get_persisted::<CommonPopupState>(id))
             .unwrap_or_default();
 
         let open_state = if state.will_close {
@@ -211,16 +243,19 @@ impl CollapsingPopup {
             None
         };
 
-        let collapsing = egui::CollapsingHeader::new(text)
-            .id_source(self.id_source)
-            .open(open_state);
-        let collapsing_response = collapsing.show(ui, |_| {
-            // Add nothing into body, create popup after collapsing is fully opened
-        });
-        let fully_open = collapsing_response.fully_open();
+        let mut just_open = false;
+        let (open_state, response) = header_ui(ui, open_state);
+        if let Some(o) = open_state {
+            if state.open != o {
+                state.open = o;
+                just_open = o;
+                ui.memory_mut(|mem| mem.data.insert_persisted(id, state.clone()));
+            }
+        }
 
-        if fully_open {
-            let pos = self.popup_pos(ui, &collapsing_response.header_response.rect);
+        let mut popup_response: Option<(bool, T)> = None;
+        if state.open {
+            let pos = self.popup_pos(ui, &response.rect);
 
             let mut area = egui::Area::new(id)
                 .order(egui::Order::Foreground)
@@ -229,7 +264,7 @@ impl CollapsingPopup {
                 area = area.constrain_to(ui.ctx().screen_rect());
             }
             let egui::InnerResponse {
-                inner: popup_return_close,
+                inner: mut popup_return_close,
                 response: area_response,
             } = area.show(ui.ctx(), |ui| {
                 let frame = egui::Frame::popup(ui.style());
@@ -240,21 +275,25 @@ impl CollapsingPopup {
                 })
             });
 
-            let will_close = popup_return_close.inner
+            let will_close = popup_return_close.inner.0
                 || ui.input(|i| i.key_pressed(egui::Key::Escape))
-                || (self.focus && area_response.clicked_elsewhere());
+                || (!just_open && self.focus && area_response.clicked_elsewhere());
             if will_close {
                 state.will_close = true;
-                ui.memory_mut(|mem| mem.data.insert_persisted(id, state.clone()));
+                ui.memory_mut(|mem| mem.data.insert_persisted(id, state));
             }
+            popup_return_close.inner.0 = will_close;
+            popup_response = Some(popup_return_close.inner);
         }
 
-        collapsing_response.header_response
+        CommonPopupResponse {
+            header_response: response,
+            popup_response,
+        }
     }
 }
 
 pub struct ShortcutInputResponse {
-    pub inner: egui::Response,
     pub focus: bool,
     pub changed: bool,
 }
@@ -263,9 +302,11 @@ pub fn shortcut_input_ui(
     ui: &mut egui::Ui,
     buf: &mut String,
     show_modifier: bool,
+    textinput_style: impl FnOnce(egui::TextEdit) -> egui::TextEdit,
 ) -> ShortcutInputResponse {
     let mut b = EatInputBuffer::from(buf);
-    let textinput = egui::TextEdit::singleline(&mut b);
+    let textinput = textinput_style(egui::TextEdit::singleline(&mut b).desired_width(140.0));
+
     let inner = textinput.ui(ui);
     let focus = inner.has_focus();
 
@@ -280,23 +321,120 @@ pub fn shortcut_input_ui(
             },
             key.map(egui_to_key),
         );
-        buf.clear();
-        buf.push_str(&new_shortcut);
+        *buf = new_shortcut;
         // Had key, stop input
         if key.is_some() {
             ui.memory_mut(|mem| mem.stop_text_input());
         }
         return ShortcutInputResponse {
-            inner,
             focus,
             changed: key.is_some(),
         };
     }
 
     ShortcutInputResponse {
-        inner,
         focus,
         changed: false,
+    }
+}
+
+#[derive(Default, Clone, serde::Deserialize, serde::Serialize)]
+pub struct ShortcutChooseState {
+    key_input: String,
+    ctrl_checked: bool,
+    meta_checked: bool,
+    shift_checked: bool,
+    alt_checked: bool,
+}
+
+pub struct ShortcutChoosePopup {
+    id_source: egui::Id,
+}
+
+impl ShortcutChoosePopup {
+    pub fn new(id_source: impl std::hash::Hash) -> Self {
+        Self {
+            id_source: egui::Id::new(id_source),
+        }
+    }
+
+    pub fn button_ui(
+        ui: &mut egui::Ui,
+        open_state: Option<bool>,
+        text: &str,
+    ) -> (Option<bool>, egui::Response) {
+        let resp = ui.add(egui::Button::new(text).min_size(egui::vec2(140.0, 10.0)));
+        (
+            if resp.clicked() {
+                Some(true)
+            } else {
+                open_state
+            },
+            resp,
+        )
+    }
+
+    pub fn popup_ui(&mut self, ui: &mut egui::Ui) -> (bool, ShortcutChooseState) {
+        let id = ui.make_persistent_id(self.id_source);
+        let mut state = ui
+            .memory_mut(|mem| mem.data.get_persisted::<ShortcutChooseState>(id))
+            .unwrap_or_default();
+
+        let mut changed = false;
+        changed |= ui.checkbox(&mut state.ctrl_checked, "Ctrl").clicked();
+        changed |= ui.checkbox(&mut state.meta_checked, META_STR).clicked();
+        changed |= ui.checkbox(&mut state.shift_checked, "Shift").clicked();
+        changed |= ui.checkbox(&mut state.alt_checked, "Alt").clicked();
+
+        changed |= shortcut_input_ui(ui, &mut state.key_input, false, |textinput| {
+            textinput.desired_width(50.0)
+        })
+        .changed;
+
+        if changed {
+            ui.memory_mut(|mem| mem.data.insert_persisted(id, state.clone()));
+        }
+        (false, state)
+    }
+
+    pub fn short_cut_from_state(&mut self, state: ShortcutChooseState) -> String {
+        if state.key_input.is_empty() {
+            return "".to_owned();
+        }
+
+        let modifiers = match build_modifiers(
+            state.ctrl_checked,
+            state.alt_checked,
+            state.shift_checked,
+            state.meta_checked,
+        ) {
+            Some(v) => v,
+            None => return "".to_owned(),
+        };
+        let mut s = shortcut_to_str(Some(modifiers), None);
+        s.push_str(state.key_input.as_str());
+        s
+    }
+
+    pub fn ui(mut self, ui: &mut egui::Ui, buf: &mut String) -> ShortcutInputResponse {
+        let resp = CommonPopup::new(self.id_source).ui(
+            ui,
+            |ui, open_state| Self::button_ui(ui, open_state, buf.as_str()),
+            |ui| self.popup_ui(ui),
+        );
+        let mut r = ShortcutInputResponse {
+            focus: false,
+            changed: false,
+        };
+        let (will_close, state) = match resp.popup_response {
+            Some(v) => (v.0, v.1),
+            None => return r,
+        };
+        if will_close {
+            *buf = self.short_cut_from_state(state);
+        }
+        r.changed |= will_close;
+        r
     }
 }
 

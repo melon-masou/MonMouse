@@ -4,13 +4,11 @@ use monmouse::message::{DeviceStatus, GenericDevice, Positioning};
 
 use crate::{
     app::DeviceUIState,
-    components::widget::{
-        device_status_color, indicator_ui, manage_button, toggle_ui, CollapsingPopup,
-    },
+    components::widget::{device_status_color, indicator_ui, manage_button, toggle_ui},
     App,
 };
 
-use super::widget::EatInputBuffer;
+use super::widget::{CommonPopup, EatInputBuffer};
 
 pub struct DevicesPanel {}
 
@@ -70,12 +68,12 @@ impl DevicesPanel {
             ui.add_space(10.0);
         });
         row.col(|ui| {
-            let details_popup = CollapsingPopup::new(format!("ManagedDeviceIdx{}", i))
+            let details_popup = CommonPopup::new(format!("ManagedDeviceIdx{}", i))
                 .focus(true)
                 .width(400.0)
                 .fit_in_frame(true);
 
-            details_popup.ui(ui, d.product_name.clone(), |ui| {
+            details_popup.collapsed(ui, d.product_name.clone(), |ui| {
                 let details_text = Self::device_details_text(&device.generic);
                 let mut popup_close = false;
                 ui.horizontal(|ui| {
@@ -93,7 +91,7 @@ impl DevicesPanel {
                         .desired_width(f32::INFINITY)
                         .frame(true),
                 );
-                popup_close
+                (popup_close, ())
             });
             ui.add_space(10.0);
         });

@@ -5,7 +5,7 @@ use monmouse::setting::Settings;
 
 use crate::app::App;
 
-use super::widget::{error_color, manage_button, shortcut_input_ui};
+use super::widget::{error_color, manage_button, ShortcutChoosePopup};
 
 pub struct ConfigPanel {}
 
@@ -82,14 +82,22 @@ impl ConfigPanel {
             ui,
             "Lock current mouse",
             &mut input.cur_mouse_lock,
-            |ui, ist| shortcut_input_ui(ui, ist.buf(), true).changed,
+            |ui, ist| {
+                ShortcutChoosePopup::new("cur_mouse_lock")
+                    .ui(ui, ist.buf())
+                    .changed
+            },
         );
 
         input.changed |= Self::config_item(
             ui,
             "Mouse jumping to next monitor",
             &mut input.cur_mouse_jump_next,
-            |ui, ist| shortcut_input_ui(ui, ist.buf(), true).changed,
+            |ui, ist| {
+                ShortcutChoosePopup::new("cur_mouse_jump_next")
+                    .ui(ui, ist.buf())
+                    .changed
+            },
         );
     }
 
@@ -128,7 +136,7 @@ impl ConfigPanel {
             ui.add_space(Self::SPACING);
             egui::Grid::new("ShortcutsPart")
                 .num_columns(2)
-                .spacing([40.0, 8.0])
+                .spacing([40.0, 15.0])
                 .striped(false)
                 .show(ui, |ui| {
                     Self::shortcuts_config(ui, &mut app.state.config_input);

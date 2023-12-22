@@ -14,8 +14,25 @@ pub fn modifier_or(modifier: Option<Modifiers>, m: Modifiers) -> Option<Modifier
     }
 }
 
+pub fn build_modifiers(ctrl: bool, alt: bool, shift: bool, meta: bool) -> Option<Modifiers> {
+    let mut m: Option<Modifiers> = None;
+    if ctrl {
+        m = modifier_or(m, Modifiers::CONTROL);
+    }
+    if alt {
+        m = modifier_or(m, Modifiers::ALT);
+    }
+    if shift {
+        m = modifier_or(m, Modifiers::SHIFT);
+    }
+    if meta {
+        m = modifier_or(m, Modifiers::META);
+    }
+    m
+}
+
 #[cfg(target_os = "windows")]
-pub const META_STR: &str = "Win+";
+pub const META_STR: &str = "Win";
 
 pub fn shortcut_to_str(modifiers: Option<Modifiers>, code: Option<Code>) -> String {
     let mut s = String::new();
@@ -24,7 +41,8 @@ pub fn shortcut_to_str(modifiers: Option<Modifiers>, code: Option<Code>) -> Stri
             s.push_str("Ctrl+")
         }
         if m.meta() {
-            s.push_str(META_STR)
+            s.push_str(META_STR);
+            s.push('+');
         }
         if m.alt() {
             s.push_str("Alt+")
