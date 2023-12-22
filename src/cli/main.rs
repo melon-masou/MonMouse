@@ -7,9 +7,8 @@ use monmouse::errors::Error;
 use monmouse::message::GenericDevice;
 use monmouse::setting::{read_config, CONFIG_FILE_NAME};
 
-
 #[cfg(not(debug_assertions))]
-const CLI_DEFAULT_CONFIG_DIR: &str = "conf";
+const CLI_DEFAULT_CONFIG_DIR: &str = ".";
 #[cfg(debug_assertions)]
 const CLI_DEFAULT_CONFIG_DIR: &str = "debug";
 

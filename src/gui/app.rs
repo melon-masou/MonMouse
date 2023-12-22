@@ -72,6 +72,9 @@ impl App {
             .unwrap();
     }
 
+    pub fn on_settings_applied(&mut self) {
+        self.state.config_input.mark_changed(false);
+    }
     pub fn apply_new_settings(&mut self) {
         match self.state.config_input.parse_all(&mut self.state.settings) {
             Ok(_) => {
@@ -118,11 +121,12 @@ impl App {
                 self.state.settings = s.clone();
                 self.state.saved_settings = s;
             }
-            Err(Error::ConfigFileNotExists) => (),
+            Err(Error::ConfigFileNotExists(_)) => (),
             Err(e) => self.result_error(format!("Cannot load config, use default config: {}", e)),
         };
         self.state.config_input.set(&self.state.settings);
         self.config_path = config_path;
+        self.on_settings_applied();
         self
     }
 

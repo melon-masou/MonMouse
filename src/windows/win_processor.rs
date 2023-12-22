@@ -396,13 +396,6 @@ impl WinDeviceProcessor {
                 return Err(e);
             }
         }
-        match self.register_shortcuts() {
-            Ok(_) => (),
-            Err(e) => {
-                error!("Register shortcuts failed: {}", e);
-                return Err(e);
-            }
-        }
         Ok(())
     }
     fn terminate(&mut self) -> Result<()> {

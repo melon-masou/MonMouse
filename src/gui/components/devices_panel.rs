@@ -73,7 +73,7 @@ impl DevicesPanel {
                 .width(400.0)
                 .fit_in_frame(true);
 
-            details_popup.collapsed(ui, d.product_name.clone(), |ui| {
+            details_popup.collapsed(ui, d.product_name.clone(), |ui, _| {
                 let details_text = Self::device_details_text(&device.generic);
                 let mut popup_close = false;
                 ui.horizontal(|ui| {

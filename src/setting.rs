@@ -9,7 +9,9 @@ pub fn read_config(file: &PathBuf) -> Result<Settings, Error> {
     match std::fs::read_to_string(file) {
         Ok(v) => Ok(v),
         Err(e) => match e.kind() {
-            io::ErrorKind::NotFound => Err(Error::ConfigFileNotExists),
+            io::ErrorKind::NotFound => {
+                Err(Error::ConfigFileNotExists(format!("{}", file.display())))
+            }
             _ => Err(Error::IO(e)),
         },
     }

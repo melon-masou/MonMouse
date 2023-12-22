@@ -109,18 +109,17 @@ impl ConfigPanel {
                 .clicked()
             {
                 app.apply_new_settings();
-                app.state.config_input.changed = false;
             }
             if ui
                 .add_enabled(app.state.config_input.changed, manage_button("Restore"))
                 .clicked()
             {
                 app.restore_settings();
-                app.state.config_input.changed = false;
+                app.state.config_input.mark_changed(false);
             }
             if ui.add(manage_button("Default")).clicked() {
                 app.set_default_settings();
-                app.state.config_input.changed = true;
+                app.state.config_input.mark_changed(true);
             }
             if ui
                 .add_enabled(!app.state.config_input.changed, manage_button("Save"))
@@ -227,6 +226,12 @@ pub struct ConfigInputState {
     merge_unassociated_events_ms: InputState<i64, OrderParser<i64>>,
     cur_mouse_lock: InputState<String, NonCheck>,
     cur_mouse_jump_next: InputState<String, NonCheck>,
+}
+
+impl ConfigInputState {
+    pub fn mark_changed(&mut self, v: bool) {
+        self.changed = v;
+    }
 }
 
 impl Default for ConfigInputState {

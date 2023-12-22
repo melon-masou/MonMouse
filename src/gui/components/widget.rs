@@ -203,7 +203,7 @@ impl CommonPopup {
         self,
         ui: &mut egui::Ui,
         text: impl Into<egui::WidgetText>,
-        popup_ui: impl FnOnce(&mut egui::Ui) -> (bool, T),
+        popup_ui: impl FnOnce(&mut egui::Ui, bool /* just_open */) -> (bool, T),
     ) -> CommonPopupResponse<T> {
         let id_source = self.id_source;
         self.ui(
@@ -228,7 +228,7 @@ impl CommonPopup {
         self,
         ui: &mut egui::Ui,
         header_ui: impl FnOnce(&mut egui::Ui, Option<bool>) -> (Option<bool>, egui::Response),
-        popup_ui: impl FnOnce(&mut egui::Ui) -> (bool, T),
+        popup_ui: impl FnOnce(&mut egui::Ui, bool) -> (bool, T),
     ) -> CommonPopupResponse<T> {
         let id = ui.make_persistent_id(self.id_source);
         let mut state = ui
@@ -271,7 +271,7 @@ impl CommonPopup {
                 frame.show(ui, |ui| {
                     ui.set_min_width(self.width);
                     ui.set_max_width(self.width);
-                    popup_ui(ui)
+                    popup_ui(ui, just_open)
                 })
             });
 
@@ -374,11 +374,15 @@ impl ShortcutChoosePopup {
         )
     }
 
-    pub fn popup_ui(&mut self, ui: &mut egui::Ui) -> (bool, ShortcutChooseState) {
+    pub fn popup_ui(&mut self, ui: &mut egui::Ui, just_open: bool) -> (bool, ShortcutChooseState) {
         let id = ui.make_persistent_id(self.id_source);
-        let mut state = ui
-            .memory_mut(|mem| mem.data.get_persisted::<ShortcutChooseState>(id))
-            .unwrap_or_default();
+        let mut state = if just_open {
+            ui.memory_mut(|mem| mem.data.remove::<ShortcutChooseState>(id));
+            ShortcutChooseState::default()
+        } else {
+            ui.memory_mut(|mem| mem.data.get_persisted::<ShortcutChooseState>(id))
+                .unwrap_or_default()
+        };
 
         let mut changed = false;
         changed |= ui.checkbox(&mut state.ctrl_checked, "Ctrl").clicked();
@@ -420,7 +424,7 @@ impl ShortcutChoosePopup {
         let resp = CommonPopup::new(self.id_source).ui(
             ui,
             |ui, open_state| Self::button_ui(ui, open_state, buf.as_str()),
-            |ui| self.popup_ui(ui),
+            |ui, just_open| self.popup_ui(ui, just_open),
         );
         let mut r = ShortcutInputResponse {
             focus: false,

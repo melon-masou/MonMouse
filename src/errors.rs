@@ -2,8 +2,8 @@ use thiserror::Error as ThisError;
 
 #[derive(ThisError, Debug)]
 pub enum Error {
-    #[error("ErrorNoConfigFile")]
-    ConfigFileNotExists,
+    #[error("ErrorNoConfigFile(path={0})")]
+    ConfigFileNotExists(String),
     #[error("ErrorIO({0})")]
     IO(std::io::Error),
     #[error("ErrorInvalidConfigFile({0})")]

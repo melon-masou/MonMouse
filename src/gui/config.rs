@@ -6,7 +6,7 @@ use std::path::PathBuf;
 pub fn get_config_dir() -> Result<PathBuf, Error> {
     match std::env::current_dir().map(PathBuf::from) {
         Ok(v) => Ok(v),
-        Err(e) => Err(Error::CannotOpenConfig(e.to_string())),
+        Err(_) => Err(Error::ConfigFileNotExists("None".to_owned())),
     }
 }
 
