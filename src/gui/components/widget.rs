@@ -2,7 +2,13 @@ use eframe::{
     egui::{self, Widget},
     epaint::Color32,
 };
-use monmouse::message::DeviceStatus;
+use monmouse::{
+    keyboard::{
+        key_egui::{egui_to_key, egui_to_modifier},
+        shortcut_to_str,
+    },
+    message::DeviceStatus,
+};
 
 #[inline]
 fn theme_red(dark: bool) -> Color32 {
@@ -247,19 +253,51 @@ impl CollapsingPopup {
     }
 }
 
-pub fn shortcut_input(
+pub struct ShortcutInputResponse {
+    pub inner: egui::Response,
+    pub focus: bool,
+    pub changed: bool,
+}
+
+pub fn shortcut_input_ui(
     ui: &mut egui::Ui,
     buf: &mut String,
-    focus_fn: impl FnOnce(&mut egui::Ui, egui::Modifiers, Option<egui::Key>),
-) -> egui::Response {
+    show_modifier: bool,
+) -> ShortcutInputResponse {
     let mut b = EatInputBuffer::from(buf);
     let textinput = egui::TextEdit::singleline(&mut b);
-    let resp = textinput.ui(ui);
-    if resp.has_focus() {
+    let inner = textinput.ui(ui);
+    let focus = inner.has_focus();
+
+    if focus {
         let (modifiers, key) =
             ui.input(|input| (input.modifiers, input.keys_down.iter().next().cloned()));
+        let new_shortcut = shortcut_to_str(
+            if show_modifier {
+                egui_to_modifier(modifiers)
+            } else {
+                None
+            },
+            key.map(egui_to_key),
+        );
+        buf.clear();
+        buf.push_str(&new_shortcut);
+        // Had key, stop input
+        if key.is_some() {
+            ui.memory_mut(|mem| mem.stop_text_input());
+        }
+        return ShortcutInputResponse {
+            inner,
+            focus,
+            changed: key.is_some(),
+        };
     }
-    resp
+
+    ShortcutInputResponse {
+        inner,
+        focus,
+        changed: false,
+    }
 }
 
 // A workaround to make egui editable TextEdit not "edited" by itself

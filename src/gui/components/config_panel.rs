@@ -5,7 +5,7 @@ use monmouse::setting::Settings;
 
 use crate::app::App;
 
-use super::widget::{error_color, manage_button};
+use super::widget::{error_color, manage_button, shortcut_input_ui};
 
 pub struct ConfigPanel {}
 
@@ -21,18 +21,18 @@ impl ConfigPanel {
         ui: &mut egui::Ui,
         text: &str,
         ist: &mut InputState<T, P>,
-        add_contents: impl FnOnce(&mut egui::Ui, &mut InputState<T, P>) -> egui::Response,
-    ) -> egui::Response {
+        add_contents: impl FnOnce(&mut egui::Ui, &mut InputState<T, P>) -> bool,
+    ) -> bool {
         ui.label(text);
-        let rsp = add_contents(ui, ist);
-        if rsp.changed() {
+        let changed = add_contents(ui, ist);
+        if changed {
             ist.parse_only();
         }
         if let Some(errmsg) = &ist.errmsg {
             ui.label(RichText::from(errmsg.to_owned()).color(error_color(ui, false)));
         }
         ui.end_row();
-        rsp
+        changed
     }
 
     #[inline]
@@ -47,17 +47,15 @@ impl ConfigPanel {
             ui,
             "Inspect device activity internal(MS)",
             &mut input.inspect_device_interval_ms,
-            |ui, ist| ui.add(Self::textedit(ist.buf(), 8)),
-        )
-        .changed();
+            |ui, ist| ui.add(Self::textedit(ist.buf(), 8)).changed(),
+        );
 
         input.changed |= Self::config_item(
             ui,
             "Merge unassociated events within next(MS)",
             &mut input.merge_unassociated_events_ms,
-            |ui, ist| ui.add(Self::textedit(ist.buf(), 8)),
-        )
-        .changed();
+            |ui, ist| ui.add(Self::textedit(ist.buf(), 8)).changed(),
+        );
 
         // For debugging colors Only
         #[cfg(debug_assertions)]
@@ -74,9 +72,25 @@ impl ConfigPanel {
                         add_theme(Theme::Dark).changed();
                     })
                     .response
-            })
-            .clicked();
+                    .clicked()
+            });
         }
+    }
+
+    pub fn shortcuts_config(ui: &mut egui::Ui, input: &mut ConfigInputState) {
+        input.changed |= Self::config_item(
+            ui,
+            "Lock current mouse",
+            &mut input.cur_mouse_lock,
+            |ui, ist| shortcut_input_ui(ui, ist.buf(), true).changed,
+        );
+
+        input.changed |= Self::config_item(
+            ui,
+            "Mouse jumping to next monitor",
+            &mut input.cur_mouse_jump_next,
+            |ui, ist| shortcut_input_ui(ui, ist.buf(), true).changed,
+        );
     }
 
     const SPACING: f32 = 10.0;
@@ -110,9 +124,20 @@ impl ConfigPanel {
 
         ui.separator();
         egui::ScrollArea::vertical().show(ui, |ui| {
+            Self::title(ui, "Shortcuts");
+            ui.add_space(Self::SPACING);
+            egui::Grid::new("ShortcutsPart")
+                .num_columns(2)
+                .spacing([40.0, 8.0])
+                .striped(false)
+                .show(ui, |ui| {
+                    Self::shortcuts_config(ui, &mut app.state.config_input);
+                });
+            ui.add_space(Self::SPACING);
+
             Self::title(ui, "Advanced");
             ui.add_space(Self::SPACING);
-            egui::Grid::new("AdvancedGrid")
+            egui::Grid::new("AdvancedPart")
                 .num_columns(2)
                 .spacing([40.0, 8.0])
                 .striped(false)
@@ -192,6 +217,8 @@ pub struct ConfigInputState {
     theme: InputState<String, NonCheck>,
     inspect_device_interval_ms: InputState<u64, OrderParser<u64>>,
     merge_unassociated_events_ms: InputState<i64, OrderParser<i64>>,
+    cur_mouse_lock: InputState<String, NonCheck>,
+    cur_mouse_jump_next: InputState<String, NonCheck>,
 }
 
 impl Default for ConfigInputState {
@@ -201,6 +228,8 @@ impl Default for ConfigInputState {
             theme: InputState::new(NonCheck()),
             inspect_device_interval_ms: InputState::new(OrderParser::new(20, 1000)),
             merge_unassociated_events_ms: InputState::new(OrderParser::new(-1, 1000)),
+            cur_mouse_lock: InputState::new(NonCheck()),
+            cur_mouse_jump_next: InputState::new(NonCheck()),
         }
     }
 }
@@ -220,12 +249,16 @@ impl ConfigInputState {
         set_from!(self, s.ui, theme);
         set_from!(self, s.ui, inspect_device_interval_ms);
         set_from!(self, s.processor, merge_unassociated_events_ms);
+        set_from!(self, s.processor.shortcuts, cur_mouse_lock);
+        set_from!(self, s.processor.shortcuts, cur_mouse_jump_next);
     }
 
     pub fn parse_all(&mut self, s: &mut Settings) -> Result<(), String> {
         parse_into!(self, s.ui, theme);
         parse_into!(self, s.ui, inspect_device_interval_ms);
         parse_into!(self, s.processor, merge_unassociated_events_ms);
+        parse_into!(self, s.processor.shortcuts, cur_mouse_lock);
+        parse_into!(self, s.processor.shortcuts, cur_mouse_jump_next);
         Ok(())
     }
 }

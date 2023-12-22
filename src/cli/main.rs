@@ -6,7 +6,7 @@ use log::{debug, error, info};
 use monmouse::errors::Error;
 use monmouse::message::GenericDevice;
 use monmouse::setting::{read_config, CONFIG_FILE_NAME};
-use monmouse::{POLL_MSGS, POLL_TIMEOUT};
+
 
 #[cfg(not(debug_assertions))]
 const CLI_DEFAULT_CONFIG_DIR: &str = "conf";

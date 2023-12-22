@@ -17,19 +17,21 @@ pub fn modifier_or(modifier: Option<Modifiers>, m: Modifiers) -> Option<Modifier
 #[cfg(target_os = "windows")]
 pub const META_STR: &str = "Win+";
 
-pub fn shortcut_to_str(m: Modifiers, code: Option<Code>) -> String {
+pub fn shortcut_to_str(modifiers: Option<Modifiers>, code: Option<Code>) -> String {
     let mut s = String::new();
-    if m.ctrl() {
-        s.push_str("Ctrl+")
-    }
-    if m.meta() {
-        s.push_str(META_STR)
-    }
-    if m.alt() {
-        s.push_str("Alt+")
-    }
-    if m.shift() {
-        s.push_str("Shift+")
+    if let Some(m) = modifiers {
+        if m.ctrl() {
+            s.push_str("Ctrl+")
+        }
+        if m.meta() {
+            s.push_str(META_STR)
+        }
+        if m.alt() {
+            s.push_str("Alt+")
+        }
+        if m.shift() {
+            s.push_str("Shift+")
+        }
     }
     if let Some(c) = code {
         s.push_str(key_to_str(c))
@@ -247,7 +249,7 @@ mod tests {
     #[test]
     fn test_shortcut_str() {
         let test_ok = |modifiers, code, str| {
-            assert_eq!(shortcut_to_str(modifiers, code), str);
+            assert_eq!(shortcut_to_str(Some(modifiers), code), str);
             if code.is_some() {
                 assert_eq!(shortcut_from_str(str), Some((modifiers, code.unwrap())));
             } else {

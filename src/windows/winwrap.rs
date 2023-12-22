@@ -930,7 +930,7 @@ pub fn register_hot_key(
         modifiers |= MOD_NOREPEAT;
     }
     match unsafe { RegisterHotKey(hwnd, id, modifiers, key.0 as u32) } {
-        Ok(v) => Ok(callback_lparam),
+        Ok(_) => Ok(callback_lparam),
         Err(e) => Err(core_error(e)),
     }
 }
