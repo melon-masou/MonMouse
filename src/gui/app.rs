@@ -16,6 +16,7 @@ use crate::{components::config_panel::ConfigInputState, styles::Theme};
 pub struct App {
     pub state: AppState,
     pub last_result: StatusBarResult,
+    pub alert_errors: Vec<String>,
     config_path: Option<PathBuf>,
     should_exit: bool,
     ui_reactor: UIReactor,
@@ -82,7 +83,7 @@ impl App {
                     .reset(self.state.settings.ui.inspect_device_interval_ms);
                 self.trigger_settings_changed();
             }
-            Err(_) => self.result_error("Not all fields contain valid value".to_owned()),
+            Err(_) => self.result_error_alert("Not all fields contain valid value".to_owned()),
         }
     }
     pub fn restore_settings(&mut self) {
@@ -104,6 +105,7 @@ impl App {
         App {
             state,
             last_result: StatusBarResult::None,
+            alert_errors: Vec::new(),
             config_path: None,
             should_exit: false,
             ui_reactor,
@@ -122,7 +124,9 @@ impl App {
                 self.state.saved_settings = s;
             }
             Err(Error::ConfigFileNotExists(_)) => (),
-            Err(e) => self.result_error(format!("Cannot load config, use default config: {}", e)),
+            Err(e) => {
+                self.result_error_alert(format!("Cannot load config, use default config: {}", e))
+            }
         };
         self.state.config_input.set(&self.state.settings);
         self.config_path = config_path;
@@ -221,15 +225,17 @@ impl App {
                         self.merge_scanned_devices(devs);
                         self.result_ok(format!("Scanned {} devices", dev_num))
                     }
-                    Err(e) => self.result_error(format!("Failed to scan devices: {}", e)),
+                    Err(e) => self.result_error_alert(format!("Failed to scan devices: {}", e)),
                 },
                 Message::InspectDevicesStatus(_, result) => match result {
                     Ok(devs) => self.update_devices_status(devs),
-                    Err(e) => self.result_error(format!("Failed to update device status: {}", e)),
+                    Err(e) => {
+                        self.result_error_silent(format!("Failed to update device status: {}", e))
+                    }
                 },
                 Message::ApplyProcessorSetting(_, result) => match result {
                     Ok(_) => self.result_ok("New settings applyed".to_owned()),
-                    Err(e) => self.result_error(format!("Failed to apply settings: {}", e)),
+                    Err(e) => self.result_error_alert(format!("Failed to apply settings: {}", e)),
                 },
             }
         }
@@ -256,13 +262,13 @@ impl App {
     }
     fn save_config(&mut self, new_settings: Settings) {
         let Some(path) = &self.config_path else {
-            self.result_error("No path to save config".to_owned());
+            self.result_error_alert("No path to save config".to_owned());
             return;
         };
         match write_config(path, &new_settings) {
             Ok(_) => (),
             Err(e) => {
-                self.result_error(format!("Failed to write config file: {}", e));
+                self.result_error_alert(format!("Failed to write config file: {}", e));
                 return;
             }
         }
@@ -274,8 +280,11 @@ impl App {
     pub fn result_ok(&mut self, msg: String) {
         self.last_result = StatusBarResult::Ok(msg);
     }
-    pub fn result_error(&mut self, msg: String) {
+    pub fn result_error_silent(&mut self, msg: String) {
         self.last_result = StatusBarResult::ErrMsg(msg);
+    }
+    pub fn result_error_alert(&mut self, msg: String) {
+        self.alert_errors.push(msg);
     }
     pub fn result_clear(&mut self) {
         self.last_result = StatusBarResult::None;

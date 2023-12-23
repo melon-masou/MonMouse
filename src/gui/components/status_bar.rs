@@ -6,6 +6,7 @@ use super::widget::{error_color, indicator_ui, NotificationPopup};
 
 pub fn status_bar_ui(ui: &mut egui::Ui, app: &mut App) {
     let msg_with_bottons = |ui: &mut egui::Ui, ok: bool, msg: &String| {
+        #[cfg(debug_assertions)]
         if ui
             .add(egui::Button::new("📋").frame(false))
             .on_hover_text("Copy")
@@ -30,8 +31,15 @@ pub fn status_bar_ui(ui: &mut egui::Ui, app: &mut App) {
     };
 }
 
-pub fn status_popup_show(ctx: &egui::Context, _app: &mut App) {
-    NotificationPopup::new("StatusNotificationPopup").show(ctx, "Error", |ui, _| {
-        ui.label("TestingLONNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNGTEST");
-    });
+pub fn status_popup_show(ctx: &egui::Context, app: &mut App) {
+    if !app.alert_errors.is_empty() {
+        let rsp = NotificationPopup::new("StatusNotificationPopup").show(ctx, "Errors", |ui, _| {
+            for err in &app.alert_errors {
+                ui.label(err);
+            }
+        });
+        if rsp.action.will_close() {
+            app.alert_errors.clear();
+        }
+    }
 }

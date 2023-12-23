@@ -152,14 +152,18 @@ impl PopupAction {
         self.just_open
     }
     #[allow(dead_code)]
+    pub fn will_close(&self) -> bool {
+        self.close
+    }
+    #[allow(dead_code)]
     pub fn mark_close(&mut self) {
         self.close = true
     }
 }
 
 pub struct PopupResponse<R> {
-    inner: R,
-    action: PopupAction,
+    pub inner: R,
+    pub action: PopupAction,
 }
 
 pub struct NotificationPopup {
@@ -216,7 +220,7 @@ impl NotificationPopup {
                         let resp = popup_ui(ui, &mut action);
                         ui.add_space(self.content_space);
                         if ui.button("Close").clicked() {
-                            action.close = true;
+                            action.mark_close();
                         }
                         resp
                     })
@@ -396,9 +400,9 @@ impl CommonPopup {
                 || (!just_open && self.focus && area_response.clicked_elsewhere());
             if will_close {
                 state.will_close = true;
+                popup_action.mark_close();
                 ui.memory_mut(|mem| mem.data.insert_persisted(id, state));
             }
-            popup_action.close = will_close;
             popup_response = Some(PopupResponse {
                 inner: popup.inner,
                 action: popup_action,
