@@ -612,6 +612,12 @@ impl WinDeviceProcessor {
         );
     }
 
+    fn apply_new_settings(&mut self, new_settings: ProcessorSettings) -> Result<()> {
+        self.settings = new_settings;
+        self.apply_devices_settings();
+        self.register_shortcuts()
+    }
+
     fn on_raw_input(&mut self, _wparam: WPARAM, lparam: LPARAM, tick: u32) {
         match get_rawinput_data(lparam_as_rawinput(lparam), &mut self.raw_input_buf) {
             Ok(_) => (),
@@ -725,8 +731,8 @@ impl WinEventLoop {
         Ok(())
     }
 
-    pub fn load_config(&mut self, config: Settings) {
-        self.processor.settings = config.processor;
+    pub fn load_config(&mut self, config: Settings) -> Result<()> {
+        self.processor.apply_new_settings(config.processor)
     }
 
     pub fn terminate(&mut self) -> Result<()> {
@@ -819,11 +825,8 @@ impl WinEventLoop {
                     mouse_control_reactor.return_msg(Message::InspectDevicesStatus((), Ok(ret)));
                 }
                 Message::ApplyProcessorSetting(settings, _) => {
-                    self.processor.settings = settings.unwrap();
-                    self.processor.apply_devices_settings();
-                    let last_error = self.processor.register_shortcuts();
-                    mouse_control_reactor
-                        .return_msg(Message::ApplyProcessorSetting(None, last_error));
+                    let ret = self.processor.apply_new_settings(settings.unwrap());
+                    mouse_control_reactor.return_msg(Message::ApplyProcessorSetting(None, ret));
                 }
                 _ => panic!("recv unexpected ui msg: {}", msg),
             }

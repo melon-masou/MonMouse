@@ -50,7 +50,6 @@ fn main() -> Result<(), eframe::Error> {
     let config_path = config_file.as_ref().ok().cloned();
 
     let config = config_file.and_then(|v| read_config(&v));
-    let config_clone = config.as_ref().ok().cloned();
 
     let (master_reactor, mouse_control_reactor, ui_reactor) = setup_reactors();
 
@@ -58,13 +57,7 @@ fn main() -> Result<(), eframe::Error> {
     let mouse_control_thread = thread::spawn(move || {
         let eventloop = monmouse::Eventloop::new(false);
         let tray = Tray::new();
-        match mouse_control_eventloop(
-            eventloop,
-            tray,
-            &master_reactor,
-            &mouse_control_reactor,
-            config_clone,
-        ) {
+        match mouse_control_eventloop(eventloop, tray, &master_reactor, &mouse_control_reactor) {
             Ok(_) => info!("mouse control eventloop exited normally"),
             Err(e) => panic!("mouse control eventloop exited for error: {}", e),
         }
@@ -81,12 +74,8 @@ fn mouse_control_eventloop(
     tray: Tray,
     master_reactor: &MasterReactor,
     mouse_control_reactor: &MouseControlReactor,
-    config: Option<Settings>,
 ) -> Result<(), Error> {
     eventloop.initialize()?;
-    if let Some(c) = config {
-        eventloop.load_config(c);
-    }
     loop {
         match tray.poll_event() {
             Some(TrayEvent::Open) => master_reactor.restart_ui(),
@@ -108,9 +97,11 @@ fn egui_eventloop(
     config: Result<Settings, Error>,
     config_path: Option<PathBuf>,
 ) -> Result<(), eframe::Error> {
-    let app = Rc::new(RefCell::new(
-        App::new(ui_reactor).load_config(config, config_path),
-    ));
+    let mut app = App::new(ui_reactor).load_config(config, config_path);
+    app.trigger_scan_devices();
+    app.trigger_settings_changed();
+
+    let app = Rc::new(RefCell::new(app));
     loop {
         let app_ref = app.clone();
         eframe::run_native(

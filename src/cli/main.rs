@@ -60,7 +60,7 @@ fn main() -> Result<(), Error> {
         return Ok(());
     }
 
-    eventloop.load_config(config);
+    eventloop.load_config(config)?;
     info!("monmouse-cli started");
     let result = eventloop.run();
     match &result {
