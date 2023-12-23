@@ -6,7 +6,7 @@ use std::{
 use crate::{
     device_type::DeviceType,
     errors::Error,
-    setting::{DeviceSetting, DeviceSettingItem, ProcessorSettings},
+    setting::{DeviceSettingItem, ProcessorSettings},
 };
 
 #[derive(Debug, Clone, Copy)]

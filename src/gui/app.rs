@@ -63,6 +63,12 @@ impl App {
         }
     }
 
+    pub fn trigger_one_device_setting_changed(&mut self, item: DeviceSettingItem) {
+        self.ui_reactor
+            .send_mouse_control(Message::ApplyOneDeviceSetting(SendData::new(item)))
+            .unwrap();
+    }
+
     pub fn trigger_settings_changed(&mut self) {
         self.result_clear();
         self.ui_reactor
@@ -275,10 +281,7 @@ impl App {
             .managed_devices
             .iter()
             .filter(|d| d.device_setting.is_effective())
-            .map(|d| DeviceSettingItem {
-                id: d.generic.id.clone(),
-                content: d.device_setting,
-            })
+            .map(|d| d.clone_setting())
             .collect();
         self.save_config(new_settings);
     }
@@ -325,6 +328,15 @@ pub struct DeviceUIState {
     pub device_setting: DeviceSetting,
     pub generic: GenericDevice,
     pub status: DeviceStatus,
+}
+
+impl DeviceUIState {
+    pub fn clone_setting(&self) -> DeviceSettingItem {
+        DeviceSettingItem {
+            id: self.generic.id.clone(),
+            content: self.device_setting,
+        }
+    }
 }
 
 pub enum StatusBarResult {

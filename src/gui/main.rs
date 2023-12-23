@@ -20,7 +20,7 @@ use log::info;
 use monmouse::setting::{read_config, Settings, CONFIG_FILE_NAME};
 use monmouse::{
     errors::Error,
-    message::{setup_reactors, MasterReactor, MouseControlReactor, UIReactor},
+    message::{setup_reactors, MasterReactor, UIReactor},
 };
 use monmouse::{POLL_MSGS, POLL_TIMEOUT};
 use styles::{gscale, Theme};

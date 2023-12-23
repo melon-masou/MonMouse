@@ -1,6 +1,9 @@
 use eframe::egui;
 use egui_extras::{Column, Size, StripBuilder, TableBuilder};
-use monmouse::message::{DeviceStatus, GenericDevice, Positioning};
+use monmouse::{
+    message::{DeviceStatus, GenericDevice, Positioning},
+    setting::DeviceSettingItem,
+};
 
 use crate::{
     app::DeviceUIState,
@@ -95,7 +98,7 @@ impl DevicesPanel {
         changed
     }
 
-    fn table_ui(ui: &mut egui::Ui, devices: &mut Vec<DeviceUIState>) -> bool {
+    fn table_ui(ui: &mut egui::Ui, app: &mut App) {
         let table = TableBuilder::new(ui)
             .striped(true)
             .drag_to_scroll(true)
@@ -104,7 +107,6 @@ impl DevicesPanel {
             .column(Column::exact(100.0))
             .columns(Column::auto(), 3)
             .column(Column::remainder());
-        let mut changed = false;
 
         table
             .header(20.0, |mut header| {
@@ -126,14 +128,29 @@ impl DevicesPanel {
             })
             .body(|mut body| {
                 let row_height = 20.0;
-                devices.iter_mut().enumerate().for_each(|(i, device)| {
-                    body.row(row_height, |mut row| {
-                        if Self::device_line_ui(i, &mut row, device) {
-                            changed = true;
+                let new_settings: Vec<DeviceSettingItem> = app
+                    .state
+                    .managed_devices
+                    .iter_mut()
+                    .enumerate()
+                    .filter_map(|(i, device)| {
+                        let mut changed = false;
+                        body.row(row_height, |mut row| {
+                            changed = Self::device_line_ui(i, &mut row, device);
+                        });
+                        if changed {
+                            Some(device.clone_setting())
+                        } else {
+                            None
                         }
-                    });
-                });
-                for _ in 0..(Self::MIN_DEVICES_ROW as isize - devices.len() as isize) {
+                    })
+                    .collect();
+                for item in new_settings {
+                    app.trigger_one_device_setting_changed(item);
+                }
+
+                let len = app.state.managed_devices.len() as isize;
+                for _ in 0..(Self::MIN_DEVICES_ROW as isize - len) {
                     body.row(20.0, |mut row| {
                         for _ in 0..5 {
                             row.col(|_| {});
@@ -141,7 +158,6 @@ impl DevicesPanel {
                     });
                 }
             });
-        changed
     }
 
     pub fn ui(ui: &mut egui::Ui, app: &mut App) {
@@ -159,12 +175,7 @@ impl DevicesPanel {
             .size(Size::remainder())
             .vertical(|mut strip| {
                 strip.cell(|ui| {
-                    egui::ScrollArea::horizontal().show(ui, |ui| {
-                        let changed = Self::table_ui(ui, &mut app.state.managed_devices);
-                        if changed {
-                            app.trigger_settings_changed();
-                        }
-                    });
+                    egui::ScrollArea::horizontal().show(ui, |ui| Self::table_ui(ui, app));
                 });
             });
     }
