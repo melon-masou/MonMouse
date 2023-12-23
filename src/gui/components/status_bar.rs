@@ -2,7 +2,7 @@ use eframe::egui;
 
 use crate::app::{App, StatusBarResult};
 
-use super::widget::{error_color, indicator_ui};
+use super::widget::{error_color, indicator_ui, NotificationPopup};
 
 pub fn status_bar_ui(ui: &mut egui::Ui, app: &mut App) {
     let msg_with_bottons = |ui: &mut egui::Ui, ok: bool, msg: &String| {
@@ -28,4 +28,10 @@ pub fn status_bar_ui(ui: &mut egui::Ui, app: &mut App) {
         }
         StatusBarResult::None => (),
     };
+}
+
+pub fn status_popup_show(ctx: &egui::Context, _app: &mut App) {
+    NotificationPopup::new("StatusNotificationPopup").show(ctx, "Error", |ui, _| {
+        ui.label("TestingLONNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNGTEST");
+    });
 }

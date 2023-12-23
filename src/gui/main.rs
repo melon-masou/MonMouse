@@ -14,7 +14,7 @@ use app::App;
 use components::about_panel::AboutPanel;
 use components::config_panel::ConfigPanel;
 use components::devices_panel::DevicesPanel;
-use components::status_bar::status_bar_ui;
+use components::status_bar::{status_bar_ui, status_popup_show};
 use eframe::egui;
 use log::info;
 use monmouse::setting::{read_config, Settings, CONFIG_FILE_NAME};
@@ -174,11 +174,12 @@ impl AppWrap {
 }
 
 impl eframe::App for AppWrap {
+    fn persist_egui_memory(&self) -> bool {
+        false
+    }
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let mut app = self.app.borrow_mut();
         Self::init_visuals(ctx, app.get_theme());
-
-        app.dispatch_ui_msg(ctx);
 
         egui::TopBottomPanel::bottom("StatusBar").show(ctx, |ui| {
             ui.horizontal(|ui| status_bar_ui(ui, &mut app));
@@ -213,6 +214,8 @@ impl eframe::App for AppWrap {
             };
         });
 
+        status_popup_show(ctx, &mut app);
+
         let tick_ms = ctx.input(|input| (input.time * 1000.0).round()) as u64;
 
         #[cfg(debug_assertions)]
@@ -223,8 +226,9 @@ impl eframe::App for AppWrap {
         // the mouse enter the window area.
         // Maybe by finding out a method to terminate eframe native_run outside its own eventloop.
         ctx.request_repaint();
-        // Eventloop should be also placed there
+        // Following eventloop, should be also placed there
         app.trigger_inspect_devices_status(tick_ms);
+        app.dispatch_ui_msg(ctx);
     }
 }
 

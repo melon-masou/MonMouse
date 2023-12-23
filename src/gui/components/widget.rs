@@ -125,15 +125,125 @@ pub fn toggle_ui(ui: &mut egui::Ui, on: &mut bool, label: impl ToString) -> egui
     response
 }
 
+#[allow(dead_code)]
+pub fn center_anchor_area<R>(
+    ctx: &egui::Context,
+    id: impl Into<egui::Id>,
+    ui: impl FnOnce(&mut egui::Ui) -> R,
+) -> R {
+    let area = egui::Area::new(id)
+        .order(egui::Order::Foreground)
+        .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::new(0.0, 0.0));
+    let egui::InnerResponse {
+        inner: r,
+        response: _,
+    } = area.show(ctx, ui);
+    r
+}
+
+pub struct PopupAction {
+    just_open: bool,
+    close: bool,
+}
+
+impl PopupAction {
+    #[allow(dead_code)]
+    pub fn just_open(&self) -> bool {
+        self.just_open
+    }
+    #[allow(dead_code)]
+    pub fn mark_close(&mut self) {
+        self.close = true
+    }
+}
+
+pub struct PopupResponse<R> {
+    inner: R,
+    action: PopupAction,
+}
+
+pub struct NotificationPopup {
+    pub id: egui::Id,
+    pub margin: egui::Margin,
+    pub max_width: f32,
+    pub content_space: f32,
+}
+
+impl NotificationPopup {
+    pub fn new(id: impl Into<egui::Id>) -> Self {
+        Self {
+            id: id.into(),
+            margin: egui::Margin {
+                left: 20.0,
+                right: 20.0,
+                top: 5.0,
+                bottom: 15.0,
+            },
+            max_width: 300.0,
+            content_space: 20.0,
+        }
+    }
+
+    pub fn show<R>(
+        &self,
+        ctx: &egui::Context,
+        title: impl Into<egui::WidgetText>,
+        popup_ui: impl FnOnce(&mut egui::Ui, &mut PopupAction) -> R,
+    ) -> PopupResponse<R> {
+        let center = ctx.screen_rect().center();
+        let area = egui::Area::new(self.id)
+            .order(egui::Order::Foreground)
+            .pivot(egui::Align2::CENTER_CENTER)
+            .fixed_pos(center);
+        // .default_pos(center)
+        // .movable(true);
+
+        let mut action = PopupAction {
+            just_open: false,
+            close: ctx.input(|i| i.key_pressed(egui::Key::Escape)),
+        };
+        let egui::InnerResponse {
+            inner: r,
+            response: _,
+        } = area.show(ctx, |ui| {
+            egui::Frame::popup(ui.style())
+                .inner_margin(self.margin)
+                .show(ui, |ui| {
+                    ui.set_max_width(self.max_width);
+                    ui.vertical_centered(|ui| {
+                        ui.label(title.into());
+                        ui.add_space(self.content_space);
+                        let resp = popup_ui(ui, &mut action);
+                        ui.add_space(self.content_space);
+                        if ui.button("Close").clicked() {
+                            action.close = true;
+                        }
+                        resp
+                    })
+                    .inner
+                })
+        });
+
+        PopupResponse {
+            inner: r.inner,
+            action,
+        }
+    }
+}
+
 #[derive(Default, Clone, serde::Deserialize, serde::Serialize)]
 pub struct CommonPopupState {
     will_close: bool,
     open: bool,
 }
 
-pub struct CommonPopupResponse<T> {
+pub struct CommonPopupHeaderAction {
+    open_state: Option<bool>,
+}
+
+pub struct CommonPopupResponse<R> {
     pub header_response: egui::Response,
-    pub popup_response: Option<(bool, T)>,
+    pub popup_response: Option<PopupResponse<R>>,
 }
 
 pub struct CommonPopup {
@@ -199,53 +309,53 @@ impl CommonPopup {
         pos
     }
 
-    pub fn collapsed<T>(
+    pub fn collapsed<R>(
         self,
         ui: &mut egui::Ui,
         text: impl Into<egui::WidgetText>,
-        popup_ui: impl FnOnce(&mut egui::Ui, bool /* just_open */) -> (bool, T),
-    ) -> CommonPopupResponse<T> {
+        popup_ui: impl FnOnce(&mut egui::Ui, &mut PopupAction) -> R,
+    ) -> CommonPopupResponse<R> {
         let id_source = self.id_source;
         self.ui(
             ui,
-            |ui, open_state| {
+            |ui, action| {
                 let collapsing = egui::CollapsingHeader::new(text)
                     .id_source(id_source)
-                    .open(open_state);
+                    .open(action.open_state);
                 let collapsing_response = collapsing.show(ui, |_| {
                     // Add nothing into body, create popup after collapsing is fully opened
                 });
-                (
-                    Some(collapsing_response.fully_open()),
-                    collapsing_response.header_response,
-                )
+                action.open_state = Some(collapsing_response.fully_open());
+                collapsing_response.header_response
             },
             popup_ui,
         )
     }
 
-    pub fn ui<T>(
+    pub fn ui<R>(
         self,
         ui: &mut egui::Ui,
-        header_ui: impl FnOnce(&mut egui::Ui, Option<bool>) -> (Option<bool>, egui::Response),
-        popup_ui: impl FnOnce(&mut egui::Ui, bool) -> (bool, T),
-    ) -> CommonPopupResponse<T> {
+        header_ui: impl FnOnce(&mut egui::Ui, &mut CommonPopupHeaderAction) -> egui::Response,
+        popup_ui: impl FnOnce(&mut egui::Ui, &mut PopupAction) -> R,
+    ) -> CommonPopupResponse<R> {
         let id = ui.make_persistent_id(self.id_source);
         let mut state = ui
             .memory_mut(|mem| mem.data.get_persisted::<CommonPopupState>(id))
             .unwrap_or_default();
 
-        let open_state = if state.will_close {
-            state.will_close = false;
-            ui.memory_mut(|mem| mem.data.insert_persisted(id, state.clone()));
-            Some(false)
-        } else {
-            None
+        let mut header_action = CommonPopupHeaderAction {
+            open_state: if state.will_close {
+                state.will_close = false;
+                ui.memory_mut(|mem| mem.data.insert_persisted(id, state.clone()));
+                Some(false)
+            } else {
+                None
+            },
         };
 
         let mut just_open = false;
-        let (open_state, response) = header_ui(ui, open_state);
-        if let Some(o) = open_state {
+        let response = header_ui(ui, &mut header_action);
+        if let Some(o) = header_action.open_state {
             if state.open != o {
                 state.open = o;
                 just_open = o;
@@ -253,9 +363,14 @@ impl CommonPopup {
             }
         }
 
-        let mut popup_response: Option<(bool, T)> = None;
+        let mut popup_response: Option<PopupResponse<R>> = None;
         if state.open {
             let pos = self.popup_pos(ui, &response.rect);
+
+            let mut popup_action = PopupAction {
+                just_open,
+                close: false,
+            };
 
             let mut area = egui::Area::new(id)
                 .order(egui::Order::Foreground)
@@ -264,26 +379,30 @@ impl CommonPopup {
                 area = area.constrain_to(ui.ctx().screen_rect());
             }
             let egui::InnerResponse {
-                inner: mut popup_return_close,
+                inner: popup,
                 response: area_response,
             } = area.show(ui.ctx(), |ui| {
-                let frame = egui::Frame::popup(ui.style());
-                frame.show(ui, |ui| {
-                    ui.set_min_width(self.width);
-                    ui.set_max_width(self.width);
-                    popup_ui(ui, just_open)
-                })
+                egui::Frame::popup(ui.style())
+                    .inner_margin(egui::Margin::same(8.0))
+                    .show(ui, |ui| {
+                        ui.set_min_width(self.width);
+                        ui.set_max_width(self.width);
+                        popup_ui(ui, &mut popup_action)
+                    })
             });
 
-            let will_close = popup_return_close.inner.0
+            let will_close = popup_action.close
                 || ui.input(|i| i.key_pressed(egui::Key::Escape))
                 || (!just_open && self.focus && area_response.clicked_elsewhere());
             if will_close {
                 state.will_close = true;
                 ui.memory_mut(|mem| mem.data.insert_persisted(id, state));
             }
-            popup_return_close.inner.0 = will_close;
-            popup_response = Some(popup_return_close.inner);
+            popup_action.close = will_close;
+            popup_response = Some(PopupResponse {
+                inner: popup.inner,
+                action: popup_action,
+            });
         }
 
         CommonPopupResponse {
@@ -360,23 +479,19 @@ impl ShortcutChoosePopup {
 
     pub fn button_ui(
         ui: &mut egui::Ui,
-        open_state: Option<bool>,
+        action: &mut CommonPopupHeaderAction,
         text: &str,
-    ) -> (Option<bool>, egui::Response) {
+    ) -> egui::Response {
         let resp = ui.add(egui::Button::new(text).min_size(egui::vec2(140.0, 10.0)));
-        (
-            if resp.clicked() {
-                Some(true)
-            } else {
-                open_state
-            },
-            resp,
-        )
+        if resp.clicked() {
+            action.open_state = Some(true);
+        }
+        resp
     }
 
-    pub fn popup_ui(&mut self, ui: &mut egui::Ui, just_open: bool) -> (bool, ShortcutChooseState) {
+    pub fn popup_ui(&mut self, ui: &mut egui::Ui, action: &mut PopupAction) -> ShortcutChooseState {
         let id = ui.make_persistent_id(self.id_source);
-        let mut state = if just_open {
+        let mut state = if action.just_open {
             ui.memory_mut(|mem| mem.data.remove::<ShortcutChooseState>(id));
             ShortcutChooseState::default()
         } else {
@@ -398,7 +513,7 @@ impl ShortcutChoosePopup {
         if changed {
             ui.memory_mut(|mem| mem.data.insert_persisted(id, state.clone()));
         }
-        (false, state)
+        state
     }
 
     pub fn short_cut_from_state(&mut self, state: ShortcutChooseState) -> String {
@@ -421,23 +536,23 @@ impl ShortcutChoosePopup {
     }
 
     pub fn ui(mut self, ui: &mut egui::Ui, buf: &mut String) -> ShortcutInputResponse {
-        let resp = CommonPopup::new(self.id_source).ui(
+        let resp = CommonPopup::new(self.id_source).width(140.0).ui(
             ui,
-            |ui, open_state| Self::button_ui(ui, open_state, buf.as_str()),
-            |ui, just_open| self.popup_ui(ui, just_open),
+            |ui, action| Self::button_ui(ui, action, buf.as_str()),
+            |ui, action| self.popup_ui(ui, action),
         );
         let mut r = ShortcutInputResponse {
             focus: false,
             changed: false,
         };
-        let (will_close, state) = match resp.popup_response {
-            Some(v) => (v.0, v.1),
+        let (close, state) = match resp.popup_response {
+            Some(r) => (r.action.close, r.inner),
             None => return r,
         };
-        if will_close {
+        if close {
             *buf = self.short_cut_from_state(state);
         }
-        r.changed |= will_close;
+        r.changed |= close;
         r
     }
 }

@@ -73,25 +73,22 @@ impl DevicesPanel {
                 .width(400.0)
                 .fit_in_frame(true);
 
-            details_popup.collapsed(ui, d.product_name.clone(), |ui, _| {
+            details_popup.collapsed(ui, d.product_name.clone(), |ui, action| {
                 let details_text = Self::device_details_text(&device.generic);
-                let mut popup_close = false;
                 ui.horizontal(|ui| {
                     if ui.button("Close").clicked() {
-                        popup_close = true;
+                        action.mark_close();
                     }
                     if ui.button("Copy").clicked() {
                         ui.output_mut(|o| o.copied_text = details_text.clone());
                     }
                 });
                 ui.add(
-                    // Have tried to use immutable TextEdit, but the frame lost even though .frame(true) is called
                     egui::TextEdit::multiline(&mut EatInputBuffer::from(&details_text))
                         .clip_text(false)
                         .desired_width(f32::INFINITY)
                         .frame(true),
                 );
-                (popup_close, ())
             });
             ui.add_space(10.0);
         });
