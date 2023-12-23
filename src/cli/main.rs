@@ -4,7 +4,7 @@ use std::str::FromStr;
 use clap::Parser;
 use log::{debug, error, info};
 use monmouse::errors::Error;
-use monmouse::message::GenericDevice;
+use monmouse::message::{setup_reactors, GenericDevice};
 use monmouse::setting::{read_config, CONFIG_FILE_NAME};
 
 #[cfg(not(debug_assertions))]
@@ -52,7 +52,8 @@ fn main() -> Result<(), Error> {
     let config = read_config(&PathBuf::from(args.config_file))?;
     debug!("Config loaded: {:?}", config);
 
-    let mut eventloop = monmouse::Eventloop::new(true);
+    let (_, mouse_control_reactor, _) = setup_reactors(); // useless, but still setup
+    let mut eventloop = monmouse::Eventloop::new(true, mouse_control_reactor);
 
     if args.print_devices {
         let devices = eventloop.scan_devices()?;

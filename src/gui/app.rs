@@ -6,7 +6,7 @@ use std::{
 use eframe::egui;
 use monmouse::{
     errors::Error,
-    message::{DeviceStatus, GenericDevice, Message, RoundtripData, UIReactor},
+    message::{DeviceStatus, GenericDevice, Message, RoundtripData, SendData, UIReactor},
     setting::{write_config, DeviceSetting, DeviceSettingItem, ProcessorSettings, Settings},
     utils::SimpleRatelimit,
 };
@@ -217,6 +217,25 @@ impl App {
                 }
                 Message::CloseUI => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
                 Message::RestartUI => drop(msg),
+                Message::LockCurMouse(id) => {
+                    let Some(dev) = self
+                        .state
+                        .managed_devices
+                        .iter_mut()
+                        .find(|v| v.generic.id == id)
+                    else {
+                        return;
+                    };
+                    dev.device_setting.locked_in_monitor = !dev.device_setting.locked_in_monitor;
+                    self.ui_reactor
+                        .send_mouse_control(Message::ApplyOneDeviceSetting(SendData::new(
+                            DeviceSettingItem {
+                                id,
+                                content: dev.device_setting,
+                            },
+                        )))
+                        .unwrap()
+                }
                 Message::ScanDevices(data) => match data.take_rsp() {
                     Ok(devs) => {
                         let dev_num = devs.len();
@@ -238,6 +257,7 @@ impl App {
                     }
                     Err(e) => self.result_error_alert(format!("Failed to apply settings: {}", e)),
                 },
+                #[allow(unreachable_patterns)]
                 _ => panic!("recv unexpected msg: {:?}", msg),
             }
         }

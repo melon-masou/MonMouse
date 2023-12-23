@@ -253,6 +253,10 @@ impl WinDeviceSet {
         }
     }
 
+    pub fn active_id(&mut self) -> Option<&String> {
+        self.active().and_then(|d| d.id.as_ref())
+    }
+
     pub fn get_and_update_active(&mut self, handle: HANDLE) -> Option<&mut WinDevice> {
         if let Some(id) = self.active_id {
             let active_handle = self.devs.get(id).unwrap().handle;
@@ -521,7 +525,7 @@ impl WinDeviceProcessor {
     }
 
     fn cur_mouse_lock_toogle(&mut self, id: Option<&String>) {
-        let id = id.or_else(|| self.devices.active().and_then(|d| d.id.as_ref()));
+        let id = id.or_else(|| self.devices.active_id());
         let Some(id) = id else {
             return;
         };
@@ -653,6 +657,7 @@ pub struct WinEventLoop {
     processor: &'static mut WinDeviceProcessor,
     headless: bool,
     hotkey_mgr: HotKeyManager<ShortcutID>,
+    mouse_control_reactor: MouseControlReactor,
 }
 
 impl WinEventLoop {
@@ -717,7 +722,12 @@ impl WinEventLoop {
             self.processor.cur_mouse_lock_toogle(None);
             return;
         }
-        todo!()
+        if let Some(id) = self.processor.devices.active_id() {
+            self.mouse_control_reactor
+                .ui_tx
+                .send(Message::LockCurMouse(id.clone()))
+                .unwrap()
+        }
     }
 
     fn on_shortcut_cur_mouse_jump_next(&mut self) {
@@ -726,7 +736,7 @@ impl WinEventLoop {
 }
 
 impl WinEventLoop {
-    pub fn new(headless: bool) -> Self {
+    pub fn new(headless: bool, mouse_control_reactor: MouseControlReactor) -> Self {
         let hook = WinHook::new();
         let processor = WinDeviceProcessor::init_global_once(WinDeviceProcessor::new(headless));
         WinEventLoop {
@@ -734,6 +744,7 @@ impl WinEventLoop {
             processor,
             headless,
             hotkey_mgr: HotKeyManager::new(),
+            mouse_control_reactor,
         }
     }
 
@@ -826,9 +837,9 @@ impl WinEventLoop {
         self.register_shortcuts()
     }
 
-    pub fn poll_message(&mut self, mouse_control_reactor: &MouseControlReactor) {
+    pub fn poll_message(&mut self) {
         loop {
-            let mut msg = match mouse_control_reactor.mouse_control_rx.try_recv() {
+            let mut msg = match self.mouse_control_reactor.mouse_control_rx.try_recv() {
                 Ok(msg) => msg,
                 Err(TryRecvError::Empty) => return,
                 Err(TryRecvError::Disconnected) => return,
@@ -838,6 +849,7 @@ impl WinEventLoop {
             match &mut msg {
                 Message::ScanDevices(data) => {
                     data.set_result(self.scan_devices());
+                    self.mouse_control_reactor.return_msg(msg)
                 }
                 Message::InspectDevicesStatus(data) => {
                     let tick = get_cur_tick();
@@ -854,14 +866,22 @@ impl WinEventLoop {
                         })
                         .collect();
                     data.set_ok(ret);
+                    self.mouse_control_reactor.return_msg(msg)
                 }
                 Message::ApplyProcessorSetting(data) => {
                     let req = data.take_req();
                     data.set_result(self.apply_new_settings(req));
+                    self.mouse_control_reactor.return_msg(msg)
+                }
+                Message::ApplyOneDeviceSetting(data) => {
+                    let item = data.take();
+                    WinDeviceProcessor::apply_one_device_settings(
+                        &mut self.processor.devices,
+                        &item,
+                    );
                 }
                 _ => panic!("recv unexpected ui msg: {:?}", msg),
             };
-            mouse_control_reactor.return_msg(msg)
         }
     }
 

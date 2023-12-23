@@ -3,7 +3,11 @@ use std::{
     sync::mpsc::{channel, sync_channel, Receiver, SendError, Sender, SyncSender, TryRecvError},
 };
 
-use crate::{device_type::DeviceType, errors::Error, setting::ProcessorSettings};
+use crate::{
+    device_type::DeviceType,
+    errors::Error,
+    setting::{DeviceSetting, DeviceSettingItem, ProcessorSettings},
+};
 
 #[derive(Debug, Clone, Copy)]
 pub enum Positioning {
@@ -41,8 +45,8 @@ impl<T> SendData<T> {
             inner: Box::new(Some(d)),
         }
     }
-    pub fn take(self) -> T {
-        self.inner.unwrap()
+    pub fn take(&mut self) -> T {
+        self.inner.take().unwrap()
     }
 }
 
@@ -98,10 +102,11 @@ pub enum Message {
     Exit,
     CloseUI,
     RestartUI,
-    LockCurMouse(SendData<String>),
+    LockCurMouse(String),
     ScanDevices(RoundtripData<(), Vec<GenericDevice>>),
     InspectDevicesStatus(RoundtripData<(), Vec<(String, DeviceStatus)>>),
     ApplyProcessorSetting(RoundtripData<ProcessorSettings, ()>),
+    ApplyOneDeviceSetting(SendData<DeviceSettingItem>),
 }
 
 #[repr(i32)]

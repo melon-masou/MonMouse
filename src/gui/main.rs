@@ -55,9 +55,9 @@ fn main() -> Result<(), eframe::Error> {
 
     set_thread_panic_process();
     let mouse_control_thread = thread::spawn(move || {
-        let eventloop = monmouse::Eventloop::new(false);
+        let eventloop = monmouse::Eventloop::new(false, mouse_control_reactor);
         let tray = Tray::new();
-        match mouse_control_eventloop(eventloop, tray, &master_reactor, &mouse_control_reactor) {
+        match mouse_control_eventloop(eventloop, tray, &master_reactor) {
             Ok(_) => info!("mouse control eventloop exited normally"),
             Err(e) => panic!("mouse control eventloop exited for error: {}", e),
         }
@@ -73,7 +73,6 @@ fn mouse_control_eventloop(
     mut eventloop: monmouse::Eventloop,
     tray: Tray,
     master_reactor: &MasterReactor,
-    mouse_control_reactor: &MouseControlReactor,
 ) -> Result<(), Error> {
     eventloop.initialize()?;
     loop {
@@ -85,7 +84,7 @@ fn mouse_control_eventloop(
         if !eventloop.poll(POLL_MSGS, POLL_TIMEOUT)? {
             break;
         }
-        eventloop.poll_message(mouse_control_reactor);
+        eventloop.poll_message();
     }
     eventloop.terminate()?;
     master_reactor.exit();
