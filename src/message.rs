@@ -1,5 +1,5 @@
 use std::{
-    fmt::{Debug, Display},
+    fmt::Debug,
     sync::mpsc::{channel, sync_channel, Receiver, SendError, Sender, SyncSender, TryRecvError},
 };
 
@@ -20,6 +20,7 @@ pub enum DeviceStatus {
     Unknown,
 }
 
+#[derive(Debug)]
 pub struct GenericDevice {
     pub id: String,
     pub device_type: DeviceType,
@@ -29,6 +30,23 @@ pub struct GenericDevice {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+#[derive(Debug)]
+pub struct SendData<T> {
+    inner: Box<Option<T>>,
+}
+
+impl<T> SendData<T> {
+    pub fn new(d: T) -> Self {
+        Self {
+            inner: Box::new(Some(d)),
+        }
+    }
+    pub fn take(self) -> T {
+        self.inner.unwrap()
+    }
+}
+
+#[derive(Debug)]
 pub struct RoundtripData<TReq, TRsp> {
     inner: Box<(Option<TReq>, Result<TRsp>)>,
 }
@@ -75,46 +93,22 @@ impl<TReq, TRsp> RoundtripData<TReq, TRsp> {
     }
 }
 
+#[derive(Debug)]
 pub enum Message {
     Exit,
     CloseUI,
     RestartUI,
+    LockCurMouse(SendData<String>),
     ScanDevices(RoundtripData<(), Vec<GenericDevice>>),
     InspectDevicesStatus(RoundtripData<(), Vec<(String, DeviceStatus)>>),
     ApplyProcessorSetting(RoundtripData<ProcessorSettings, ()>),
 }
 
-impl Message {
-    #[inline]
-    pub fn inited<T>() -> Result<T> {
-        Err(Error::MessageInited)
-    }
-}
-
 #[repr(i32)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum ShortcutID {
     CurMouseLock = 1000,
     CurMouseJumpNext = 1001,
-}
-
-impl Display for Message {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Exit => write!(f, "Msg(Exit)"),
-            Self::CloseUI => write!(f, "Msg(CloseUI)"),
-            Self::RestartUI => write!(f, "Msg(RestartUI)"),
-            Self::ScanDevices(_) => write!(f, "Msg(ScanDevices)"),
-            Self::InspectDevicesStatus(_) => write!(f, "Msg(InspectDevicesStatus)"),
-            Self::ApplyProcessorSetting(_) => write!(f, "Msg(ApplyProcessorSetting)"),
-        }
-    }
-}
-
-impl Debug for Message {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self)
-    }
 }
 
 pub struct SignalSender(SyncSender<()>);
@@ -187,12 +181,10 @@ impl MouseControlReactor {
     #[inline]
     pub fn return_msg(&self, msg: Message) {
         match msg {
-            Message::Exit => drop(msg),
-            Message::CloseUI => drop(msg),
-            Message::RestartUI => drop(msg),
             Message::ScanDevices(_) => self.ui_tx.send(msg).unwrap(),
             Message::InspectDevicesStatus(_) => self.ui_tx.send(msg).unwrap(),
             Message::ApplyProcessorSetting(_) => self.ui_tx.send(msg).unwrap(),
+            _ => panic!("MouseControl should not return msg: {:?}", msg),
         }
     }
 }
@@ -205,14 +197,7 @@ pub struct UIReactor {
 impl UIReactor {
     #[inline]
     pub fn return_msg(&self, msg: Message) {
-        match msg {
-            Message::Exit => drop(msg),
-            Message::CloseUI => drop(msg),
-            Message::RestartUI => drop(msg),
-            Message::ScanDevices(_) => panic!("return self-generated msg"),
-            Message::InspectDevicesStatus(_) => panic!("return self-generated msg"),
-            Message::ApplyProcessorSetting(_) => panic!("return self-generated msg"),
-        }
+        panic!("UIReactor should not return msg: {:?}", msg);
     }
 
     #[inline]

@@ -18,6 +18,7 @@ use crate::mouse_control::MonitorAreasList;
 use crate::mouse_control::MousePos;
 use crate::mouse_control::MouseRelocator;
 use crate::setting::DeviceSetting;
+use crate::setting::DeviceSettingItem;
 use crate::setting::ProcessorSettings;
 use crate::setting::Settings;
 use crate::utils::SimpleRatelimit;
@@ -487,7 +488,7 @@ impl WinDeviceProcessor {
             debug!("Device: {}", d);
         }
         self.devices.rebuild(rawdevices);
-        self.apply_devices_settings(); // Apply settings again
+        self.apply_processor_settings(None); // Apply settings again
         self.to_update_devices = false;
         Ok(())
     }
@@ -519,23 +520,47 @@ impl WinDeviceProcessor {
         Ok(true)
     }
 
-    fn apply_devices_settings(&mut self) {
+    fn cur_mouse_lock_toogle(&mut self, id: Option<&String>) {
+        let id = id.or_else(|| self.devices.active().and_then(|d| d.id.as_ref()));
+        let Some(id) = id else {
+            return;
+        };
+        if let Some(d) = self.settings.devices.iter_mut().find(|d| &d.id == id) {
+            d.content.locked_in_monitor = !d.content.locked_in_monitor;
+            let _ = Self::apply_one_device_settings(&mut self.devices, d);
+        }
+    }
+
+    fn apply_one_device_settings(devices: &mut WinDeviceSet, item: &DeviceSettingItem) -> bool {
+        let found_dev = devices.iter_mut().find(|v| {
+            if let Some(id) = &v.id {
+                if id == &item.id {
+                    return true;
+                }
+            }
+            false
+        });
+        match found_dev {
+            Some(d) => {
+                d.ctrl.update_settings(&item.content);
+                true
+            }
+            None => false,
+        }
+    }
+
+    fn apply_processor_settings(&mut self, new_settings: Option<ProcessorSettings>) {
+        if let Some(new) = new_settings {
+            self.settings = new;
+        }
         let settings = &self.settings;
-        let applied: usize = settings.devices.iter().fold(0, |applied, dev_setting| {
-            let found_dev = self.devices.iter_mut().find(|v| {
-                if let Some(id) = &v.id {
-                    if id == &dev_setting.id {
-                        return true;
-                    }
-                }
-                false
-            });
-            match found_dev {
-                Some(d) => {
-                    d.ctrl.update_settings(&dev_setting.content);
-                    applied + 1
-                }
-                None => applied,
+        let devices_set = &mut self.devices;
+
+        let applied: usize = settings.devices.iter().fold(0, |applied, item| {
+            if Self::apply_one_device_settings(devices_set, item) {
+                applied + 1
+            } else {
+                applied
             }
         });
 
@@ -687,7 +712,12 @@ impl WinEventLoop {
     }
 
     fn on_shortcut_cur_mouse_lock(&mut self) {
-        debug!("Shortcut cur_mouse_lock pressed")
+        debug!("Shortcut cur_mouse_lock pressed");
+        if self.headless {
+            self.processor.cur_mouse_lock_toogle(None);
+            return;
+        }
+        todo!()
     }
 
     fn on_shortcut_cur_mouse_jump_next(&mut self) {
@@ -792,8 +822,7 @@ impl WinEventLoop {
     }
 
     fn apply_new_settings(&mut self, new_settings: ProcessorSettings) -> Result<()> {
-        self.processor.settings = new_settings;
-        self.processor.apply_devices_settings();
+        self.processor.apply_processor_settings(Some(new_settings));
         self.register_shortcuts()
     }
 

@@ -238,6 +238,7 @@ impl App {
                     }
                     Err(e) => self.result_error_alert(format!("Failed to apply settings: {}", e)),
                 },
+                _ => panic!("recv unexpected msg: {:?}", msg),
             }
         }
     }
