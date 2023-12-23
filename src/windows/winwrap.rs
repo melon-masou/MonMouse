@@ -10,7 +10,9 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     RegisterHotKey, UnregisterHotKey, HOT_KEY_MODIFIERS, MOD_NOREPEAT, VIRTUAL_KEY,
 };
 use windows::Win32::UI::Input::RAWINPUT;
-use windows::Win32::UI::WindowsAndMessaging::{MessageBoxExW, MB_TOPMOST, MESSAGEBOX_RESULT};
+use windows::Win32::UI::WindowsAndMessaging::{
+    MessageBoxExW, HWND_DESKTOP, MB_TOPMOST, MESSAGEBOX_RESULT, WS_OVERLAPPEDWINDOW,
+};
 use windows::{
     core::GUID,
     Win32::{
@@ -581,7 +583,7 @@ pub fn device_get_hid_info(instance_id: &WString, present: bool) -> Result<HidDe
     Ok(r)
 }
 
-pub fn create_dummy_window(module: Option<HMODULE>, lpclass_name: Option<&str>) -> Result<HWND> {
+pub fn create_dummy_window(module: Option<HMODULE>) -> Result<(HMODULE, HWND)> {
     let hinstance = match module {
         Some(m) => m,
         None => match unsafe { GetModuleHandleW(None) } {
@@ -589,7 +591,39 @@ pub fn create_dummy_window(module: Option<HMODULE>, lpclass_name: Option<&str>) 
             Err(e) => return Err(core_error(e)),
         },
     };
-    let class = WString::encode_from_str(lpclass_name.unwrap_or("Message")).as_pcwstr();
+    let class = WString::encode_from_str("Static").as_pcwstr();
+
+    let hwnd = unsafe {
+        CreateWindowExW(
+            WINDOW_EX_STYLE::default(),
+            class,
+            None,
+            WS_OVERLAPPEDWINDOW,
+            0,
+            0,
+            0,
+            0,
+            HWND_DESKTOP,
+            None,
+            hinstance,
+            None,
+        )
+    };
+    if hwnd.0 == 0 {
+        return Err(get_last_error());
+    }
+    Ok((hinstance, hwnd))
+}
+
+pub fn create_message_only_window(module: Option<HMODULE>) -> Result<(HMODULE, HWND)> {
+    let hinstance = match module {
+        Some(m) => m,
+        None => match unsafe { GetModuleHandleW(None) } {
+            Ok(v) => v,
+            Err(e) => return Err(core_error(e)),
+        },
+    };
+    let class = WString::encode_from_str("Message").as_pcwstr();
 
     // create message-only window
     let hwnd = unsafe {
@@ -611,7 +645,7 @@ pub fn create_dummy_window(module: Option<HMODULE>, lpclass_name: Option<&str>) 
     if hwnd.0 == 0 {
         return Err(get_last_error());
     }
-    Ok(hwnd)
+    Ok((hinstance, hwnd))
 }
 
 pub trait SubclassHandler {

@@ -52,6 +52,10 @@ impl DeviceController {
         self.positioning = p;
     }
 
+    pub fn reset_locked_area(&mut self) {
+        self.locked_area = None;
+    }
+
     fn update_pos(&mut self, p: &MousePos, tick: u64) {
         self.last_active_pos = *p;
         self.last_active_tick = tick;
@@ -173,12 +177,10 @@ impl MouseRelocator {
     pub fn pop_relocate_pos(&mut self) -> Option<RelocatePos> {
         self.relocate_pos.take()
     }
-
-    pub fn need_update_monitors(&mut self) -> bool {
-        self.to_update_monitors
-    }
-    pub fn done_update_monitors(&mut self) {
+    pub fn pop_need_update_monitors(&mut self) -> bool {
+        let v = self.to_update_monitors;
         self.to_update_monitors = false;
+        v
     }
 }
 

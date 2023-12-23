@@ -32,6 +32,8 @@ use windows::Win32::UI::WindowsAndMessaging::MsgWaitForMultipleObjects;
 use windows::Win32::UI::WindowsAndMessaging::PeekMessageW;
 use windows::Win32::UI::WindowsAndMessaging::PM_REMOVE;
 use windows::Win32::UI::WindowsAndMessaging::QS_ALLINPUT;
+use windows::Win32::UI::WindowsAndMessaging::WM_DISPLAYCHANGE;
+use windows::Win32::UI::WindowsAndMessaging::WM_DPICHANGED;
 use windows::Win32::UI::WindowsAndMessaging::WM_HOTKEY;
 use windows::Win32::UI::WindowsAndMessaging::WM_INPUT_DEVICE_CHANGE;
 use windows::Win32::{
@@ -339,6 +341,7 @@ struct WinDeviceProcessor {
     relocator: MouseRelocator,
     settings: ProcessorSettings,
     to_update_devices: bool,
+    to_update_monitors: bool,
 
     rl_update_mon: SimpleRatelimit,
     rl_update_dev: SimpleRatelimit,
@@ -362,6 +365,7 @@ impl WinDeviceProcessor {
             relocator: MouseRelocator::new(),
             settings: ProcessorSettings::default(),
             to_update_devices: false,
+            to_update_monitors: false,
 
             rl_update_mon: SimpleRatelimit::new(RATELIMIT_UPDATE_MONITOR_ONCE_MS),
             rl_update_dev: SimpleRatelimit::new(RATELIMIT_UPDATE_DEVICE_ONCE_MS),
@@ -379,13 +383,6 @@ impl WinDeviceProcessor {
         }
     }
     fn initialize(&mut self) -> Result<()> {
-        self.hwnd = match create_dummy_window(None, None) {
-            Ok(v) => v,
-            Err(e) => {
-                error!("Create dummy window failed: {}", e);
-                return Err(e);
-            }
-        };
         match self.register_raw_devices() {
             Ok(_) => (),
             Err(e) => {
@@ -498,9 +495,9 @@ impl WinDeviceProcessor {
         Ok(())
     }
 
-    fn try_update_monitors(&mut self, must: bool) -> Result<bool> {
+    fn try_update_monitors(&mut self, must: bool) -> Result<()> {
         if !must && !self.rl_update_mon.allow(get_cur_tick()) {
-            return Ok(false);
+            return Ok(());
         }
 
         let mut mons = match get_all_monitors_info() {
@@ -522,7 +519,11 @@ impl WinDeviceProcessor {
         );
         debug!("Updated monitors: {}", mon_areas);
         self.relocator.update_monitors(mon_areas);
-        Ok(true)
+        self.devices.iter_mut().for_each(|v| {
+            v.ctrl.reset_locked_area();
+        });
+        self.to_update_monitors = false;
+        Ok(())
     }
 
     fn cur_mouse_lock_toogle(&mut self, id: Option<&String>) {
@@ -633,14 +634,15 @@ impl WinDeviceProcessor {
     }
 
     fn resolve_pending_updating_task(&mut self) {
+        if self.relocator.pop_need_update_monitors() {
+            self.to_update_monitors = true;
+        }
+
         if self.to_update_devices {
             let _ = self.try_update_devices(false);
         }
-
-        if self.relocator.need_update_monitors() {
-            if let Ok(true) = self.try_update_monitors(false) {
-                self.relocator.done_update_monitors();
-            }
+        if self.to_update_monitors {
+            let _ = self.try_update_monitors(false);
         }
     }
 
@@ -659,6 +661,19 @@ pub struct WinEventLoop {
     headless: bool,
     hotkey_mgr: HotKeyManager<ShortcutID>,
     mouse_control_reactor: MouseControlReactor,
+}
+
+impl SubclassHandler for WinEventLoop {
+    fn subclass_callback(&mut self, umsg: u32, _wp: WPARAM, _lp: LPARAM, _class: usize) -> bool {
+        match umsg {
+            WM_DISPLAYCHANGE | WM_DPICHANGED => {
+                debug!("Trigger updating monitors by WM {}", umsg);
+                self.processor.to_update_monitors = true;
+            }
+            _ => (),
+        }
+        true
+    }
 }
 
 impl WinEventLoop {
@@ -760,6 +775,7 @@ impl WinEventLoop {
     }
 
     pub fn initialize(&mut self) -> Result<()> {
+        self.setup_window()?;
         self.processor.initialize()?;
         self.hook.register()?;
         Ok(())
@@ -772,6 +788,25 @@ impl WinEventLoop {
     pub fn terminate(&mut self) -> Result<()> {
         self.hook.unregister()?;
         self.processor.terminate()?;
+        Ok(())
+    }
+
+    pub fn setup_window(&mut self) -> Result<()> {
+        let hwnd = match create_dummy_window(None) {
+            Ok((_, v)) => v,
+            Err(e) => {
+                error!("Create dummy window failed: {}", e);
+                return Err(e);
+            }
+        };
+        match set_subclass(hwnd, SUBCLASS_UID, Some(self)) {
+            Ok(v) => v,
+            Err(e) => {
+                error!("Set subclass failed: {}", e);
+                return Err(e);
+            }
+        };
+        self.processor.hwnd = hwnd;
         Ok(())
     }
 
@@ -788,6 +823,7 @@ impl WinEventLoop {
                 self.on_shortcut(msg.lParam.0 as u32);
                 self.processor.resolve_relocation();
             }
+            // And some messages caught by self.subclass_callback()
             _ => (),
         }
     }
