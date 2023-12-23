@@ -129,7 +129,6 @@ impl App {
         };
         self.state.config_input.set(&self.state.settings);
         self.config_path = config_path;
-        self.on_settings_applied();
         self
     }
 
@@ -233,7 +232,10 @@ impl App {
                     }
                 },
                 Message::ApplyProcessorSetting(data) => match data.take_rsp() {
-                    Ok(_) => self.result_ok("New settings applyed".to_owned()),
+                    Ok(_) => {
+                        self.result_ok("New settings applyed".to_owned());
+                        self.on_settings_applied();
+                    }
                     Err(e) => self.result_error_alert(format!("Failed to apply settings: {}", e)),
                 },
             }
