@@ -674,7 +674,14 @@ impl WinEventLoop {
         }
         let _ = mgr.unregister(hwnd, id as i32);
         match shortcut_str_to_win(shortcut_str) {
-            Some((modifier, key)) => mgr.register(hwnd, id as i32, modifier, key, false, id),
+            Some((modifier, key)) => {
+                match mgr.register(hwnd, id as i32, modifier, key, false, id) {
+                    Err(Error::ShortcutConflict(_)) => {
+                        Err(Error::ShortcutConflict(shortcut_str.into()))
+                    }
+                    res => res,
+                }
+            }
             None => Err(Error::InvalidShortcut(shortcut_str.to_owned())),
         }
     }

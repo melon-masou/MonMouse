@@ -5,6 +5,7 @@ use std::mem::size_of;
 use crate::errors::{Error, Result};
 use crate::windows::wintypes::*;
 
+use super::constants::*;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     RegisterHotKey, UnregisterHotKey, HOT_KEY_MODIFIERS, MOD_NOREPEAT, VIRTUAL_KEY,
 };
@@ -62,8 +63,6 @@ use windows::{
         },
     },
 };
-
-use super::constants::RAWINPUT_MOUSE_FLAGS_ABSOLUTE;
 
 #[derive(PartialEq, Eq, Debug)]
 pub enum RawDeviceType {
@@ -931,7 +930,10 @@ pub fn register_hot_key(
     }
     match unsafe { RegisterHotKey(hwnd, id, modifiers, key.0 as u32) } {
         Ok(_) => Ok(callback_lparam),
-        Err(e) => Err(core_error(e)),
+        Err(e) => match e.code() {
+            HRESULT_SHORTCUT_CONFLICT => Err(Error::ShortcutConflict(None.into())),
+            _ => Err(core_error(e)),
+        },
     }
 }
 

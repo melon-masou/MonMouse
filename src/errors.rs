@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use thiserror::Error as ThisError;
 
 #[derive(ThisError, Debug)]
@@ -12,6 +14,8 @@ pub enum Error {
     InvalidParam(String, String),
     #[error("ErrorInvalidShortCut({0})")]
     InvalidShortcut(String),
+    #[error("ErrorShortCutConflict({0})")]
+    ShortcutConflict(PrintableOptionString),
 
     #[error("ErrorInited")]
     MessageInited,
@@ -30,6 +34,37 @@ pub enum Error {
     WinDeviceInterfaceListEmpty(String),
     #[error("ErrorWinInvalidHandle(v={0})")]
     WinInvalidHandle(isize),
+}
+
+#[derive(Debug)]
+pub struct PrintableOptionString(Option<String>);
+
+impl Display for PrintableOptionString {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let PrintableOptionString(Some(v)) = self {
+            write!(f, "{}", v)
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl From<&str> for PrintableOptionString {
+    fn from(value: &str) -> Self {
+        PrintableOptionString(Some(value.to_owned()))
+    }
+}
+
+impl From<String> for PrintableOptionString {
+    fn from(value: String) -> Self {
+        PrintableOptionString(Some(value))
+    }
+}
+
+impl From<Option<String>> for PrintableOptionString {
+    fn from(value: Option<String>) -> Self {
+        PrintableOptionString(value)
+    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
