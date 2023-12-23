@@ -29,13 +29,59 @@ pub struct GenericDevice {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+pub struct RoundtripData<TReq, TRsp> {
+    inner: Box<(Option<TReq>, Result<TRsp>)>,
+}
+
+impl<TReq, TRsp> Default for RoundtripData<TReq, TRsp>
+where
+    TReq: Default,
+{
+    #[inline]
+    fn default() -> Self {
+        RoundtripData::new(TReq::default())
+    }
+}
+
+impl<TReq, TRsp> RoundtripData<TReq, TRsp> {
+    pub fn new(req: TReq) -> Self {
+        Self {
+            inner: Box::new((Some(req), Err(Error::MessageInited))),
+        }
+    }
+
+    pub fn req(&self) -> &TReq {
+        self.inner.0.as_ref().unwrap()
+    }
+    pub fn result(&self) -> std::result::Result<&TRsp, &Error> {
+        self.inner.1.as_ref()
+    }
+
+    pub fn set_result(&mut self, result: Result<TRsp>) {
+        self.inner.1 = result;
+    }
+    pub fn set_ok(&mut self, result: TRsp) {
+        self.inner.1 = Ok(result);
+    }
+    pub fn set_error(&mut self, result: Error) {
+        self.inner.1 = Err(result);
+    }
+
+    pub fn take_req(&mut self) -> TReq {
+        self.inner.0.take().unwrap()
+    }
+    pub fn take_rsp(self) -> Result<TRsp> {
+        self.inner.1
+    }
+}
+
 pub enum Message {
     Exit,
     CloseUI,
     RestartUI,
-    ScanDevices((), Result<Vec<GenericDevice>>),
-    InspectDevicesStatus((), Result<Vec<(String, DeviceStatus)>>),
-    ApplyProcessorSetting(Option<ProcessorSettings>, Result<()>),
+    ScanDevices(RoundtripData<(), Vec<GenericDevice>>),
+    InspectDevicesStatus(RoundtripData<(), Vec<(String, DeviceStatus)>>),
+    ApplyProcessorSetting(RoundtripData<ProcessorSettings, ()>),
 }
 
 impl Message {
@@ -45,15 +91,22 @@ impl Message {
     }
 }
 
+#[repr(i32)]
+#[derive(Clone, Copy)]
+pub enum ShortcutID {
+    CurMouseLock = 1000,
+    CurMouseJumpNext = 1001,
+}
+
 impl Display for Message {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Exit => write!(f, "Msg(Exit)"),
             Self::CloseUI => write!(f, "Msg(CloseUI)"),
             Self::RestartUI => write!(f, "Msg(RestartUI)"),
-            Self::ScanDevices(_, _) => write!(f, "Msg(ScanDevices)"),
-            Self::InspectDevicesStatus(_, _) => write!(f, "Msg(InspectDevicesStatus)"),
-            Self::ApplyProcessorSetting(_, _) => write!(f, "Msg(ApplyProcessorSetting)"),
+            Self::ScanDevices(_) => write!(f, "Msg(ScanDevices)"),
+            Self::InspectDevicesStatus(_) => write!(f, "Msg(InspectDevicesStatus)"),
+            Self::ApplyProcessorSetting(_) => write!(f, "Msg(ApplyProcessorSetting)"),
         }
     }
 }
@@ -137,9 +190,9 @@ impl MouseControlReactor {
             Message::Exit => drop(msg),
             Message::CloseUI => drop(msg),
             Message::RestartUI => drop(msg),
-            Message::ScanDevices(_, _) => self.ui_tx.send(msg).unwrap(),
-            Message::InspectDevicesStatus(_, _) => self.ui_tx.send(msg).unwrap(),
-            Message::ApplyProcessorSetting(_, _) => self.ui_tx.send(msg).unwrap(),
+            Message::ScanDevices(_) => self.ui_tx.send(msg).unwrap(),
+            Message::InspectDevicesStatus(_) => self.ui_tx.send(msg).unwrap(),
+            Message::ApplyProcessorSetting(_) => self.ui_tx.send(msg).unwrap(),
         }
     }
 }
@@ -156,9 +209,9 @@ impl UIReactor {
             Message::Exit => drop(msg),
             Message::CloseUI => drop(msg),
             Message::RestartUI => drop(msg),
-            Message::ScanDevices(_, _) => panic!("return self-generated msg"),
-            Message::InspectDevicesStatus(_, _) => panic!("return self-generated msg"),
-            Message::ApplyProcessorSetting(_, _) => panic!("return self-generated msg"),
+            Message::ScanDevices(_) => panic!("return self-generated msg"),
+            Message::InspectDevicesStatus(_) => panic!("return self-generated msg"),
+            Message::ApplyProcessorSetting(_) => panic!("return self-generated msg"),
         }
     }
 

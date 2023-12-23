@@ -6,7 +6,7 @@ use std::{
 use eframe::egui;
 use monmouse::{
     errors::Error,
-    message::{DeviceStatus, GenericDevice, Message, UIReactor},
+    message::{DeviceStatus, GenericDevice, Message, RoundtripData, UIReactor},
     setting::{write_config, DeviceSetting, DeviceSettingItem, ProcessorSettings, Settings},
     utils::SimpleRatelimit,
 };
@@ -51,7 +51,7 @@ impl App {
     pub fn trigger_scan_devices(&mut self) {
         self.result_clear();
         self.ui_reactor
-            .send_mouse_control(Message::ScanDevices((), Message::inited()))
+            .send_mouse_control(Message::ScanDevices(RoundtripData::default()))
             .unwrap();
     }
 
@@ -59,17 +59,16 @@ impl App {
         if self.rl_inspect_devices_status.allow(tick) {
             let _ = self
                 .ui_reactor
-                .send_mouse_control(Message::InspectDevicesStatus((), Message::inited()));
+                .send_mouse_control(Message::InspectDevicesStatus(RoundtripData::default()));
         }
     }
 
     pub fn trigger_settings_changed(&mut self) {
         self.result_clear();
         self.ui_reactor
-            .send_mouse_control(Message::ApplyProcessorSetting(
-                Some(self.collect_processor_settings()),
-                Message::inited(),
-            ))
+            .send_mouse_control(Message::ApplyProcessorSetting(RoundtripData::new(
+                self.collect_processor_settings(),
+            )))
             .unwrap();
     }
 
@@ -219,7 +218,7 @@ impl App {
                 }
                 Message::CloseUI => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
                 Message::RestartUI => drop(msg),
-                Message::ScanDevices(_, result) => match result {
+                Message::ScanDevices(data) => match data.take_rsp() {
                     Ok(devs) => {
                         let dev_num = devs.len();
                         self.merge_scanned_devices(devs);
@@ -227,13 +226,13 @@ impl App {
                     }
                     Err(e) => self.result_error_alert(format!("Failed to scan devices: {}", e)),
                 },
-                Message::InspectDevicesStatus(_, result) => match result {
+                Message::InspectDevicesStatus(data) => match data.take_rsp() {
                     Ok(devs) => self.update_devices_status(devs),
                     Err(e) => {
                         self.result_error_silent(format!("Failed to update device status: {}", e))
                     }
                 },
-                Message::ApplyProcessorSetting(_, result) => match result {
+                Message::ApplyProcessorSetting(data) => match data.take_rsp() {
                     Ok(_) => self.result_ok("New settings applyed".to_owned()),
                     Err(e) => self.result_error_alert(format!("Failed to apply settings: {}", e)),
                 },

@@ -11,6 +11,7 @@ use crate::message::GenericDevice;
 use crate::message::Message;
 use crate::message::MouseControlReactor;
 use crate::message::Positioning;
+use crate::message::ShortcutID;
 use crate::mouse_control::DeviceController;
 use crate::mouse_control::MonitorArea;
 use crate::mouse_control::MonitorAreasList;
@@ -797,18 +798,18 @@ impl WinEventLoop {
 
     pub fn poll_message(&mut self, mouse_control_reactor: &MouseControlReactor) {
         loop {
-            let msg = match mouse_control_reactor.mouse_control_rx.try_recv() {
+            let mut msg = match mouse_control_reactor.mouse_control_rx.try_recv() {
                 Ok(msg) => msg,
                 Err(TryRecvError::Empty) => return,
                 Err(TryRecvError::Disconnected) => return,
             };
 
             // Is it possible to reuse the msg?
-            match msg {
-                Message::ScanDevices(_, _) => {
-                    mouse_control_reactor.return_msg(Message::ScanDevices((), self.scan_devices()));
+            match &mut msg {
+                Message::ScanDevices(data) => {
+                    data.set_result(self.scan_devices());
                 }
-                Message::InspectDevicesStatus(_, _) => {
+                Message::InspectDevicesStatus(data) => {
                     let tick = get_cur_tick();
                     let ret = self
                         .processor
@@ -822,14 +823,15 @@ impl WinEventLoop {
                             )
                         })
                         .collect();
-                    mouse_control_reactor.return_msg(Message::InspectDevicesStatus((), Ok(ret)));
+                    data.set_ok(ret);
                 }
-                Message::ApplyProcessorSetting(settings, _) => {
-                    let ret = self.processor.apply_new_settings(settings.unwrap());
-                    mouse_control_reactor.return_msg(Message::ApplyProcessorSetting(None, ret));
+                Message::ApplyProcessorSetting(data) => {
+                    let req = data.take_req();
+                    data.set_result(self.processor.apply_new_settings(req));
                 }
                 _ => panic!("recv unexpected ui msg: {}", msg),
-            }
+            };
+            mouse_control_reactor.return_msg(msg)
         }
     }
 
