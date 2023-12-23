@@ -44,19 +44,15 @@ impl DeviceController {
     }
 
     pub fn update_settings(&mut self, new_setting: &DeviceSetting) {
-        self.reset_locked_area();
-        self.setting = *new_setting;
-    }
-
-    pub fn reset_locked_area(&mut self) {
         self.locked_area = None;
+        self.setting = *new_setting;
     }
 
     pub fn update_positioning(&mut self, p: Positioning) {
         self.positioning = p;
     }
 
-    pub fn update_pos(&mut self, p: &MousePos, tick: u64) {
+    fn update_pos(&mut self, p: &MousePos, tick: u64) {
         self.last_active_pos = *p;
         self.last_active_tick = tick;
     }
@@ -74,12 +70,20 @@ impl DeviceController {
     }
 }
 
+pub struct RelocatePos(pub MousePos, pub u32);
+
+impl RelocatePos {
+    pub fn from(pos: MousePos, area: &MonitorArea) -> Option<Self> {
+        Some(Self(pos, area.scale))
+    }
+}
+
 pub struct MouseRelocator {
     monitors: MonitorAreasList,
 
     cur_mouse: u64,
     cur_pos: MousePos,
-    relocate_pos: Option<(MousePos, u32)>,
+    relocate_pos: Option<RelocatePos>,
     to_update_monitors: bool,
 }
 
@@ -105,15 +109,29 @@ impl MouseRelocator {
         self.monitors = monitors;
     }
 
+    pub fn jump_to_next_monitor(&mut self, c: Option<&mut DeviceController>) {
+        let next_id = self.monitors.locate_id(&self.cur_pos) + 1;
+        if let Some(area) = self.monitors.circle_get(next_id) {
+            if let Some(c) = c {
+                if c.setting.locked_in_monitor {
+                    c.locked_area = Some(*area);
+                }
+            }
+            self.cur_pos = area.center();
+            self.relocate_pos = RelocatePos::from(self.cur_pos, area);
+        }
+    }
+
     pub fn on_pos_update(&mut self, optc: Option<&mut DeviceController>, pos: MousePos) {
         if let Some(c) = optc {
             if c.setting.locked_in_monitor {
-                // Has been lockedted into one area
+                // Has been locked into one area
                 if let Some(area) = &c.locked_area {
                     // If leaving area
                     let new_pos = area.capture_pos(&pos);
                     if new_pos != pos {
-                        self.relocate_pos = Some((new_pos, area.scale));
+                        self.cur_pos = new_pos;
+                        self.relocate_pos = RelocatePos::from(new_pos, area);
                         return;
                     }
                 } else {
@@ -139,7 +157,8 @@ impl MouseRelocator {
                 if let Some((_, old_pos, _)) = c.get_last_pos() {
                     // Find area to go
                     if let Some(area) = self.monitors.locate(&old_pos) {
-                        self.relocate_pos = Some((old_pos, area.scale));
+                        self.cur_pos = old_pos;
+                        self.relocate_pos = RelocatePos::from(old_pos, area);
                         return;
                     } else {
                         self.to_update_monitors = true;
@@ -151,7 +170,7 @@ impl MouseRelocator {
         c.update_pos(&self.cur_pos, tick);
     }
 
-    pub fn pop_relocate_pos(&mut self) -> Option<(MousePos, u32)> {
+    pub fn pop_relocate_pos(&mut self) -> Option<RelocatePos> {
         self.relocate_pos.take()
     }
 
@@ -164,7 +183,7 @@ impl MouseRelocator {
 }
 
 pub struct MonitorAreasList {
-    pub list: Vec<MonitorArea>,
+    list: Vec<MonitorArea>,
 }
 
 impl MonitorAreasList {
@@ -173,6 +192,16 @@ impl MonitorAreasList {
     }
     pub fn locate(&self, p: &MousePos) -> Option<&MonitorArea> {
         self.list.iter().find(|&ma| ma.contains(p))
+    }
+    pub fn locate_id(&self, p: &MousePos) -> usize {
+        if let Some((i, _)) = self.list.iter().enumerate().find(|(_, &ma)| ma.contains(p)) {
+            i
+        } else {
+            0
+        }
+    }
+    pub fn circle_get(&self, id: usize) -> Option<&MonitorArea> {
+        self.list.get(id % self.list.len())
     }
 }
 
@@ -212,6 +241,12 @@ impl MonitorArea {
             _ => p.y,
         };
         MousePos::from(x1, y1)
+    }
+    pub fn center(&self) -> MousePos {
+        MousePos::from(
+            (self.lefttop.x + self.rigtbtm.x) / 2,
+            (self.lefttop.y + self.rigtbtm.y) / 2,
+        )
     }
 }
 

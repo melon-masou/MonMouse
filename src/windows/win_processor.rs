@@ -17,6 +17,7 @@ use crate::mouse_control::MonitorArea;
 use crate::mouse_control::MonitorAreasList;
 use crate::mouse_control::MousePos;
 use crate::mouse_control::MouseRelocator;
+use crate::mouse_control::RelocatePos;
 use crate::setting::DeviceSetting;
 use crate::setting::DeviceSettingItem;
 use crate::setting::ProcessorSettings;
@@ -644,7 +645,7 @@ impl WinDeviceProcessor {
     }
 
     fn resolve_relocation(&mut self) {
-        if let Some((new_pos, scale)) = self.relocator.pop_relocate_pos() {
+        if let Some(RelocatePos(new_pos, scale)) = self.relocator.pop_relocate_pos() {
             let (x, y) = WinDeviceProcessor::phy_pos_from(&new_pos, scale);
             let _ = set_cursor_pos(x, y);
             debug!("Reset cursor to ({},{})", x, y);
@@ -731,7 +732,10 @@ impl WinEventLoop {
     }
 
     fn on_shortcut_cur_mouse_jump_next(&mut self) {
-        debug!("Shortcut cut_mouse_jump pressed")
+        debug!("Shortcut cut_mouse_jump pressed");
+        self.processor
+            .relocator
+            .jump_to_next_monitor(self.processor.devices.active().map(|d| &mut d.ctrl))
     }
 }
 
@@ -773,7 +777,10 @@ impl WinEventLoop {
                 debug!("Trigger updating devices by WM_INPUT_DEVICE_CHANGE");
                 self.processor.to_update_devices = true;
             }
-            WM_HOTKEY => self.on_shortcut(msg.lParam.0 as u32),
+            WM_HOTKEY => {
+                self.on_shortcut(msg.lParam.0 as u32);
+                self.processor.resolve_relocation();
+            }
             _ => (),
         }
     }
