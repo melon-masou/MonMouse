@@ -333,7 +333,6 @@ struct WinDeviceProcessor {
     relocator: MouseRelocator,
     settings: ProcessorSettings,
     to_update_devices: bool,
-    hotkey_mgr: HotKeyManager<ShortcutID>,
 
     rl_update_mon: SimpleRatelimit,
     rl_update_dev: SimpleRatelimit,
@@ -357,7 +356,6 @@ impl WinDeviceProcessor {
             relocator: MouseRelocator::new(),
             settings: ProcessorSettings::default(),
             to_update_devices: false,
-            hotkey_mgr: HotKeyManager::new(),
 
             rl_update_mon: SimpleRatelimit::new(RATELIMIT_UPDATE_MONITOR_ONCE_MS),
             rl_update_dev: SimpleRatelimit::new(RATELIMIT_UPDATE_DEVICE_ONCE_MS),
@@ -401,71 +399,6 @@ impl WinDeviceProcessor {
     }
     fn terminate(&mut self) -> Result<()> {
         Ok(())
-    }
-}
-
-impl WinDeviceProcessor {
-    fn apply_one_shortcut(
-        mgr: &mut HotKeyManager<ShortcutID>,
-        hwnd: HWND,
-        shortcut_str: &str,
-        id: ShortcutID,
-    ) -> Result<()> {
-        if shortcut_str.is_empty() {
-            let _ = mgr.unregister(hwnd, id as i32);
-            return Ok(());
-        }
-        let _ = mgr.unregister(hwnd, id as i32);
-        match shortcut_str_to_win(shortcut_str) {
-            Some((modifier, key)) => mgr.register(hwnd, id as i32, modifier, key, false, id),
-            None => Err(Error::InvalidShortcut(shortcut_str.to_owned())),
-        }
-    }
-
-    fn register_shortcuts(&mut self) -> Result<()> {
-        let shortcuts = &self.settings.shortcuts;
-        let mut last_error: Result<()> = Ok(());
-
-        if let Err(e) = Self::apply_one_shortcut(
-            &mut self.hotkey_mgr,
-            self.hwnd,
-            &shortcuts.cur_mouse_lock,
-            ShortcutID::CurMouseLock,
-        ) {
-            error!("register shortcut cur_mouse_lock error: {}", e);
-            last_error = Err(e);
-        }
-
-        if let Err(e) = Self::apply_one_shortcut(
-            &mut self.hotkey_mgr,
-            self.hwnd,
-            &shortcuts.cur_mouse_jump_next,
-            ShortcutID::CurMouseJumpNext,
-        ) {
-            error!("register shortcut cur_mouse_jump_next error: {}", e);
-            last_error = Err(e);
-        }
-
-        last_error
-    }
-
-    fn on_shortcut(&mut self, cb: u32) {
-        let id = match self.hotkey_mgr.get_callback(cb) {
-            Some(v) => v,
-            None => return,
-        };
-        match id {
-            ShortcutID::CurMouseLock => self.on_shortcut_cur_mouse_lock(),
-            ShortcutID::CurMouseJumpNext => self.on_shortcut_cur_mouse_jump_next(),
-        }
-    }
-
-    fn on_shortcut_cur_mouse_lock(&mut self) {
-        println!("mouse lock")
-    }
-
-    fn on_shortcut_cur_mouse_jump_next(&mut self) {
-        println!("mouse jump next")
     }
 }
 
@@ -613,12 +546,6 @@ impl WinDeviceProcessor {
         );
     }
 
-    fn apply_new_settings(&mut self, new_settings: ProcessorSettings) -> Result<()> {
-        self.settings = new_settings;
-        self.apply_devices_settings();
-        self.register_shortcuts()
-    }
-
     fn on_raw_input(&mut self, _wparam: WPARAM, lparam: LPARAM, tick: u32) {
         match get_rawinput_data(lparam_as_rawinput(lparam), &mut self.raw_input_buf) {
             Ok(_) => (),
@@ -694,28 +621,77 @@ impl WinDeviceProcessor {
             debug!("Reset cursor to ({},{})", x, y);
         }
     }
-
-    fn handle_message(&mut self, msg: &MSG) {
-        match msg.message {
-            WM_INPUT => self.on_raw_input(msg.wParam, msg.lParam, msg.time),
-            WM_INPUT_DEVICE_CHANGE => {
-                debug!("Trigger updating devices by WM_INPUT_DEVICE_CHANGE");
-                self.to_update_devices = true;
-            }
-            WM_HOTKEY => self.on_shortcut(msg.lParam.0 as u32),
-            _ => (),
-        }
-    }
 }
 
 pub struct WinEventLoop {
     hook: WinHook,
     processor: &'static mut WinDeviceProcessor,
+    headless: bool,
+    hotkey_mgr: HotKeyManager<ShortcutID>,
 }
 
-impl Default for WinEventLoop {
-    fn default() -> Self {
-        Self::new(false)
+impl WinEventLoop {
+    fn apply_one_shortcut(
+        mgr: &mut HotKeyManager<ShortcutID>,
+        hwnd: HWND,
+        shortcut_str: &str,
+        id: ShortcutID,
+    ) -> Result<()> {
+        if shortcut_str.is_empty() {
+            let _ = mgr.unregister(hwnd, id as i32);
+            return Ok(());
+        }
+        let _ = mgr.unregister(hwnd, id as i32);
+        match shortcut_str_to_win(shortcut_str) {
+            Some((modifier, key)) => mgr.register(hwnd, id as i32, modifier, key, false, id),
+            None => Err(Error::InvalidShortcut(shortcut_str.to_owned())),
+        }
+    }
+
+    fn register_shortcuts(&mut self) -> Result<()> {
+        let shortcuts = &self.processor.settings.shortcuts;
+        let mut last_error: Result<()> = Ok(());
+
+        if let Err(e) = Self::apply_one_shortcut(
+            &mut self.hotkey_mgr,
+            self.processor.hwnd,
+            &shortcuts.cur_mouse_lock,
+            ShortcutID::CurMouseLock,
+        ) {
+            error!("register shortcut cur_mouse_lock error: {}", e);
+            last_error = Err(e);
+        }
+
+        if let Err(e) = Self::apply_one_shortcut(
+            &mut self.hotkey_mgr,
+            self.processor.hwnd,
+            &shortcuts.cur_mouse_jump_next,
+            ShortcutID::CurMouseJumpNext,
+        ) {
+            error!("register shortcut cur_mouse_jump_next error: {}", e);
+            last_error = Err(e);
+        }
+
+        last_error
+    }
+
+    fn on_shortcut(&mut self, cb: u32) {
+        let id = match self.hotkey_mgr.get_callback(cb) {
+            Some(v) => v,
+            None => return,
+        };
+        match id {
+            ShortcutID::CurMouseLock => self.on_shortcut_cur_mouse_lock(),
+            ShortcutID::CurMouseJumpNext => self.on_shortcut_cur_mouse_jump_next(),
+        }
+    }
+
+    fn on_shortcut_cur_mouse_lock(&mut self) {
+        debug!("Shortcut cur_mouse_lock pressed")
+    }
+
+    fn on_shortcut_cur_mouse_jump_next(&mut self) {
+        debug!("Shortcut cut_mouse_jump pressed")
     }
 }
 
@@ -723,7 +699,12 @@ impl WinEventLoop {
     pub fn new(headless: bool) -> Self {
         let hook = WinHook::new();
         let processor = WinDeviceProcessor::init_global_once(WinDeviceProcessor::new(headless));
-        WinEventLoop { hook, processor }
+        WinEventLoop {
+            hook,
+            processor,
+            headless,
+            hotkey_mgr: HotKeyManager::new(),
+        }
     }
 
     pub fn initialize(&mut self) -> Result<()> {
@@ -733,13 +714,27 @@ impl WinEventLoop {
     }
 
     pub fn load_config(&mut self, config: Settings) -> Result<()> {
-        self.processor.apply_new_settings(config.processor)
+        self.apply_new_settings(config.processor)
     }
 
     pub fn terminate(&mut self) -> Result<()> {
         self.hook.unregister()?;
         self.processor.terminate()?;
         Ok(())
+    }
+
+    fn handle_wm_message(&mut self, msg: &MSG) {
+        match msg.message {
+            WM_INPUT => self
+                .processor
+                .on_raw_input(msg.wParam, msg.lParam, msg.time),
+            WM_INPUT_DEVICE_CHANGE => {
+                debug!("Trigger updating devices by WM_INPUT_DEVICE_CHANGE");
+                self.processor.to_update_devices = true;
+            }
+            WM_HOTKEY => self.on_shortcut(msg.lParam.0 as u32),
+            _ => (),
+        }
     }
 
     #[inline]
@@ -754,7 +749,7 @@ impl WinEventLoop {
                 if msg.message == WM_QUIT {
                     return Ok(false);
                 }
-                self.processor.handle_message(&msg);
+                self.handle_wm_message(&msg);
                 TranslateMessage(&msg);
                 DispatchMessageW(&msg);
                 max_events -= 1;
@@ -796,6 +791,12 @@ impl WinEventLoop {
         }
     }
 
+    fn apply_new_settings(&mut self, new_settings: ProcessorSettings) -> Result<()> {
+        self.processor.settings = new_settings;
+        self.processor.apply_devices_settings();
+        self.register_shortcuts()
+    }
+
     pub fn poll_message(&mut self, mouse_control_reactor: &MouseControlReactor) {
         loop {
             let mut msg = match mouse_control_reactor.mouse_control_rx.try_recv() {
@@ -827,9 +828,9 @@ impl WinEventLoop {
                 }
                 Message::ApplyProcessorSetting(data) => {
                     let req = data.take_req();
-                    data.set_result(self.processor.apply_new_settings(req));
+                    data.set_result(self.apply_new_settings(req));
                 }
-                _ => panic!("recv unexpected ui msg: {}", msg),
+                _ => panic!("recv unexpected ui msg: {:?}", msg),
             };
             mouse_control_reactor.return_msg(msg)
         }
