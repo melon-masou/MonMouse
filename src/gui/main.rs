@@ -111,7 +111,7 @@ fn egui_eventloop(
                 Box::new(AppWrap::new(app_ref))
             }),
         )?;
-        if app.borrow().wait_for_restart() {
+        if app.borrow_mut().wait_for_restart_background() {
             break;
         }
     }
@@ -226,8 +226,9 @@ impl eframe::App for AppWrap {
         // Maybe by finding out a method to terminate eframe native_run outside its own eventloop.
         ctx.request_repaint();
         // Following eventloop, should be also placed there
-        app.trigger_inspect_devices_status(tick_ms);
-        app.dispatch_ui_msg(ctx);
+        if app.events_run(tick_ms) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
     }
 }
 

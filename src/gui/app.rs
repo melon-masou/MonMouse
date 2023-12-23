@@ -3,7 +3,6 @@ use std::{
     sync::mpsc::{RecvError, TryRecvError},
 };
 
-use eframe::egui;
 use monmouse::{
     errors::Error,
     message::{DeviceStatus, GenericDevice, Message, RoundtripData, SendData, UIReactor},
@@ -24,30 +23,6 @@ pub struct App {
 }
 
 impl App {
-    pub fn wait_for_restart(&self) -> bool /* exit? */ {
-        if self.should_exit {
-            return true;
-        }
-        // Once clearing residual pending msg
-        loop {
-            match self.ui_reactor.ui_rx.try_recv() {
-                Ok(Message::Exit) => return true,
-                Ok(msg) => drop(msg),
-                Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => return true,
-            }
-        }
-        // Actuall wait for restart msg
-        loop {
-            match self.ui_reactor.ui_rx.recv() {
-                Ok(Message::Exit) => return true,
-                Ok(Message::RestartUI) => return false,
-                Ok(msg) => drop(msg),
-                Err(RecvError) => return true,
-            }
-        }
-    }
-
     pub fn trigger_scan_devices(&mut self) {
         self.result_clear();
         self.ui_reactor
@@ -99,6 +74,13 @@ impl App {
         self.state.config_input.set(&Settings::default());
         self.result_ok("Default settings restored".to_owned());
     }
+}
+
+pub enum AppUIAction {
+    Exit,
+    Close,
+    Restart,
+    None,
 }
 
 impl App {
@@ -204,69 +186,107 @@ impl App {
         }
     }
 
-    pub fn dispatch_ui_msg(&mut self, ctx: &egui::Context) {
+    pub fn wait_for_restart_background(&mut self) -> bool /* exit? */ {
+        if self.should_exit {
+            return true;
+        }
+        // Once clearing residual pending msg
+        loop {
+            match self.ui_reactor.ui_rx.try_recv() {
+                Ok(Message::Exit) => return true,
+                Ok(msg) => {
+                    // Handle others msg normally
+                    self.handle_ui_msg(msg);
+                }
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => return true,
+            }
+        }
+        // Actuall wait for restart msg
+        loop {
+            match self.ui_reactor.ui_rx.recv() {
+                Ok(Message::Exit) => return true,
+                Ok(Message::RestartUI) => return false,
+                Ok(msg) => {
+                    // Handle others msg normally
+                    self.handle_ui_msg(msg);
+                }
+                Err(RecvError) => return true,
+            }
+        }
+    }
+
+    pub fn events_run(&mut self, tick_ms: u64) -> bool {
+        self.trigger_inspect_devices_status(tick_ms);
         loop {
             let msg = match self.ui_reactor.ui_rx.try_recv() {
                 Ok(msg) => msg,
-                Err(TryRecvError::Empty) => return,
+                Err(TryRecvError::Empty) => return false,
                 Err(TryRecvError::Disconnected) => {
                     self.should_exit = true;
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                    return;
+                    return true;
                 }
             };
 
-            match msg {
-                Message::Exit => {
-                    self.should_exit = true;
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                }
-                Message::CloseUI => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
-                Message::RestartUI => drop(msg),
-                Message::LockCurMouse(id) => {
-                    let Some(dev) = self
-                        .state
-                        .managed_devices
-                        .iter_mut()
-                        .find(|v| v.generic.id == id)
-                    else {
-                        return;
-                    };
-                    dev.device_setting.locked_in_monitor = !dev.device_setting.locked_in_monitor;
-                    self.ui_reactor
-                        .send_mouse_control(Message::ApplyOneDeviceSetting(SendData::new(
-                            DeviceSettingItem {
-                                id,
-                                content: dev.device_setting,
-                            },
-                        )))
-                        .unwrap()
-                }
-                Message::ScanDevices(data) => match data.take_rsp() {
-                    Ok(devs) => {
-                        let dev_num = devs.len();
-                        self.merge_scanned_devices(devs);
-                        self.result_ok(format!("Scanned {} devices", dev_num))
-                    }
-                    Err(e) => self.result_error_alert(format!("Failed to scan devices: {}", e)),
-                },
-                Message::InspectDevicesStatus(data) => match data.take_rsp() {
-                    Ok(devs) => self.update_devices_status(devs),
-                    Err(e) => {
-                        self.result_error_silent(format!("Failed to update device status: {}", e))
-                    }
-                },
-                Message::ApplyProcessorSetting(data) => match data.take_rsp() {
-                    Ok(_) => {
-                        self.result_ok("New settings applyed".to_owned());
-                        self.on_settings_applied();
-                    }
-                    Err(e) => self.result_error_alert(format!("Failed to apply settings: {}", e)),
-                },
-                #[allow(unreachable_patterns)]
-                _ => panic!("recv unexpected msg: {:?}", msg),
+            match self.handle_ui_msg(msg) {
+                AppUIAction::Exit | AppUIAction::Close => return true,
+                _ => (),
             }
         }
+    }
+
+    pub fn handle_ui_msg(&mut self, msg: Message) -> AppUIAction {
+        match msg {
+            Message::Exit => {
+                self.should_exit = true;
+                return AppUIAction::Exit;
+            }
+            Message::CloseUI => return AppUIAction::Close,
+            Message::RestartUI => return AppUIAction::Restart,
+            Message::LockCurMouse(id) => {
+                let Some(dev) = self
+                    .state
+                    .managed_devices
+                    .iter_mut()
+                    .find(|v| v.generic.id == id)
+                else {
+                    return AppUIAction::None;
+                };
+                dev.device_setting.locked_in_monitor = !dev.device_setting.locked_in_monitor;
+                self.ui_reactor
+                    .send_mouse_control(Message::ApplyOneDeviceSetting(SendData::new(
+                        DeviceSettingItem {
+                            id,
+                            content: dev.device_setting,
+                        },
+                    )))
+                    .unwrap()
+            }
+            Message::ScanDevices(data) => match data.take_rsp() {
+                Ok(devs) => {
+                    let dev_num = devs.len();
+                    self.merge_scanned_devices(devs);
+                    self.result_ok(format!("Scanned {} devices", dev_num))
+                }
+                Err(e) => self.result_error_alert(format!("Failed to scan devices: {}", e)),
+            },
+            Message::InspectDevicesStatus(data) => match data.take_rsp() {
+                Ok(devs) => self.update_devices_status(devs),
+                Err(e) => {
+                    self.result_error_silent(format!("Failed to update device status: {}", e))
+                }
+            },
+            Message::ApplyProcessorSetting(data) => match data.take_rsp() {
+                Ok(_) => {
+                    self.result_ok("New settings applyed".to_owned());
+                    self.on_settings_applied();
+                }
+                Err(e) => self.result_error_alert(format!("Failed to apply settings: {}", e)),
+            },
+            #[allow(unreachable_patterns)]
+            _ => panic!("recv unexpected msg: {:?}", msg),
+        }
+        AppUIAction::None
     }
 
     pub fn save_global_config(&mut self) {
