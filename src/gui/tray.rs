@@ -1,3 +1,4 @@
+use monmouse::message::TrayReactor;
 use tray_icon::menu::Menu;
 use tray_icon::menu::MenuEvent;
 use tray_icon::menu::MenuItem;
@@ -14,15 +15,11 @@ pub struct Tray {
     open: MenuItem,
     quit: MenuItem,
     trayicon: TrayIcon,
-}
-
-pub enum TrayEvent {
-    Open,
-    Quit,
+    tray_reactor: TrayReactor,
 }
 
 impl Tray {
-    pub fn new() -> Self {
+    pub fn new(tray_reactor: TrayReactor) -> Self {
         let icon = load_icon();
         let tray_menu = Menu::new();
 
@@ -46,24 +43,24 @@ impl Tray {
             open,
             quit,
             trayicon,
+            tray_reactor,
         }
     }
 
-    pub fn poll_event(&self) -> Option<TrayEvent> {
+    pub fn poll_event(&self) {
         if let Ok(event) = TrayIconEvent::receiver().try_recv() {
             if event.click_type == ClickType::Double {
-                return Some(TrayEvent::Open);
+                self.tray_reactor.restart_ui();
             }
         }
 
         if let Ok(event) = MenuEvent::receiver().try_recv() {
             if event.id == self.quit.id() {
-                return Some(TrayEvent::Quit);
+                self.tray_reactor.exit();
             }
             if event.id == self.open.id() {
-                return Some(TrayEvent::Open);
+                self.tray_reactor.restart_ui();
             }
         }
-        None
     }
 }

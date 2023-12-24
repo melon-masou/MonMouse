@@ -887,16 +887,19 @@ impl WinEventLoop {
         self.register_shortcuts()
     }
 
-    pub fn poll_message(&mut self) {
+    pub fn poll_message(&mut self) -> bool {
         loop {
             let mut msg = match self.mouse_control_reactor.mouse_control_rx.try_recv() {
                 Ok(msg) => msg,
-                Err(TryRecvError::Empty) => return,
-                Err(TryRecvError::Disconnected) => return,
+                Err(TryRecvError::Empty) => return false,
+                Err(TryRecvError::Disconnected) => return true,
             };
 
             // Is it possible to reuse the msg?
             match &mut msg {
+                Message::Exit => {
+                    return true;
+                }
                 Message::ScanDevices(data) => {
                     data.set_result(self.scan_devices());
                     self.mouse_control_reactor.return_msg(msg)

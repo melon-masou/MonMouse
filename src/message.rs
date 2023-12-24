@@ -141,12 +141,13 @@ pub fn signal() -> (SignalSender, SignalReceiver) {
     (SignalSender(tx), SignalReceiver(rx))
 }
 
-pub fn setup_reactors() -> (MasterReactor, MouseControlReactor, UIReactor) {
+pub fn setup_reactors() -> (TrayReactor, MouseControlReactor, UIReactor) {
     let (ui_tx, ui_rx) = channel::<Message>();
     let (mouse_control_tx, mouse_control_rx) = channel::<Message>();
 
-    let master = MasterReactor {
+    let master = TrayReactor {
         ui_tx: ui_tx.clone(),
+        mouse_control_tx: mouse_control_tx.clone(),
     };
     let mouse_ctrl = MouseControlReactor {
         ui_tx,
@@ -160,14 +161,16 @@ pub fn setup_reactors() -> (MasterReactor, MouseControlReactor, UIReactor) {
     (master, mouse_ctrl, ui)
 }
 
-pub struct MasterReactor {
+pub struct TrayReactor {
     ui_tx: Sender<Message>,
+    mouse_control_tx: Sender<Message>,
 }
 
-impl MasterReactor {
+impl TrayReactor {
     pub fn exit(&self) {
         let _ = self.ui_tx.send(Message::CloseUI); // close ui firstly
         let _ = self.ui_tx.send(Message::Exit);
+        let _ = self.mouse_control_tx.send(Message::Exit);
     }
     pub fn restart_ui(&self) {
         let _ = self.ui_tx.send(Message::RestartUI);

@@ -20,11 +20,11 @@ use log::info;
 use monmouse::setting::{read_config, Settings, CONFIG_FILE_NAME};
 use monmouse::{
     errors::Error,
-    message::{setup_reactors, MasterReactor, UIReactor},
+    message::{setup_reactors, UIReactor},
 };
 use monmouse::{POLL_MSGS, POLL_TIMEOUT};
 use styles::{gscale, Theme};
-use tray::{Tray, TrayEvent};
+use tray::Tray;
 
 #[cfg(debug_assertions)]
 use crate::components::debug::DebugInfo;
@@ -51,13 +51,13 @@ fn main() -> Result<(), eframe::Error> {
 
     let config = config_file.and_then(|v| read_config(&v));
 
-    let (master_reactor, mouse_control_reactor, ui_reactor) = setup_reactors();
+    let (tray_reactor, mouse_control_reactor, ui_reactor) = setup_reactors();
 
     set_thread_panic_process();
     let mouse_control_thread = thread::spawn(move || {
         let eventloop = monmouse::Eventloop::new(false, mouse_control_reactor);
-        let tray = Tray::new();
-        match mouse_control_eventloop(eventloop, tray, &master_reactor) {
+        let tray = Tray::new(tray_reactor);
+        match mouse_control_spawn(eventloop, tray) {
             Ok(_) => info!("mouse control eventloop exited normally"),
             Err(e) => panic!("mouse control eventloop exited for error: {}", e),
         }
@@ -72,25 +72,18 @@ fn main() -> Result<(), eframe::Error> {
     result
 }
 
-fn mouse_control_eventloop(
-    mut eventloop: monmouse::Eventloop,
-    tray: Tray,
-    master_reactor: &MasterReactor,
-) -> Result<(), Error> {
+fn mouse_control_spawn(mut eventloop: monmouse::Eventloop, tray: Tray) -> Result<(), Error> {
     eventloop.initialize()?;
     loop {
-        match tray.poll_event() {
-            Some(TrayEvent::Open) => master_reactor.restart_ui(),
-            Some(TrayEvent::Quit) => break,
-            None => (),
-        }
+        tray.poll_event();
         if !eventloop.poll(POLL_MSGS, POLL_TIMEOUT)? {
             break;
         }
-        eventloop.poll_message();
+        if eventloop.poll_message() {
+            break;
+        };
     }
     eventloop.terminate()?;
-    master_reactor.exit();
     Ok(())
 }
 
