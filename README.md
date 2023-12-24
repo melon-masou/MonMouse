@@ -17,9 +17,11 @@ Glad to hear new ideas, feature requests, and feedback, which you can share on [
 - Lock: Resitrict the mouse cursor inside one monitor(includes a shortcut to jump between monitors).
 - Partial support for various common pointer devices: mouse, touchpad, touchscreen, pen tablet, etc.
 - No additional driver installation required.
+- Currently only support Windows
 
 ## Download
-[Releases](https://github.com/melon-masou/MonMouse/releases)
+- Download prebuilt from [Releases](https://github.com/melon-masou/MonMouse/releases).
+- MSVC-140+ is required. You can get latest from [latest-supported-vc-redist](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)
 
 ## License
 This project is licensed under the MIT License.
