@@ -1,6 +1,7 @@
 use std::{
     fmt::Debug,
     sync::mpsc::{channel, sync_channel, Receiver, Sender, SyncSender, TryRecvError},
+    time::Duration,
 };
 
 use crate::{
@@ -97,11 +98,16 @@ impl<TReq, TRsp> RoundtripData<TReq, TRsp> {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum TimerDueKind {
+    InspectDevice,
+}
+
 #[derive(Debug)]
 pub enum Message {
     Exit,
-    CloseUI,
     RestartUI,
+    TimerDue(TimerDueKind),
     LockCurMouse(String),
     ScanDevices(RoundtripData<(), Vec<GenericDevice>>),
     InspectDevicesStatus(RoundtripData<(), Vec<(String, DeviceStatus)>>),
@@ -141,20 +147,26 @@ pub fn signal() -> (SignalSender, SignalReceiver) {
     (SignalSender(tx), SignalReceiver(rx))
 }
 
-pub fn setup_reactors() -> (TrayReactor, MouseControlReactor, UIReactor) {
+pub fn setup_reactors(
+    ui_notify1: Box<dyn UINotify>,
+    ui_notify2: Box<dyn UINotify>,
+) -> (TrayReactor, MouseControlReactor, UIReactor) {
     let (ui_tx, ui_rx) = channel::<Message>();
     let (mouse_control_tx, mouse_control_rx) = channel::<Message>();
 
     let master = TrayReactor {
         ui_tx: ui_tx.clone(),
         mouse_control_tx: mouse_control_tx.clone(),
+        ui_notify: ui_notify1,
     };
     let mouse_ctrl = MouseControlReactor {
-        ui_tx,
+        ui_tx: ui_tx.clone(),
         mouse_control_rx,
+        ui_notify: ui_notify2,
     };
     let ui = UIReactor {
         ui_rx,
+        ui_tx,
         mouse_control_tx,
     };
 
@@ -164,25 +176,24 @@ pub fn setup_reactors() -> (TrayReactor, MouseControlReactor, UIReactor) {
 pub struct TrayReactor {
     ui_tx: Sender<Message>,
     mouse_control_tx: Sender<Message>,
+    ui_notify: Box<dyn UINotify>,
 }
 
 impl TrayReactor {
     pub fn exit(&self) {
-        let _ = self.ui_tx.send(Message::CloseUI); // close ui firstly
+        self.ui_notify.notify_close();
         let _ = self.ui_tx.send(Message::Exit);
         let _ = self.mouse_control_tx.send(Message::Exit);
     }
     pub fn restart_ui(&self) {
         let _ = self.ui_tx.send(Message::RestartUI);
     }
-    pub fn close_ui(&self) {
-        let _ = self.ui_tx.send(Message::CloseUI);
-    }
 }
 
 pub struct MouseControlReactor {
     pub ui_tx: Sender<Message>,
     pub mouse_control_rx: Receiver<Message>,
+    ui_notify: Box<dyn UINotify>,
 }
 
 impl MouseControlReactor {
@@ -191,12 +202,15 @@ impl MouseControlReactor {
         match msg {
             Message::ScanDevices(_) => {
                 let _ = self.ui_tx.send(msg);
+                self.ui_notify.notify();
             }
             Message::InspectDevicesStatus(_) => {
                 let _ = self.ui_tx.send(msg);
+                self.ui_notify.notify();
             }
             Message::ApplyProcessorSetting(_) => {
                 let _ = self.ui_tx.send(msg);
+                self.ui_notify.notify();
             }
             _ => panic!("MouseControl should not return msg: {:?}", msg),
         }
@@ -205,6 +219,7 @@ impl MouseControlReactor {
 
 pub struct UIReactor {
     pub ui_rx: Receiver<Message>,
+    pub ui_tx: Sender<Message>,
     pub mouse_control_tx: Sender<Message>,
 }
 
@@ -218,4 +233,62 @@ impl UIReactor {
     pub fn send_mouse_control(&self, msg: Message) {
         let _ = self.mouse_control_tx.send(msg);
     }
+}
+
+pub trait UINotify: Send {
+    fn notify(&self);
+    fn notify_close(&self);
+}
+
+#[derive(Clone, Default)]
+pub struct UINotifyNoop {}
+
+impl UINotify for UINotifyNoop {
+    fn notify(&self) {}
+    fn notify_close(&self) {}
+}
+
+pub enum TimerOperation {
+    ResetInterval(Duration),
+}
+
+pub struct TimerOperator {
+    op_tx: Sender<TimerOperation>,
+}
+
+impl TimerOperator {
+    pub fn update_interval(&self, dur: Duration) {
+        let _ = self.op_tx.send(TimerOperation::ResetInterval(dur));
+    }
+    pub fn stop(self) {
+        drop(self.op_tx)
+    }
+}
+
+pub fn timer_spawn(
+    mut interval: Duration,
+    tx: Sender<Message>,
+    kind: TimerDueKind,
+    callback: Option<Box<dyn Fn() + Send>>,
+) -> TimerOperator {
+    let (op_tx, op_rx) = channel::<TimerOperation>();
+
+    std::thread::spawn(move || loop {
+        loop {
+            match op_rx.try_recv() {
+                Ok(o) => match o {
+                    TimerOperation::ResetInterval(d) => interval = d,
+                },
+                Err(TryRecvError::Disconnected) => return,
+                _ => break,
+            }
+        }
+        std::thread::sleep(interval);
+        let _ = tx.send(Message::TimerDue(kind));
+        if let Some(cb) = &callback {
+            cb()
+        }
+    });
+
+    TimerOperator { op_tx }
 }

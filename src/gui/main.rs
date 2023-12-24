@@ -8,6 +8,7 @@ mod tray;
 
 use std::panic::PanicInfo;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use std::{cell::RefCell, panic, process, rc::Rc, thread};
 
 use app::App;
@@ -17,6 +18,7 @@ use components::devices_panel::DevicesPanel;
 use components::status_bar::{status_bar_ui, status_popup_show};
 use eframe::egui;
 use log::info;
+use monmouse::message::UINotify;
 use monmouse::setting::{read_config, Settings, CONFIG_FILE_NAME};
 use monmouse::{
     errors::Error,
@@ -51,7 +53,9 @@ fn main() -> Result<(), eframe::Error> {
 
     let config = config_file.and_then(|v| read_config(&v));
 
-    let (tray_reactor, mouse_control_reactor, ui_reactor) = setup_reactors();
+    let egui_notify = EguiNotify::default();
+    let (tray_reactor, mouse_control_reactor, ui_reactor) =
+        setup_reactors(Box::new(egui_notify.clone()), Box::new(egui_notify.clone()));
 
     set_thread_panic_process();
     let mouse_control_thread = thread::spawn(move || {
@@ -64,7 +68,7 @@ fn main() -> Result<(), eframe::Error> {
     });
 
     // winit wrapped by eframe, requires UI eventloop running inside main thread
-    let result = egui_eventloop(ui_reactor, config, config_path);
+    let result = egui_eventloop(ui_reactor, config, config_path, egui_notify);
     if let Err(e) = result {
         panic!("egui eventloop exited for: {}", e);
     }
@@ -91,6 +95,7 @@ fn egui_eventloop(
     ui_reactor: UIReactor,
     config: Result<Settings, Error>,
     config_path: Option<PathBuf>,
+    egui_notify: EguiNotify,
 ) -> Result<(), eframe::Error> {
     let mut app = App::new(ui_reactor).load_config(config, config_path);
     app.trigger_scan_devices();
@@ -99,12 +104,15 @@ fn egui_eventloop(
     let app = Rc::new(RefCell::new(app));
     loop {
         let app_ref = app.clone();
+        let egui_notify1 = egui_notify.clone();
         eframe::run_native(
             "MonMouse",
             ui_options_main_window(),
             Box::new(move |c| {
                 AppWrap::init_ctx(&c.egui_ctx);
-                Box::new(AppWrap::new(app_ref))
+                app_ref.borrow_mut().setup_inspect_timer(&egui_notify1);
+                egui_notify1.update_ctx(Some(c.egui_ctx.clone()));
+                Box::new(AppWrap::new(app_ref, egui_notify1))
             }),
         )?;
         if app.borrow_mut().wait_for_restart_background() {
@@ -112,6 +120,31 @@ fn egui_eventloop(
         }
     }
     Ok(())
+}
+
+#[derive(Clone, Default)]
+pub struct EguiNotify {
+    egui_ctx: Arc<Mutex<Option<egui::Context>>>,
+}
+
+impl EguiNotify {
+    pub fn update_ctx(&self, c: Option<egui::Context>) {
+        *self.egui_ctx.lock().unwrap() = c;
+    }
+}
+
+impl UINotify for EguiNotify {
+    fn notify(&self) {
+        if let Some(c) = self.egui_ctx.lock().unwrap().clone() {
+            c.request_repaint()
+        }
+    }
+
+    fn notify_close(&self) {
+        if let Some(c) = self.egui_ctx.lock().unwrap().clone() {
+            c.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+    }
 }
 
 fn ui_options_main_window() -> eframe::NativeOptions {
@@ -140,15 +173,19 @@ enum PanelTag {
 struct AppWrap {
     cur_panel: PanelTag,
     app: Rc<RefCell<App>>,
+    egui_notify: EguiNotify,
+
     #[cfg(debug_assertions)]
     debug_info: DebugInfo,
 }
 
 impl AppWrap {
-    fn new(app: Rc<RefCell<App>>) -> Self {
+    fn new(app: Rc<RefCell<App>>, egui_notify: EguiNotify) -> Self {
         Self {
             cur_panel: PanelTag::Devices,
             app,
+            egui_notify,
+
             #[cfg(debug_assertions)]
             debug_info: DebugInfo::default(),
         }
@@ -173,16 +210,21 @@ impl eframe::App for AppWrap {
     fn persist_egui_memory(&self) -> bool {
         false
     }
+
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.egui_notify.update_ctx(None);
+    }
+
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let mut app = self.app.borrow_mut();
-        Self::init_visuals(ctx, app.get_theme());
+        app.events_run();
 
+        // Start painting
+        Self::init_visuals(ctx, app.get_theme());
         egui::TopBottomPanel::bottom("StatusBar").show(ctx, |ui| {
             ui.horizontal(|ui| status_bar_ui(ui, &mut app));
         });
-
-        #[cfg(debug_assertions)]
-        let debug_info = &self.debug_info;
+        status_popup_show(ctx, &mut app);
         egui::SidePanel::left("TabChooser")
             .resizable(false)
             .show_separator_line(true)
@@ -199,9 +241,8 @@ impl eframe::App for AppWrap {
                 tab_button(PanelTag::About);
 
                 #[cfg(debug_assertions)]
-                debug_info.ui(ui);
+                self.debug_info.ui(ui);
             });
-
         egui::CentralPanel::default().show(ctx, |ui| {
             match self.cur_panel {
                 PanelTag::Devices => DevicesPanel::ui(ui, &mut app),
@@ -210,22 +251,9 @@ impl eframe::App for AppWrap {
             };
         });
 
-        status_popup_show(ctx, &mut app);
-
         let tick_ms = ctx.input(|input| (input.time * 1000.0).round()) as u64;
-
         #[cfg(debug_assertions)]
         self.debug_info.on_paint(tick_ms);
-
-        // FIXME: It is a tricky way to keep triggering update(), even when the mouse is
-        // outside the window area. Or else the "Exit" button in tray won't work, until
-        // the mouse enter the window area.
-        // Maybe by finding out a method to terminate eframe native_run outside its own eventloop.
-        ctx.request_repaint();
-        // Following eventloop, should be also placed there
-        if app.events_run(tick_ms) {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-        }
     }
 }
 

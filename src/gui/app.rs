@@ -1,16 +1,19 @@
 use std::{
     path::PathBuf,
     sync::mpsc::{RecvError, TryRecvError},
+    time::Duration,
 };
 
 use monmouse::{
     errors::Error,
-    message::{DeviceStatus, GenericDevice, Message, RoundtripData, SendData, UIReactor},
+    message::{
+        timer_spawn, DeviceStatus, GenericDevice, Message, RoundtripData, SendData, TimerDueKind,
+        TimerOperator, UINotify, UIReactor,
+    },
     setting::{write_config, DeviceSetting, DeviceSettingItem, ProcessorSettings, Settings},
-    utils::SimpleRatelimit,
 };
 
-use crate::{components::config_panel::ConfigInputState, styles::Theme};
+use crate::{components::config_panel::ConfigInputState, styles::Theme, EguiNotify};
 
 pub struct App {
     pub state: AppState,
@@ -19,7 +22,7 @@ pub struct App {
     config_path: Option<PathBuf>,
     should_exit: bool,
     ui_reactor: UIReactor,
-    rl_inspect_devices_status: SimpleRatelimit,
+    inspect_timer: Option<TimerOperator>,
 }
 
 impl App {
@@ -29,11 +32,9 @@ impl App {
             .send_mouse_control(Message::ScanDevices(RoundtripData::default()));
     }
 
-    pub fn trigger_inspect_devices_status(&mut self, tick: u64) {
-        if self.rl_inspect_devices_status.allow(tick) {
-            self.ui_reactor
-                .send_mouse_control(Message::InspectDevicesStatus(RoundtripData::default()));
-        }
+    pub fn trigger_inspect_devices_status(&mut self) {
+        self.ui_reactor
+            .send_mouse_control(Message::InspectDevicesStatus(RoundtripData::default()));
     }
 
     pub fn trigger_one_device_setting_changed(&mut self, item: DeviceSettingItem) {
@@ -49,14 +50,28 @@ impl App {
             )));
     }
 
+    pub fn setup_inspect_timer(&mut self, egui_notify: &EguiNotify) {
+        let egui_notify = egui_notify.clone();
+        let timer = timer_spawn(
+            Duration::from_millis(self.state.settings.ui.inspect_device_interval_ms),
+            self.ui_reactor.ui_tx.clone(),
+            TimerDueKind::InspectDevice,
+            Some(Box::new(move || egui_notify.notify())),
+        );
+        self.inspect_timer = Some(timer);
+    }
+
     pub fn on_settings_applied(&mut self) {
         self.state.config_input.mark_changed(false);
     }
     pub fn apply_new_settings(&mut self) {
         match self.state.config_input.parse_all(&mut self.state.settings) {
             Ok(_) => {
-                self.rl_inspect_devices_status
-                    .reset(self.state.settings.ui.inspect_device_interval_ms);
+                let duration =
+                    Duration::from_millis(self.state.settings.ui.inspect_device_interval_ms);
+                if let Some(timer) = self.inspect_timer.as_ref() {
+                    timer.update_interval(duration);
+                }
                 self.trigger_settings_changed();
             }
             Err(_) => self.result_error_alert("Not all fields contain valid value".to_owned()),
@@ -72,27 +87,16 @@ impl App {
     }
 }
 
-pub enum AppUIAction {
-    Exit,
-    Close,
-    Restart,
-    None,
-}
-
 impl App {
     pub fn new(ui_reactor: UIReactor) -> Self {
-        let state = AppState::default();
-        let rl_inspect_devices_status =
-            SimpleRatelimit::new(state.settings.ui.inspect_device_interval_ms);
-
         App {
-            state,
+            state: AppState::default(),
             last_result: StatusBarResult::None,
             alert_errors: Vec::new(),
             config_path: None,
             should_exit: false,
             ui_reactor,
-            rl_inspect_devices_status,
+            inspect_timer: None,
         }
     }
 
@@ -212,33 +216,26 @@ impl App {
         }
     }
 
-    pub fn events_run(&mut self, tick_ms: u64) -> bool {
-        self.trigger_inspect_devices_status(tick_ms);
+    pub fn events_run(&mut self) {
         loop {
             let msg = match self.ui_reactor.ui_rx.try_recv() {
                 Ok(msg) => msg,
-                Err(TryRecvError::Empty) => return false,
+                Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => {
                     self.should_exit = true;
-                    return true;
+                    break;
                 }
             };
-
-            match self.handle_ui_msg(msg) {
-                AppUIAction::Exit | AppUIAction::Close => return true,
-                _ => (),
-            }
+            self.handle_ui_msg(msg);
         }
     }
 
-    pub fn handle_ui_msg(&mut self, msg: Message) -> AppUIAction {
+    pub fn handle_ui_msg(&mut self, msg: Message) {
         match msg {
             Message::Exit => {
                 self.should_exit = true;
-                return AppUIAction::Exit;
             }
-            Message::CloseUI => return AppUIAction::Close,
-            Message::RestartUI => return AppUIAction::Restart,
+            Message::RestartUI => (),
             Message::LockCurMouse(id) => {
                 let Some(dev) = self
                     .state
@@ -246,7 +243,7 @@ impl App {
                     .iter_mut()
                     .find(|v| v.generic.id == id)
                 else {
-                    return AppUIAction::None;
+                    return;
                 };
                 dev.device_setting.locked_in_monitor = !dev.device_setting.locked_in_monitor;
                 self.ui_reactor
@@ -265,6 +262,7 @@ impl App {
                 }
                 Err(e) => self.result_error_alert(format!("Failed to scan devices: {}", e)),
             },
+            Message::TimerDue(TimerDueKind::InspectDevice) => self.trigger_inspect_devices_status(),
             Message::InspectDevicesStatus(data) => match data.take_rsp() {
                 Ok(devs) => self.update_devices_status(devs),
                 Err(e) => {
@@ -281,7 +279,6 @@ impl App {
             #[allow(unreachable_patterns)]
             _ => panic!("recv unexpected msg: {:?}", msg),
         }
-        AppUIAction::None
     }
 
     pub fn save_global_config(&mut self) {
