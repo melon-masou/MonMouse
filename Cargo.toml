@@ -20,7 +20,7 @@ thiserror = "1.0"
 log = "0.4"
 env_logger = "0.10"
 clap = { version = "4.4.11", features = ["derive"] }
-eframe = { version = "0.24.1", features = ["persistence"] }
+eframe = { version = "0.24", features = ["persistence", "wgpu"] }
 egui_extras = "0.24.2"
 serde = { version = "1.0.193", features = ["derive"] }
 tray-icon = "0.11.1"

@@ -132,6 +132,7 @@ fn ui_options_main_window() -> eframe::NativeOptions {
         run_and_return: true,
         centered: true,
         persist_window: true,
+        renderer: eframe::Renderer::Wgpu,
         ..Default::default()
     }
 }
