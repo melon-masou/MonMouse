@@ -26,22 +26,19 @@ impl App {
     pub fn trigger_scan_devices(&mut self) {
         self.result_clear();
         self.ui_reactor
-            .send_mouse_control(Message::ScanDevices(RoundtripData::default()))
-            .unwrap();
+            .send_mouse_control(Message::ScanDevices(RoundtripData::default()));
     }
 
     pub fn trigger_inspect_devices_status(&mut self, tick: u64) {
         if self.rl_inspect_devices_status.allow(tick) {
-            let _ = self
-                .ui_reactor
+            self.ui_reactor
                 .send_mouse_control(Message::InspectDevicesStatus(RoundtripData::default()));
         }
     }
 
     pub fn trigger_one_device_setting_changed(&mut self, item: DeviceSettingItem) {
         self.ui_reactor
-            .send_mouse_control(Message::ApplyOneDeviceSetting(SendData::new(item)))
-            .unwrap();
+            .send_mouse_control(Message::ApplyOneDeviceSetting(SendData::new(item)));
     }
 
     pub fn trigger_settings_changed(&mut self) {
@@ -49,8 +46,7 @@ impl App {
         self.ui_reactor
             .send_mouse_control(Message::ApplyProcessorSetting(RoundtripData::new(
                 self.collect_processor_settings(),
-            )))
-            .unwrap();
+            )));
     }
 
     pub fn on_settings_applied(&mut self) {
@@ -259,8 +255,7 @@ impl App {
                             id,
                             content: dev.device_setting,
                         },
-                    )))
-                    .unwrap()
+                    )));
             }
             Message::ScanDevices(data) => match data.take_rsp() {
                 Ok(devs) => {

@@ -65,6 +65,9 @@ fn main() -> Result<(), eframe::Error> {
 
     // winit wrapped by eframe, requires UI eventloop running inside main thread
     let result = egui_eventloop(ui_reactor, config, config_path);
+    if let Err(e) = result {
+        panic!("egui eventloop exited for: {}", e);
+    }
     let _ = mouse_control_thread.join();
     result
 }

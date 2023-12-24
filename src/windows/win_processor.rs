@@ -746,10 +746,10 @@ impl WinEventLoop {
             return;
         }
         if let Some(id) = self.processor.devices.active_id() {
-            self.mouse_control_reactor
+            let _ = self
+                .mouse_control_reactor
                 .ui_tx
-                .send(Message::LockCurMouse(id.clone()))
-                .unwrap()
+                .send(Message::LockCurMouse(id.clone()));
         }
     }
 

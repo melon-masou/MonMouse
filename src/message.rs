@@ -1,6 +1,6 @@
 use std::{
     fmt::Debug,
-    sync::mpsc::{channel, sync_channel, Receiver, SendError, Sender, SyncSender, TryRecvError},
+    sync::mpsc::{channel, sync_channel, Receiver, Sender, SyncSender, TryRecvError},
 };
 
 use crate::{
@@ -166,14 +166,14 @@ pub struct MasterReactor {
 
 impl MasterReactor {
     pub fn exit(&self) {
-        self.ui_tx.send(Message::CloseUI).unwrap(); // close ui firstly
-        self.ui_tx.send(Message::Exit).unwrap();
+        let _ = self.ui_tx.send(Message::CloseUI); // close ui firstly
+        let _ = self.ui_tx.send(Message::Exit);
     }
     pub fn restart_ui(&self) {
-        self.ui_tx.send(Message::RestartUI).unwrap();
+        let _ = self.ui_tx.send(Message::RestartUI);
     }
     pub fn close_ui(&self) {
-        self.ui_tx.send(Message::CloseUI).unwrap();
+        let _ = self.ui_tx.send(Message::CloseUI);
     }
 }
 
@@ -186,9 +186,15 @@ impl MouseControlReactor {
     #[inline]
     pub fn return_msg(&self, msg: Message) {
         match msg {
-            Message::ScanDevices(_) => self.ui_tx.send(msg).unwrap(),
-            Message::InspectDevicesStatus(_) => self.ui_tx.send(msg).unwrap(),
-            Message::ApplyProcessorSetting(_) => self.ui_tx.send(msg).unwrap(),
+            Message::ScanDevices(_) => {
+                let _ = self.ui_tx.send(msg);
+            }
+            Message::InspectDevicesStatus(_) => {
+                let _ = self.ui_tx.send(msg);
+            }
+            Message::ApplyProcessorSetting(_) => {
+                let _ = self.ui_tx.send(msg);
+            }
             _ => panic!("MouseControl should not return msg: {:?}", msg),
         }
     }
@@ -206,7 +212,7 @@ impl UIReactor {
     }
 
     #[inline]
-    pub fn send_mouse_control(&self, msg: Message) -> std::result::Result<(), SendError<Message>> {
-        self.mouse_control_tx.send(msg)
+    pub fn send_mouse_control(&self, msg: Message) {
+        let _ = self.mouse_control_tx.send(msg);
     }
 }
