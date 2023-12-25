@@ -1,8 +1,4 @@
-use std::{
-    path::PathBuf,
-    sync::mpsc::{RecvError, TryRecvError},
-    time::Duration,
-};
+use std::{path::PathBuf, time::Duration};
 
 use monmouse::{
     errors::Error,
@@ -29,23 +25,27 @@ impl App {
     pub fn trigger_scan_devices(&mut self) {
         self.result_clear();
         self.ui_reactor
-            .send_mouse_control(Message::ScanDevices(RoundtripData::default()));
+            .mouse_control_tx
+            .send(Message::ScanDevices(RoundtripData::default()));
     }
 
     pub fn trigger_inspect_devices_status(&mut self) {
         self.ui_reactor
-            .send_mouse_control(Message::InspectDevicesStatus(RoundtripData::default()));
+            .mouse_control_tx
+            .send(Message::InspectDevicesStatus(RoundtripData::default()));
     }
 
     pub fn trigger_one_device_setting_changed(&mut self, item: DeviceSettingItem) {
         self.ui_reactor
-            .send_mouse_control(Message::ApplyOneDeviceSetting(SendData::new(item)));
+            .mouse_control_tx
+            .send(Message::ApplyOneDeviceSetting(SendData::new(item)));
     }
 
     pub fn trigger_settings_changed(&mut self) {
         self.result_clear();
         self.ui_reactor
-            .send_mouse_control(Message::ApplyProcessorSetting(RoundtripData::new(
+            .mouse_control_tx
+            .send(Message::ApplyProcessorSetting(RoundtripData::new(
                 self.collect_processor_settings(),
             )));
     }
@@ -193,44 +193,34 @@ impl App {
         // Once clearing residual pending msg
         loop {
             match self.ui_reactor.ui_rx.try_recv() {
-                Ok(Message::Exit) => return true,
-                Ok(msg) => {
+                Some(Message::Exit) => return true,
+                Some(msg) => {
                     // Handle others msg normally
-                    self.handle_ui_msg(msg);
+                    self.handle_message(msg);
                 }
-                Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => return true,
+                None => break,
             }
         }
         // Actuall wait for restart msg
         loop {
             match self.ui_reactor.ui_rx.recv() {
-                Ok(Message::Exit) => return true,
-                Ok(Message::RestartUI) => return false,
-                Ok(msg) => {
+                Message::Exit => return true,
+                Message::RestartUI => return false,
+                msg => {
                     // Handle others msg normally
-                    self.handle_ui_msg(msg);
+                    self.handle_message(msg);
                 }
-                Err(RecvError) => return true,
             }
         }
     }
 
-    pub fn events_run(&mut self) {
-        loop {
-            let msg = match self.ui_reactor.ui_rx.try_recv() {
-                Ok(msg) => msg,
-                Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => {
-                    self.should_exit = true;
-                    break;
-                }
-            };
-            self.handle_ui_msg(msg);
+    pub fn poll_messages(&mut self) {
+        while let Some(msg) = self.ui_reactor.ui_rx.try_recv() {
+            self.handle_message(msg)
         }
     }
 
-    pub fn handle_ui_msg(&mut self, msg: Message) {
+    pub fn handle_message(&mut self, msg: Message) {
         match msg {
             Message::Exit => {
                 self.should_exit = true;
@@ -247,7 +237,8 @@ impl App {
                 };
                 dev.device_setting.locked_in_monitor = !dev.device_setting.locked_in_monitor;
                 self.ui_reactor
-                    .send_mouse_control(Message::ApplyOneDeviceSetting(SendData::new(
+                    .mouse_control_tx
+                    .send(Message::ApplyOneDeviceSetting(SendData::new(
                         DeviceSettingItem {
                             id,
                             content: dev.device_setting,

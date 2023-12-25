@@ -1,6 +1,9 @@
 use std::{
     fmt::Debug,
-    sync::mpsc::{channel, sync_channel, Receiver, Sender, SyncSender, TryRecvError},
+    sync::mpsc::{
+        channel, sync_channel, Receiver, RecvError, RecvTimeoutError, Sender, SyncSender,
+        TryRecvError,
+    },
     time::Duration,
 };
 
@@ -154,45 +157,51 @@ pub fn setup_reactors(
     let (ui_tx, ui_rx) = channel::<Message>();
     let (mouse_control_tx, mouse_control_rx) = channel::<Message>();
 
-    let master = TrayReactor {
-        ui_tx: ui_tx.clone(),
-        mouse_control_tx: mouse_control_tx.clone(),
+    let tray = TrayReactor {
+        ui_tx: MessageSender::from(&ui_tx),
+        mouse_control_tx: MessageSender::from(&mouse_control_tx),
         ui_notify: ui_notify1,
     };
     let mouse_ctrl = MouseControlReactor {
-        ui_tx: ui_tx.clone(),
-        mouse_control_rx,
+        ui_tx: MessageSender::from(&ui_tx),
+        mouse_control_rx: MessageReceiver::from(mouse_control_rx),
         ui_notify: ui_notify2,
     };
     let ui = UIReactor {
-        ui_rx,
-        ui_tx,
-        mouse_control_tx,
+        ui_rx: MessageReceiver::from(ui_rx),
+        ui_tx: MessageSender::from(&ui_tx),
+        mouse_control_tx: MessageSender::from(&mouse_control_tx),
     };
 
-    (master, mouse_ctrl, ui)
+    (tray, mouse_ctrl, ui)
 }
 
 pub struct TrayReactor {
-    ui_tx: Sender<Message>,
-    mouse_control_tx: Sender<Message>,
+    ui_tx: MessageSender,
+    mouse_control_tx: MessageSender,
     ui_notify: Box<dyn UINotify>,
 }
 
 impl TrayReactor {
     pub fn exit(&self) {
         self.ui_notify.notify_close();
-        let _ = self.ui_tx.send(Message::Exit);
-        let _ = self.mouse_control_tx.send(Message::Exit);
+        self.ui_tx.send(Message::Exit);
+        self.mouse_control_tx.send(Message::Exit);
     }
     pub fn restart_ui(&self) {
-        let _ = self.ui_tx.send(Message::RestartUI);
+        self.ui_tx.send(Message::RestartUI);
     }
 }
 
+pub struct UIReactor {
+    pub ui_rx: MessageReceiver,
+    pub ui_tx: MessageSender,
+    pub mouse_control_tx: MessageSender,
+}
+
 pub struct MouseControlReactor {
-    pub ui_tx: Sender<Message>,
-    pub mouse_control_rx: Receiver<Message>,
+    pub ui_tx: MessageSender,
+    pub mouse_control_rx: MessageReceiver,
     ui_notify: Box<dyn UINotify>,
 }
 
@@ -201,15 +210,15 @@ impl MouseControlReactor {
     pub fn return_msg(&self, msg: Message) {
         match msg {
             Message::ScanDevices(_) => {
-                let _ = self.ui_tx.send(msg);
+                self.ui_tx.send(msg);
                 self.ui_notify.notify();
             }
             Message::InspectDevicesStatus(_) => {
-                let _ = self.ui_tx.send(msg);
+                self.ui_tx.send(msg);
                 self.ui_notify.notify();
             }
             Message::ApplyProcessorSetting(_) => {
-                let _ = self.ui_tx.send(msg);
+                self.ui_tx.send(msg);
                 self.ui_notify.notify();
             }
             _ => panic!("MouseControl should not return msg: {:?}", msg),
@@ -217,21 +226,51 @@ impl MouseControlReactor {
     }
 }
 
-pub struct UIReactor {
-    pub ui_rx: Receiver<Message>,
-    pub ui_tx: Sender<Message>,
-    pub mouse_control_tx: Sender<Message>,
-}
+pub struct MessageReceiver(Receiver<Message>);
 
-impl UIReactor {
-    #[inline]
-    pub fn return_msg(&self, msg: Message) {
-        panic!("UIReactor should not return msg: {:?}", msg);
+impl MessageReceiver {
+    fn from(r: Receiver<Message>) -> Self {
+        Self(r)
     }
 
     #[inline]
-    pub fn send_mouse_control(&self, msg: Message) {
-        let _ = self.mouse_control_tx.send(msg);
+    pub fn try_recv(&self) -> Option<Message> {
+        match self.0.try_recv() {
+            Ok(v) => Some(v),
+            Err(TryRecvError::Empty) => None,
+            Err(TryRecvError::Disconnected) => Some(Message::Exit),
+        }
+    }
+
+    #[inline]
+    pub fn recv(&self) -> Message {
+        match self.0.recv() {
+            Ok(v) => v,
+            Err(RecvError) => Message::Exit,
+        }
+    }
+
+    #[inline]
+    pub fn recv_timeout(&self, dur: Duration) -> Option<Message> {
+        match self.0.recv_timeout(dur) {
+            Ok(v) => Some(v),
+            Err(RecvTimeoutError::Timeout) => None,
+            Err(RecvTimeoutError::Disconnected) => Some(Message::Exit),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct MessageSender(Sender<Message>);
+
+impl MessageSender {
+    fn from(s: &Sender<Message>) -> Self {
+        Self(s.clone())
+    }
+
+    #[inline]
+    pub fn send(&self, msg: Message) {
+        let _ = self.0.send(msg);
     }
 }
 
@@ -267,7 +306,7 @@ impl TimerOperator {
 
 pub fn timer_spawn(
     mut interval: Duration,
-    tx: Sender<Message>,
+    tx: MessageSender,
     kind: TimerDueKind,
     callback: Option<Box<dyn Fn() + Send>>,
 ) -> TimerOperator {
@@ -284,7 +323,7 @@ pub fn timer_spawn(
             }
         }
         std::thread::sleep(interval);
-        let _ = tx.send(Message::TimerDue(kind));
+        tx.send(Message::TimerDue(kind));
         if let Some(cb) = &callback {
             cb()
         }

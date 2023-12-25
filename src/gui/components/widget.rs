@@ -199,6 +199,7 @@ impl NotificationPopup {
             .order(egui::Order::Foreground)
             .pivot(egui::Align2::CENTER_CENTER)
             .fixed_pos(center);
+        // FIXME: https://github.com/emilk/egui/issues/3736
         // .default_pos(center)
         // .movable(true);
 
@@ -431,9 +432,17 @@ pub fn shortcut_input_ui(
     let textinput = textinput_style(egui::TextEdit::singleline(&mut b).desired_width(140.0));
 
     let inner = textinput.ui(ui);
-    let focus = inner.has_focus();
 
-    if focus {
+    if inner.gained_focus() {
+        ui.ctx()
+            .send_viewport_cmd(egui::ViewportCommand::IMEAllowed(false));
+    }
+    if inner.lost_focus() {
+        ui.ctx()
+            .send_viewport_cmd(egui::ViewportCommand::IMEAllowed(true));
+    }
+    let focus = inner.has_focus();
+    if inner.has_focus() {
         let (modifiers, key) =
             ui.input(|input| (input.modifiers, input.keys_down.iter().next().cloned()));
         let new_shortcut = shortcut_to_str(

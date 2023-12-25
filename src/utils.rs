@@ -1,22 +1,32 @@
+use std::time::{Duration, Instant, SystemTime};
+
 pub struct SimpleRatelimit {
-    next: u64,
-    once_per: u64,
+    next: Instant,
+    once_per: Duration,
 }
 
 impl SimpleRatelimit {
-    pub fn new(once_per: u64) -> SimpleRatelimit {
-        SimpleRatelimit { next: 0, once_per }
-    }
-    pub fn allow(&mut self, tick: u64) -> bool {
-        if tick >= self.next {
-            self.next = tick + self.once_per;
-            true
-        } else {
-            false
+    pub fn new(once_per: Duration, init: Option<Instant>) -> SimpleRatelimit {
+        SimpleRatelimit {
+            next: init.unwrap_or(Instant::now()),
+            once_per,
         }
     }
-    pub fn reset(&mut self, v: u64) {
-        self.next = self.next - self.once_per + v;
+    pub fn allow(&mut self, now: Option<Instant>) -> (bool, Duration) {
+        let now = now.unwrap_or(Instant::now());
+        if now >= self.next {
+            self.next = now + self.once_per;
+            (true, self.once_per)
+        } else {
+            (false, self.next - now)
+        }
+    }
+    pub fn reset(&mut self, v: Duration) {
+        self.next -= self.once_per;
+        self.next = self
+            .next
+            .checked_sub(self.once_per)
+            .unwrap_or(self.next - v);
         self.once_per = v;
     }
 }
@@ -38,8 +48,7 @@ impl<T: Copy, const N: usize> ArrayVec<T, N> {
 }
 
 pub fn delay_panic(seconds: u64) {
-    use std::time::{Duration, SystemTime};
-    static mut _DELAY_PANIC_LAST: Option<std::time::SystemTime> = None;
+    static mut _DELAY_PANIC_LAST: Option<SystemTime> = None;
 
     let now = SystemTime::now();
     if let Some(t) = unsafe { _DELAY_PANIC_LAST } {

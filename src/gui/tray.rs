@@ -47,7 +47,7 @@ impl Tray {
         }
     }
 
-    pub fn poll_event(&self) {
+    pub fn poll_events(&self) {
         if let Ok(event) = TrayIconEvent::receiver().try_recv() {
             if event.click_type == ClickType::Double {
                 self.tray_reactor.restart_ui();

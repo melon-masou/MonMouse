@@ -79,11 +79,11 @@ fn main() -> Result<(), eframe::Error> {
 fn mouse_control_spawn(mut eventloop: monmouse::Eventloop, tray: Tray) -> Result<(), Error> {
     eventloop.initialize()?;
     loop {
-        tray.poll_event();
-        if !eventloop.poll(POLL_MSGS, POLL_TIMEOUT)? {
+        tray.poll_events();
+        if !eventloop.poll_wm_messages(POLL_MSGS, POLL_TIMEOUT)? {
             break;
         }
-        if eventloop.poll_message() {
+        if eventloop.poll_messages() {
             break;
         };
     }
@@ -195,6 +195,7 @@ impl AppWrap {
 impl AppWrap {
     fn init_ctx(ctx: &egui::Context) {
         ctx.set_zoom_factor(gscale(1.0));
+        ctx.options_mut(|o| o.zoom_with_keyboard = false);
     }
 
     fn init_visuals(ctx: &egui::Context, theme: Theme) {
@@ -217,7 +218,7 @@ impl eframe::App for AppWrap {
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let mut app = self.app.borrow_mut();
-        app.events_run();
+        app.poll_messages();
 
         // Start painting
         Self::init_visuals(ctx, app.get_theme());
@@ -251,9 +252,9 @@ impl eframe::App for AppWrap {
             };
         });
 
-        let tick_ms = ctx.input(|input| (input.time * 1000.0).round()) as u64;
         #[cfg(debug_assertions)]
-        self.debug_info.on_paint(tick_ms);
+        self.debug_info
+            .on_paint(ctx.input(|input| (input.time * 1000.0).round()) as u64);
     }
 }
 

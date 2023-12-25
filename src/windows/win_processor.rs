@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::mpsc::TryRecvError;
+use std::time::Duration;
 
 use crate::device_type::DeviceType;
 use crate::device_type::WindowsRawinput;
@@ -367,8 +367,14 @@ impl WinDeviceProcessor {
             to_update_devices: false,
             to_update_monitors: false,
 
-            rl_update_mon: SimpleRatelimit::new(RATELIMIT_UPDATE_MONITOR_ONCE_MS),
-            rl_update_dev: SimpleRatelimit::new(RATELIMIT_UPDATE_DEVICE_ONCE_MS),
+            rl_update_mon: SimpleRatelimit::new(
+                Duration::from_millis(RATELIMIT_UPDATE_MONITOR_ONCE_MS),
+                None,
+            ),
+            rl_update_dev: SimpleRatelimit::new(
+                Duration::from_millis(RATELIMIT_UPDATE_DEVICE_ONCE_MS),
+                None,
+            ),
         }
     }
 }
@@ -472,7 +478,7 @@ impl WinDeviceProcessor {
     }
 
     fn try_update_devices(&mut self, must: bool) -> Result<()> {
-        if !must && !self.rl_update_dev.allow(get_cur_tick()) {
+        if !must && !self.rl_update_dev.allow(None).0 {
             return Ok(());
         }
 
@@ -496,7 +502,7 @@ impl WinDeviceProcessor {
     }
 
     fn try_update_monitors(&mut self, must: bool) -> Result<()> {
-        if !must && !self.rl_update_mon.allow(get_cur_tick()) {
+        if !must && !self.rl_update_mon.allow(None).0 {
             return Ok(());
         }
 
@@ -746,8 +752,7 @@ impl WinEventLoop {
             return;
         }
         if let Some(id) = self.processor.devices.active_id() {
-            let _ = self
-                .mouse_control_reactor
+            self.mouse_control_reactor
                 .ui_tx
                 .send(Message::LockCurMouse(id.clone()));
         }
@@ -829,7 +834,7 @@ impl WinEventLoop {
     }
 
     #[inline]
-    pub fn poll(&mut self, mut max_events: u32, timeout_ms: u32) -> Result<bool> {
+    pub fn poll_wm_messages(&mut self, mut max_events: u32, timeout_ms: u32) -> Result<bool> {
         let mut msg = MSG::default();
 
         unsafe {
@@ -856,7 +861,7 @@ impl WinEventLoop {
     pub fn run(&mut self) -> Result<()> {
         self.initialize()?;
         loop {
-            if !self.poll(
+            if !self.poll_wm_messages(
                 WIN_EVENTLOOP_POLL_MAX_MESSAGES,
                 WIN_EVENTLOOP_POLL_WAIT_TIMEOUT_MS,
             )? {
@@ -887,15 +892,13 @@ impl WinEventLoop {
         self.register_shortcuts()
     }
 
-    pub fn poll_message(&mut self) -> bool {
+    pub fn poll_messages(&mut self) -> bool {
         loop {
             let mut msg = match self.mouse_control_reactor.mouse_control_rx.try_recv() {
-                Ok(msg) => msg,
-                Err(TryRecvError::Empty) => return false,
-                Err(TryRecvError::Disconnected) => return true,
+                Some(msg) => msg,
+                None => return false,
             };
 
-            // Is it possible to reuse the msg?
             match &mut msg {
                 Message::Exit => {
                     return true;
