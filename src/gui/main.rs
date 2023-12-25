@@ -24,7 +24,7 @@ use monmouse::{
     errors::Error,
     message::{setup_reactors, UIReactor},
 };
-use monmouse::{POLL_MSGS, POLL_TIMEOUT};
+use monmouse::{SingleProcess, POLL_MSGS, POLL_TIMEOUT};
 use styles::{gscale, Theme};
 use tray::Tray;
 
@@ -45,8 +45,16 @@ pub fn load_icon() -> egui::IconData {
     }
 }
 
-fn main() -> Result<(), eframe::Error> {
+fn main() {
     env_logger::builder().init();
+    set_thread_panic_process();
+    let single_process = match SingleProcess::create() {
+        Ok(v) => v,
+        Err(e) => {
+            exit_with_message(format!("Already launched: {}", e));
+            return;
+        }
+    };
 
     let config_file = get_config_dir().map(|v| v.join(CONFIG_FILE_NAME));
     let config_path = config_file.as_ref().ok().cloned();
@@ -57,7 +65,6 @@ fn main() -> Result<(), eframe::Error> {
     let (tray_reactor, mouse_control_reactor, ui_reactor) =
         setup_reactors(Box::new(egui_notify.clone()), Box::new(egui_notify.clone()));
 
-    set_thread_panic_process();
     let mouse_control_thread = thread::spawn(move || {
         let eventloop = monmouse::Eventloop::new(false, mouse_control_reactor);
         let tray = Tray::new(tray_reactor);
@@ -72,8 +79,9 @@ fn main() -> Result<(), eframe::Error> {
     if let Err(e) = result {
         panic!("egui eventloop exited for: {}", e);
     }
+
     let _ = mouse_control_thread.join();
-    result
+    drop(single_process);
 }
 
 fn mouse_control_spawn(mut eventloop: monmouse::Eventloop, tray: Tray) -> Result<(), Error> {
@@ -259,7 +267,17 @@ impl eframe::App for AppWrap {
 }
 
 #[cfg(target_os = "windows")]
-pub fn windows_panic_hook(panic_info: &PanicInfo) {
+fn exit_with_message(text: String) {
+    use monmouse::windows::wintypes::WString;
+    use monmouse::windows::winwrap::popup_message_box;
+
+    let caption = WString::encode_from_str("MonMouse");
+    let _ = popup_message_box(caption, WString::encode_from_str(&text));
+    process::exit(1);
+}
+
+#[cfg(target_os = "windows")]
+fn windows_panic_hook(panic_info: &PanicInfo) {
     use monmouse::windows::wintypes::WString;
     use monmouse::windows::winwrap::popup_message_box;
 
@@ -268,7 +286,7 @@ pub fn windows_panic_hook(panic_info: &PanicInfo) {
     let _ = popup_message_box(caption, text);
 }
 
-pub fn set_thread_panic_process() {
+fn set_thread_panic_process() {
     let orig_hook = panic::take_hook();
     panic::set_hook(Box::new(move |panic_info| {
         orig_hook(panic_info);

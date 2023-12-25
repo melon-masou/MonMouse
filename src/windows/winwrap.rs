@@ -6,6 +6,8 @@ use crate::errors::{Error, Result};
 use crate::windows::wintypes::*;
 
 use super::constants::*;
+use windows::Win32::Foundation::{ERROR_ALREADY_EXISTS, WAIT_OBJECT_0};
+use windows::Win32::System::Threading::{CreateMutexW, ReleaseMutex, WaitForSingleObject};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     RegisterHotKey, UnregisterHotKey, HOT_KEY_MODIFIERS, MOD_NOREPEAT, VIRTUAL_KEY,
 };
@@ -1024,5 +1026,30 @@ impl<T> HotKeyManager<T> {
 
     pub fn get_callback(&mut self, lparam: u32) -> Option<&T> {
         self.lparam_to_cb.get(&lparam)
+    }
+}
+
+pub fn create_mutex(name: WString) -> Result<Option<HANDLE>> {
+    match unsafe { CreateMutexW(None, false, name.as_pcwstr()) } {
+        Ok(v) => Ok(Some(v)),
+        Err(e) => {
+            if e.code() == ERROR_ALREADY_EXISTS.to_hresult() {
+                Ok(None)
+            } else {
+                Err(core_error(e))
+            }
+        }
+    }
+}
+
+pub fn try_lock_mutex(handle: HANDLE) -> bool {
+    let r = unsafe { WaitForSingleObject(handle, 0) };
+    r == WAIT_OBJECT_0
+}
+
+pub fn release_mutex(handle: HANDLE) -> Result<()> {
+    match unsafe { ReleaseMutex(handle) } {
+        Ok(_) => Ok(()),
+        Err(e) => Err(core_error(e)),
     }
 }

@@ -16,6 +16,8 @@ pub enum Error {
     InvalidShortcut(String),
     #[error("ErrorShortCutConflict({0})")]
     ShortcutConflict(PrintableOptionString),
+    #[error("ErrorAlreadyLaunched")]
+    AlreadyLaunched,
 
     #[error("ErrorInited")]
     MessageInited,

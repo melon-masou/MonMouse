@@ -6,6 +6,7 @@ use log::{debug, error, info};
 use monmouse::errors::Error;
 use monmouse::message::{setup_reactors, GenericDevice, UINotifyNoop};
 use monmouse::setting::{read_config, CONFIG_FILE_NAME};
+use monmouse::SingleProcess;
 
 #[cfg(not(debug_assertions))]
 const CLI_DEFAULT_CONFIG_DIR: &str = ".";
@@ -47,8 +48,9 @@ fn setup_logger(o: Option<String>) -> Result<(), Error> {
 
 fn main() -> Result<(), Error> {
     let args = Args::parse();
-
     setup_logger(args.log_level)?;
+    let single_process = SingleProcess::create()?;
+
     let config = read_config(&PathBuf::from(args.config_file))?;
     debug!("Config loaded: {:?}", config);
 
@@ -71,6 +73,8 @@ fn main() -> Result<(), Error> {
         Ok(_) => info!("monmouse-cli ended normally"),
         Err(e) => error!("monmouse-cli ended with error: {}", e),
     }
+
+    drop(single_process);
     result
 }
 
