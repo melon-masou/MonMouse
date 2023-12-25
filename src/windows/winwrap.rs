@@ -8,12 +8,17 @@ use crate::windows::wintypes::*;
 use super::constants::*;
 use windows::Win32::Foundation::{ERROR_ALREADY_EXISTS, WAIT_OBJECT_0};
 use windows::Win32::System::Threading::{CreateMutexW, ReleaseMutex, WaitForSingleObject};
+use windows::Win32::UI::HiDpi::{
+    SetProcessDpiAwareness, SetProcessDpiAwarenessContext,
+    DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, PROCESS_PER_MONITOR_DPI_AWARE,
+};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     RegisterHotKey, UnregisterHotKey, HOT_KEY_MODIFIERS, MOD_NOREPEAT, VIRTUAL_KEY,
 };
 use windows::Win32::UI::Input::RAWINPUT;
 use windows::Win32::UI::WindowsAndMessaging::{
-    MessageBoxExW, HWND_DESKTOP, MB_TOPMOST, MESSAGEBOX_RESULT, WS_OVERLAPPEDWINDOW,
+    MessageBoxExW, SetProcessDPIAware, HWND_DESKTOP, MB_TOPMOST, MESSAGEBOX_RESULT,
+    WS_OVERLAPPEDWINDOW,
 };
 use windows::{
     core::GUID,
@@ -861,6 +866,30 @@ pub fn get_monitor_scale_factor(hm: HMONITOR) -> Result<u32> {
     drop(set_aware);
 
     Ok(dpix * 100 / USER_DEFAULT_SCREEN_DPI)
+}
+
+pub fn thread_set_dpi_aware() {
+    unsafe {
+        SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    }
+}
+
+pub fn process_set_dpi_aware() -> bool {
+    unsafe {
+        if SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2).is_ok() {
+            return true;
+        }
+        if SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE).is_ok() {
+            return true;
+        }
+        if SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE).is_ok() {
+            return true;
+        }
+        if SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE).is_ok() {
+            return true;
+        }
+        SetProcessDPIAware().as_bool()
+    }
 }
 
 pub fn get_all_monitors_info() -> Result<Vec<MonitorInfo>> {

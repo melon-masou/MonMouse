@@ -218,3 +218,9 @@ impl std::fmt::Display for WString {
         }
     }
 }
+
+impl core::fmt::Debug for WString {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
+}

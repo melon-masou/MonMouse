@@ -19,13 +19,12 @@ use crate::mouse_control::MousePos;
 use crate::mouse_control::MouseRelocator;
 use crate::mouse_control::RelocatePos;
 use crate::setting::DeviceSetting;
-use crate::setting::DeviceSettingItem;
 use crate::setting::ProcessorSettings;
 use crate::setting::Settings;
 use crate::utils::SimpleRatelimit;
 
 use core::cell::OnceCell;
-use log::{debug, error, trace};
+use log::{debug, error, trace, warn};
 use windows::Win32::UI::Input::RAWINPUTDEVICE;
 use windows::Win32::UI::Input::RIDEV_PAGEONLY;
 use windows::Win32::UI::WindowsAndMessaging::MsgWaitForMultipleObjects;
@@ -288,6 +287,22 @@ impl WinDeviceSet {
     pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, WinDevice> {
         self.devs.iter_mut()
     }
+
+    pub fn update_one<R>(&mut self, id: &str, f: impl FnOnce(&mut WinDevice) -> R) -> Option<R> {
+        self.iter_mut()
+            .find(|v| {
+                if let Some(found_id) = &v.id {
+                    if found_id == id {
+                        return true;
+                    }
+                }
+                false
+            })
+            .map(f)
+    }
+    pub fn update_one_settings(&mut self, id: &str, s: &DeviceSetting) -> bool {
+        self.update_one(id, |d| d.ctrl.update_settings(s)).is_some()
+    }
 }
 
 struct WinHook {
@@ -334,7 +349,6 @@ impl MouseLowLevelHook for WinHook {
 struct WinDeviceProcessor {
     hwnd: HWND,
     devices: WinDeviceSet,
-    headless: bool,
 
     raw_input_buf: WBuffer,
     tick_widen: TickWiden,
@@ -353,12 +367,11 @@ struct WinDeviceProcessor {
 static mut G_PROCESSOR: OnceCell<WinDeviceProcessor> = OnceCell::new();
 
 impl WinDeviceProcessor {
-    fn new(headless: bool) -> Self {
+    fn new() -> Self {
         WinDeviceProcessor {
             // Window must be created within same thread where eventloop() is called. Value set at init().
             hwnd: HWND::default(),
             devices: WinDeviceSet::new(),
-            headless,
 
             raw_input_buf: WBuffer::new(RAWINPUT_MSG_INIT_BUF_SIZE),
             tick_widen: TickWiden::new(),
@@ -466,15 +479,10 @@ impl WinDeviceProcessor {
     }
 
     fn monitor_area_from(mi: &MonitorInfo) -> MonitorArea {
-        let actx = |x: i32| x * mi.scale as i32 / 100;
         MonitorArea {
-            lefttop: MousePos::from(actx(mi.rect.left), actx(mi.rect.top)),
-            rigtbtm: MousePos::from(actx(mi.rect.right), actx(mi.rect.bottom)),
-            scale: mi.scale,
+            lefttop: MousePos::from(mi.rect.left, mi.rect.top),
+            rigtbtm: MousePos::from(mi.rect.right, mi.rect.bottom),
         }
-    }
-    fn phy_pos_from(p: &MousePos, scale: u32) -> (i32, i32) {
-        (p.x * 100 / scale as i32, p.y * 100 / scale as i32)
     }
 
     fn try_update_devices(&mut self, must: bool) -> Result<()> {
@@ -506,18 +514,13 @@ impl WinDeviceProcessor {
             return Ok(());
         }
 
-        let mut mons = match get_all_monitors_info() {
+        let mons = match get_all_monitors_info() {
             Ok(v) => v,
             Err(e) => {
                 error!("Update monitors info failed: {}", e);
                 return Err(e);
             }
         };
-        if !self.headless {
-            // If not running under headless mode, EnumDisplayMonitors() returns
-            // right resolution, just clear the scale info.
-            mons.iter_mut().for_each(|v| v.scale = 100);
-        }
         let mon_areas = MonitorAreasList::from(
             mons.iter()
                 .map(WinDeviceProcessor::monitor_area_from)
@@ -526,39 +529,25 @@ impl WinDeviceProcessor {
         debug!("Updated monitors: {}", mon_areas);
         self.relocator.update_monitors(mon_areas);
         self.devices.iter_mut().for_each(|v| {
-            v.ctrl.reset_locked_area();
+            v.ctrl.reset();
         });
         self.to_update_monitors = false;
         Ok(())
     }
 
-    fn cur_mouse_lock_toogle(&mut self, id: Option<&String>) {
-        let id = id.or_else(|| self.devices.active_id());
-        let Some(id) = id else {
+    fn cur_mouse_lock_toogle(&mut self) {
+        let device = self.devices.active();
+        let Some(device) = device else {
             return;
         };
-        if let Some(d) = self.settings.devices.iter_mut().find(|d| &d.id == id) {
-            d.content.locked_in_monitor = !d.content.locked_in_monitor;
-            let _ = Self::apply_one_device_settings(&mut self.devices, d);
-        }
-    }
-
-    fn apply_one_device_settings(devices: &mut WinDeviceSet, item: &DeviceSettingItem) -> bool {
-        let found_dev = devices.iter_mut().find(|v| {
-            if let Some(id) = &v.id {
-                if id == &item.id {
-                    return true;
-                }
-            }
-            false
+        let Some(id) = &device.id else {
+            return;
+        };
+        let content = self.settings.ensure_mut_device(id, |d| {
+            d.locked_in_monitor = !d.locked_in_monitor;
+            *d
         });
-        match found_dev {
-            Some(d) => {
-                d.ctrl.update_settings(&item.content);
-                true
-            }
-            None => false,
-        }
+        device.ctrl.update_settings(&content);
     }
 
     fn apply_processor_settings(&mut self, new_settings: Option<ProcessorSettings>) {
@@ -566,10 +555,10 @@ impl WinDeviceProcessor {
             self.settings = new;
         }
         let settings = &self.settings;
-        let devices_set = &mut self.devices;
 
         let applied: usize = settings.devices.iter().fold(0, |applied, item| {
-            if Self::apply_one_device_settings(devices_set, item) {
+            let found = self.devices.update_one_settings(&item.id, &item.content);
+            if found {
                 applied + 1
             } else {
                 applied
@@ -653,8 +642,8 @@ impl WinDeviceProcessor {
     }
 
     fn resolve_relocation(&mut self) {
-        if let Some(RelocatePos(new_pos, scale)) = self.relocator.pop_relocate_pos() {
-            let (x, y) = WinDeviceProcessor::phy_pos_from(&new_pos, scale);
+        if let Some(RelocatePos(new_pos)) = self.relocator.pop_relocate_pos() {
+            let MousePos { x, y } = new_pos;
             let _ = set_cursor_pos(x, y);
             debug!("Reset cursor to ({},{})", x, y);
         }
@@ -748,7 +737,7 @@ impl WinEventLoop {
     fn on_shortcut_cur_mouse_lock(&mut self) {
         debug!("Shortcut cur_mouse_lock pressed");
         if self.headless {
-            self.processor.cur_mouse_lock_toogle(None);
+            self.processor.cur_mouse_lock_toogle();
             return;
         }
         if let Some(id) = self.processor.devices.active_id() {
@@ -769,7 +758,7 @@ impl WinEventLoop {
 impl WinEventLoop {
     pub fn new(headless: bool, mouse_control_reactor: MouseControlReactor) -> Self {
         let hook = WinHook::new();
-        let processor = WinDeviceProcessor::init_global_once(WinDeviceProcessor::new(headless));
+        let processor = WinDeviceProcessor::init_global_once(WinDeviceProcessor::new());
         WinEventLoop {
             hook,
             processor,
@@ -797,6 +786,10 @@ impl WinEventLoop {
     }
 
     pub fn setup_window(&mut self) -> Result<()> {
+        // thread_set_dpi_aware();
+        if !process_set_dpi_aware() {
+            warn!("Failed to set process as dpi aware");
+        };
         let hwnd = match create_dummy_window(None) {
             Ok((_, v)) => v,
             Err(e) => {
@@ -931,10 +924,9 @@ impl WinEventLoop {
                 }
                 Message::ApplyOneDeviceSetting(data) => {
                     let item = data.take();
-                    WinDeviceProcessor::apply_one_device_settings(
-                        &mut self.processor.devices,
-                        &item,
-                    );
+                    self.processor
+                        .devices
+                        .update_one_settings(&item.id, &item.content);
                 }
                 _ => panic!("recv unexpected ui msg: {:?}", msg),
             };

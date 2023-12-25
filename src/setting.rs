@@ -90,8 +90,34 @@ impl ProcessorSettings {
     fn default_merge_unassociated_events_ms() -> i64 {
         5
     }
+
     fn default_devices() -> Vec<DeviceSettingItem> {
         Vec::new()
+    }
+
+    pub fn mut_device<R>(
+        &mut self,
+        id: &str,
+        mut f: impl FnMut(&mut DeviceSetting) -> R,
+    ) -> Option<R> {
+        self.devices
+            .iter_mut()
+            .find(|d| d.id.as_str() == id)
+            .map(|d| f(&mut d.content))
+    }
+    pub fn ensure_mut_device<R>(
+        &mut self,
+        id: &str,
+        mut f: impl FnMut(&mut DeviceSetting) -> R,
+    ) -> R {
+        if let Some(r) = self.mut_device(id, &mut f) {
+            return r;
+        }
+        self.devices.push(DeviceSettingItem {
+            id: id.to_owned(),
+            content: DeviceSetting::default(),
+        });
+        f(self.devices.last_mut().map(|d| &mut d.content).unwrap())
     }
 }
 

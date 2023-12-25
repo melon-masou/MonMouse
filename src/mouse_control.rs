@@ -21,6 +21,7 @@ impl Display for MousePos {
     }
 }
 
+#[derive(Debug)]
 pub struct DeviceController {
     id: u64,
     setting: DeviceSetting,
@@ -52,8 +53,9 @@ impl DeviceController {
         self.positioning = p;
     }
 
-    pub fn reset_locked_area(&mut self) {
+    pub fn reset(&mut self) {
         self.locked_area = None;
+        self.last_active_tick = 0;
     }
 
     fn update_pos(&mut self, p: &MousePos, tick: u64) {
@@ -74,11 +76,11 @@ impl DeviceController {
     }
 }
 
-pub struct RelocatePos(pub MousePos, pub u32);
+pub struct RelocatePos(pub MousePos);
 
 impl RelocatePos {
-    pub fn from(pos: MousePos, area: &MonitorArea) -> Option<Self> {
-        Some(Self(pos, area.scale))
+    pub fn from(pos: MousePos) -> Option<Self> {
+        Some(Self(pos))
     }
 }
 
@@ -122,7 +124,7 @@ impl MouseRelocator {
                 }
             }
             self.cur_pos = area.center();
-            self.relocate_pos = RelocatePos::from(self.cur_pos, area);
+            self.relocate_pos = RelocatePos::from(self.cur_pos);
         }
     }
 
@@ -135,7 +137,7 @@ impl MouseRelocator {
                     let new_pos = area.capture_pos(&pos);
                     if new_pos != pos {
                         self.cur_pos = new_pos;
-                        self.relocate_pos = RelocatePos::from(new_pos, area);
+                        self.relocate_pos = RelocatePos::from(new_pos);
                         return;
                     }
                 } else {
@@ -159,15 +161,17 @@ impl MouseRelocator {
             if c.setting.switch {
                 // Has rememberd position
                 if let Some((_, old_pos, _)) = c.get_last_pos() {
+                    self.cur_pos = old_pos;
+                    self.relocate_pos = RelocatePos::from(old_pos);
                     // Find area to go
-                    if let Some(area) = self.monitors.locate(&old_pos) {
-                        self.cur_pos = old_pos;
-                        self.relocate_pos = RelocatePos::from(old_pos, area);
-                        return;
-                    } else {
-                        self.to_update_monitors = true;
-                        return;
-                    }
+                    // if let Some(area) = self.monitors.locate(&old_pos) {
+                    //     self.cur_pos = old_pos;
+                    //     self.relocate_pos = RelocatePos::from(old_pos, area);
+                    //     return;
+                    // } else {
+                    //     self.to_update_monitors = true;
+                    //     return;
+                    // }
                 }
             }
         }
@@ -217,11 +221,10 @@ impl Display for MonitorAreasList {
     }
 }
 
-#[derive(Default, Clone, Copy)]
+#[derive(Default, Clone, Copy, Debug)]
 pub struct MonitorArea {
     pub lefttop: MousePos,
     pub rigtbtm: MousePos,
-    pub scale: u32,
 }
 
 impl MonitorArea {
@@ -256,8 +259,8 @@ impl Display for MonitorArea {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{{{}.{}-{}.{},x{}}}",
-            self.lefttop.x, self.lefttop.y, self.rigtbtm.x, self.rigtbtm.y, self.scale
+            "{{{}.{}-{}.{}}}",
+            self.lefttop.x, self.lefttop.y, self.rigtbtm.x, self.rigtbtm.y,
         )
     }
 }
@@ -272,7 +275,6 @@ mod tests {
         let m = MonitorArea {
             lefttop: pt(-100, 500),
             rigtbtm: pt(300, 1500),
-            scale: 100,
         };
         assert_eq!(m.capture_pos(&pt(50, 700)), pt(50, 700));
         assert_eq!(m.capture_pos(&pt(-150, 1500)), pt(-100, 1500));
