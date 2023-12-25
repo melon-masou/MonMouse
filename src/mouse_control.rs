@@ -2,6 +2,7 @@ use std::fmt::Display;
 
 use crate::message::Positioning;
 use crate::setting::DeviceSetting;
+use crate::utils::vec_ensure_get_mut;
 
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MousePos {
@@ -28,6 +29,7 @@ pub struct DeviceController {
 
     last_active_tick: u64, // in ms
     last_active_pos: MousePos,
+
     positioning: Positioning,
     locked_area: Option<MonitorArea>,
 }
@@ -91,6 +93,7 @@ pub struct MouseRelocator {
     cur_pos: MousePos,
     relocate_pos: Option<RelocatePos>,
     to_update_monitors: bool,
+    last_jump_pos: Vec<Option<MousePos>>,
 }
 
 impl Default for MouseRelocator {
@@ -103,36 +106,56 @@ impl MouseRelocator {
     pub fn new() -> Self {
         MouseRelocator {
             monitors: MonitorAreasList::from(Vec::new()),
-
             cur_mouse: 0,
             cur_pos: MousePos::default(),
             relocate_pos: None,
             to_update_monitors: false,
+            last_jump_pos: Vec::new(),
         }
     }
 
     pub fn update_monitors(&mut self, monitors: MonitorAreasList) {
         self.monitors = monitors;
+        // clear previous state
+        self.last_jump_pos.fill(None);
+        self.relocate_pos = None
     }
 
-    pub fn jump_to_next_monitor(&mut self, c: Option<&mut DeviceController>) {
-        let next_id = self.monitors.locate_id(&self.cur_pos) + 1;
-        if let Some(area) = self.monitors.circle_get(next_id) {
-            if let Some(c) = c {
-                if c.setting.locked_in_monitor {
-                    c.locked_area = Some(*area);
-                }
-            }
-            self.cur_pos = area.center();
-            self.relocate_pos = RelocatePos::from(self.cur_pos);
+    pub fn jump_to_next_monitor(&mut self, ctrl: Option<&mut DeviceController>) {
+        if self.monitors.is_empty() {
+            return;
         }
+        let next_id = if let Some(cur_id) = self.monitors.locate_id(&self.cur_pos) {
+            *vec_ensure_get_mut(&mut self.last_jump_pos, cur_id) = Some(self.cur_pos);
+            self.monitors.next_id(cur_id)
+        } else {
+            0 // maybe go to primary monitor?
+        };
+
+        let Some(area) = self.monitors.get_area(next_id) else {
+            return;
+        };
+        let mut new_pos = area.center();
+        if let Some(ctrl) = ctrl {
+            if ctrl.setting.locked_in_monitor {
+                // Clear and find new one in next mouse event. In case user requests
+                // jumping at the edge of monitor, which is hard to say locked to
+                // which monitor.
+                ctrl.locked_area = None;
+            }
+            if let Some(Some(pos)) = self.last_jump_pos.get(next_id) {
+                new_pos = *pos;
+            }
+        }
+        self.cur_pos = new_pos;
+        self.relocate_pos = RelocatePos::from(new_pos);
     }
 
     pub fn on_pos_update(&mut self, optc: Option<&mut DeviceController>, pos: MousePos) {
-        if let Some(c) = optc {
-            if c.setting.locked_in_monitor {
+        if let Some(ctrl) = optc {
+            if ctrl.setting.locked_in_monitor {
                 // Has been locked into one area
-                if let Some(area) = &c.locked_area {
+                if let Some(area) = &ctrl.locked_area {
                     // If leaving area
                     let new_pos = area.capture_pos(&pos);
                     if new_pos != pos {
@@ -143,7 +166,7 @@ impl MouseRelocator {
                 } else {
                     // Find area to be locked
                     if let Some(area) = self.monitors.locate(&pos) {
-                        c.locked_area = Some(*area);
+                        ctrl.locked_area = Some(*area);
                     } else {
                         self.to_update_monitors = true;
                         return;
@@ -199,15 +222,23 @@ impl MonitorAreasList {
     pub fn locate(&self, p: &MousePos) -> Option<&MonitorArea> {
         self.list.iter().find(|&ma| ma.contains(p))
     }
-    pub fn locate_id(&self, p: &MousePos) -> usize {
+    pub fn locate_id(&self, p: &MousePos) -> Option<usize> {
         if let Some((i, _)) = self.list.iter().enumerate().find(|(_, &ma)| ma.contains(p)) {
-            i
+            Some(i)
         } else {
-            0
+            None
         }
     }
-    pub fn circle_get(&self, id: usize) -> Option<&MonitorArea> {
-        self.list.get(id % self.list.len())
+
+    pub fn is_empty(&self) -> bool {
+        self.list.is_empty()
+    }
+    #[inline]
+    pub fn next_id(&self, round_id: usize) -> usize {
+        (round_id + 1) % self.list.len()
+    }
+    pub fn get_area(&self, round_id: usize) -> Option<&MonitorArea> {
+        self.list.get(round_id % self.list.len())
     }
 }
 

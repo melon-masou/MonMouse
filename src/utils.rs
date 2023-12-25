@@ -59,3 +59,10 @@ pub fn delay_panic(seconds: u64) {
         unsafe { _DELAY_PANIC_LAST = Some(now) };
     }
 }
+
+pub fn vec_ensure_get_mut<T: Default>(v: &mut Vec<T>, id: usize) -> &mut T {
+    if id >= v.len() {
+        v.resize_with(id + 1, T::default);
+    }
+    v.get_mut(id).unwrap()
+}
