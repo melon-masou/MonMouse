@@ -19,9 +19,15 @@ Glad to hear new ideas, feature requests, and feedback, which you can share on [
 - No additional driver installation required.
 - Currently only support Windows
 
-## Download
+
+## Usage
 - Download prebuilt from [Releases](https://github.com/melon-masou/MonMouse/releases).
-- MSVC-140+ is required. You can get latest from [latest-supported-vc-redist](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)
+- MSVC library is required. You can get latest from [latest-supported-vc-redist](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)
+- Only turn on "Switch" for **relative** positioning device which you hope to remember the cursor position, like mouse or touchpad. There is no need to turn on it for absolute positioning device like touchscreen and pen tablet.
+- Some devices have multiple rows on "Devices" panel, which are corresponding to different usages. For example, changing "Pen Mode", "Mouse Mode", "Enable Windows Ink" setting of a Wacom tablet will cause mouse events emitted by different device.
+- Some mouse events cannot be associated to any device, since Windows do not provide handle infomation. Defaultly MonMouse will associate them to the device which emits latest RAWINPUT event if it is within a brief period of time. Other events are associated to a dummy device "UnassiciatedEventsCapture". 
+  - If you find two rows including "UnassiciatedEventsCapture" show "active" in device panel, even though you are moving just one mouse. You can increase this period by changing value of "Merge unassociated events within next" in config panel. 
+  - The merging feature can be totally disabled by setting the value as -1.
 
 ## License
 This project is licensed under the MIT License.
