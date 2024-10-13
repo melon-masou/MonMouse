@@ -3,10 +3,11 @@ on: workflow_dispatch
 env:
   CARGO_TERM_COLOR: always
 jobs:
-  build:
+  build-dep:
     uses: ./.github/workflows/build-dep.yml
   snapshot:
     runs-on: windows-latest
+    needs: [build-dep]
     steps:
     - name: Restore dep cache
       uses: actions/cache/restore@v4
