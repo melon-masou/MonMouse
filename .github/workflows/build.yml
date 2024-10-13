@@ -63,6 +63,8 @@ jobs:
       uses: softprops/action-gh-release@v2
       if: inputs.release_name != ''
       with:
+        body: |
+          [CHANGELOG](https://github.com/melon-masou/MonMouse/blob/${{ inputs.release_name }}/CHANGELOG.md)
         draft: true
         files: |
           target/release/monmouse-${{ inputs.release_name }}-windows.zip
