@@ -29,6 +29,14 @@ Glad to hear new ideas, feature requests, and feedback, which you can share on [
   - If you find two rows including "UnassiciatedEventsCapture" show "active" in device panel, even though you are moving just one mouse. You can increase this period by changing value of "Merge unassociated events within next" in config panel. 
   - The merging feature can be totally disabled by setting the value as -1.
 
+## Build
+```
+# Debug
+cargo build
+# Release
+cargo build --release
+```
+
 ## License
 This project is licensed under the MIT License.
 
