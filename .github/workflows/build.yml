@@ -21,7 +21,10 @@ jobs:
     uses: ./.github/workflows/build-dep.yml
   build-and-upload:
     runs-on: windows-latest
-    needs: [build-dep]
+    needs: [dep-cache]
+    if: |
+      always() &&
+      (needs.dep-cache.result == 'success' || needs.dep-cache.result == 'skipped')
     steps:
     - name: Checkout source
       uses: actions/checkout@v4
