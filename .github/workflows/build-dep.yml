@@ -10,11 +10,13 @@ jobs:
     - name: Checkout dep
       uses: actions/checkout@v4
       with:
+        # .gitignore is needed, or else the action throws "Failed to update the excludes stack to see if a path is excluded"
         sparse-checkout: |
           Cargo.toml
           Cargo.lock
           dep-only
           build.rs
+          .gitignore
         sparse-checkout-cone-mode: false
     - name: Cache
       id: cache-step
@@ -25,8 +27,6 @@ jobs:
           ~/.cargo/git
           target
         key: dep-cache-${{ hashFiles('Cargo.lock') }}-${{ runner.os }}
-    - name: Check files
-      run: dir . && dir target && dir %USERPROFILE%\.cargo
     - name: Build-dep
       if: steps.cache-step.outputs.cache-hit != 'true'
-      run: cargo build --release --example dep-only
+      run:  cargo build --release -F dep-only --example dep-only

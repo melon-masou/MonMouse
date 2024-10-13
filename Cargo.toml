@@ -18,6 +18,10 @@ path = "src/gui/main.rs"
 [[example]]
 name = "dep-only"
 path = "dep-only/main.rs"
+required-features = ["dep-only"]
+
+[features]
+dep-only = []
 
 [dependencies]
 thiserror = "1.0"
