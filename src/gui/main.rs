@@ -202,8 +202,19 @@ impl AppWrap {
 
 impl AppWrap {
     fn init_ctx(ctx: &egui::Context) {
-        ctx.set_zoom_factor(gscale(1.0));
+        // TODO:
+        //  The value currently should be 1.0, before egui ctx.set_zoom_factor() is normal working.
+        //  In case it was fixed, the value can be configurable.
+        //  related issue: https://github.com/emilk/egui/issues/3736
+        ctx.set_zoom_factor(1.0);
         ctx.options_mut(|o| o.zoom_with_keyboard = false);
+        // As a workaround, only scale fonts
+        let mut fonts = egui::FontDefinitions::default();
+        fonts
+            .font_data
+            .iter_mut()
+            .for_each(|font| font.1.tweak.scale = gscale(1.0));
+        ctx.set_fonts(fonts);
     }
 
     fn init_visuals(ctx: &egui::Context, theme: Theme) {
