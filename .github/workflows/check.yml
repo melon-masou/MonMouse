@@ -10,5 +10,4 @@ jobs:
     uses: ./.github/workflows/build.yml
     with:
       version_anno: "check"
-      upload_name: ""
       use_dep_cache: true

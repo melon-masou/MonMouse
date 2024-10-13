@@ -4,7 +4,7 @@ on: workflow_call
 env:
   CARGO_TERM_COLOR: always
 jobs:
-  build-dep-cache:
+  ensure-dep-cache:
     runs-on: windows-latest
     steps:
     - name: Checkout dep

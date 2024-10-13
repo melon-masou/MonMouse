@@ -8,6 +8,9 @@ on:
       upload_name:
         type: string
         default: ""
+      release_name:
+        type: string
+        default: ""
       use_dep_cache:
         type: boolean
         default: true
@@ -44,9 +47,7 @@ jobs:
         for /f "delims=" %%i in ('powershell.exe "scripts\get_rc_path.ps1"') do set RC_EXEC=%%i
         echo RC_EXEC set to %RC_EXEC%
         cargo build --release
-    # - name: Pack
-    #   run: cd target\release && tar -caf monmouse.zip monmouse.exe monmouse-cli.exe
-    - name: Upload
+    - name: Upload artifacts
       uses: actions/upload-artifact@v4
       if: inputs.upload_name != ''
       with:
@@ -54,3 +55,14 @@ jobs:
         path: |
           target/release/monmouse.exe
           target/release/monmouse-cli.exe
+          - name: Releases
+    - name: Pack
+      if: inputs.release_name != ''
+      run: cd target\release && tar -caf monmouse-${{ inputs.release_name }}-windows.zip monmouse.exe monmouse-cli.exe
+    - name: Upload release assets
+      uses: softprops/action-gh-release@v2
+      if: inputs.release_name != ''
+      with:
+        draft: true
+        files: |
+          target/release/monmouse-${{ inputs.release_name }}-windows.zip
