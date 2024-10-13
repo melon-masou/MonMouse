@@ -27,6 +27,8 @@ jobs:
           ~/.cargo/git
           target
         key: dep-cache-${{ hashFiles('Cargo.lock') }}-${{ runner.os }}
+        lookup-only: true
     - name: Build-dep
       if: steps.cache-step.outputs.cache-hit != 'true'
-      run:  cargo build --release -F dep-only --example dep-only
+      run: |
+        cargo build --release -F dep-only --example dep-only

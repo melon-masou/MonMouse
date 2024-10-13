@@ -19,12 +19,17 @@ jobs:
           ~/.cargo/git
           target
         key: dep-cache-${{ hashFiles('Cargo.lock') }}-${{ runner.os }}
+        fail-on-cache-miss: true
     - name: Build
-      run: cargo build --release
+      shell: cmd
+      run: |      
+        for /f "delims=" %%i in ('powershell.exe "scripts\get_rc_path.ps1"') do set RC_EXEC=%%i
+        echo RC_EXEC set to %RC_EXEC%
+        cargo build --release
     - name: Pack
       run: cd target\release && tar -caf monmouse.zip monmouse.exe monmouse-cli.exe
     - name: Upload
       uses: actions/upload-artifact@v4
       with:
-        name: monmouse-${GITHUB_SHA::7}-windows
+        name: monmouse-${{ github.sha }}-windows
         path: target/release/monmouse.zip

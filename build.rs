@@ -46,7 +46,7 @@ fn windows_rc_compile(content: String, out_dir: &str, rc_file: &str, lib_file: &
     let mut write_file = File::create(&rc_file).unwrap();
     write!(write_file, "{}", content).unwrap();
 
-    let rc_exe = env::var("RC_PATH")
+    let rc_exe = env::var("RC_EXEC")
         .map(PathBuf::from)
         .or_else(|_| which("rc"))
         .unwrap();

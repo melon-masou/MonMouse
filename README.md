@@ -33,7 +33,9 @@ Glad to hear new ideas, feature requests, and feedback, which you can share on [
 ```
 # Debug
 cargo build
+
 # Release
+# - windows Resource Compiler should be found at PATH or set RC_EXEC
 cargo build --release
 ```
 
