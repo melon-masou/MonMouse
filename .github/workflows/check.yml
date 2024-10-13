@@ -1,0 +1,14 @@
+name: Check
+on:
+  push:
+    branches:
+      - '*'
+  pull_request:
+  workflow_dispatch:
+jobs:
+  check:
+    uses: ./.github/workflows/build.yml
+    with:
+      version_anno: "check"
+      upload_name: ""
+      use_dep_cache: true

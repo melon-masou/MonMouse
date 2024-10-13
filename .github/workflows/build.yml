@@ -16,10 +16,10 @@ env:
   VERSION_ANNO: ${{ inputs.version_anno }}
   VERSION_SHA: ${{ github.sha }}
 jobs:
-  build-dep:
+  dep-cache:
     if: inputs.use_dep_cache
     uses: ./.github/workflows/build-dep.yml
-  snapshot:
+  build-and-upload:
     runs-on: windows-latest
     needs: [build-dep]
     steps:
