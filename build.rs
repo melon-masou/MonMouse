@@ -63,6 +63,16 @@ fn windows_rc_compile(content: String, out_dir: &str, rc_file: &str, lib_file: &
 }
 
 fn main() {
+    println!(
+        "cargo:rustc-env=VERSION_ANNO={}",
+        env::var("VERSION_ANNO").unwrap_or("dev".to_string())
+    );
+    let sha = env::var("VERSION_SHA").unwrap_or_default();
+    println!(
+        "cargo:rustc-env=VERSION_SHA={}",
+        if sha.len() <= 7 { &sha[..] } else { &sha[..7] }
+    );
+
     if cfg!(feature = "dep-only") {
         println!("cargo::rerun-if-changed=dep-only")
     }

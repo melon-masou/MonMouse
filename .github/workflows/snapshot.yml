@@ -3,35 +3,9 @@ on: workflow_dispatch
 env:
   CARGO_TERM_COLOR: always
 jobs:
-  build-dep:
-    uses: ./.github/workflows/build-dep.yml
-  snapshot:
-    runs-on: windows-latest
-    needs: [build-dep]
-    steps:
-    - name: Checkout source
-      uses: actions/checkout@v4
-    - name: Restore dep cache
-      uses: actions/cache/restore@v4
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: dep-cache-${{ hashFiles('Cargo.lock') }}-${{ runner.os }}
-        fail-on-cache-miss: true
-    - name: Build
-      shell: cmd
-      run: |      
-        for /f "delims=" %%i in ('powershell.exe "scripts\get_rc_path.ps1"') do set RC_EXEC=%%i
-        echo RC_EXEC set to %RC_EXEC%
-        cargo build --release
-    # - name: Pack
-    #   run: cd target\release && tar -caf monmouse.zip monmouse.exe monmouse-cli.exe
-    - name: Upload
-      uses: actions/upload-artifact@v4
-      with:
-        name: monmouse-${{ github.sha }}-windows
-        path: |
-          target/release/monmouse.exe
-          target/release/monmouse-cli.exe
+  build:
+    uses: ./.github/workflows/build.yml
+    with:
+      version_anno: "snapshot"
+      upload_name: ${{ github.sha }}
+      use_dep_cache: true
