@@ -300,7 +300,7 @@ impl WinDeviceSet {
             })
             .map(f)
     }
-    pub fn update_one_settings(&mut self, id: &str, s: &DeviceSetting) -> bool {
+    pub fn update_one_device_settings(&mut self, id: &str, s: &DeviceSetting) -> bool {
         self.update_one(id, |d| d.ctrl.update_settings(s)).is_some()
     }
 }
@@ -557,7 +557,9 @@ impl WinDeviceProcessor {
         let settings = &self.settings;
 
         let applied: usize = settings.devices.iter().fold(0, |applied, item| {
-            let found = self.devices.update_one_settings(&item.id, &item.content);
+            let found = self
+                .devices
+                .update_one_device_settings(&item.id, &item.content);
             if found {
                 applied + 1
             } else {
@@ -926,7 +928,7 @@ impl WinEventLoop {
                     let item = data.take();
                     self.processor
                         .devices
-                        .update_one_settings(&item.id, &item.content);
+                        .update_one_device_settings(&item.id, &item.content);
                 }
                 _ => panic!("recv unexpected ui msg: {:?}", msg),
             };

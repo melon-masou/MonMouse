@@ -107,6 +107,7 @@ impl App {
     ) -> Self {
         match config {
             Ok(s) => {
+                self.init_managed_devices(&s.processor);
                 self.state.settings = s.clone();
                 self.state.saved_settings = s;
             }
@@ -124,6 +125,15 @@ impl App {
         Theme::from_string(self.state.settings.ui.theme.as_str())
     }
 
+    fn init_managed_devices(&mut self, settings: &ProcessorSettings) {
+        for dev in &settings.devices {
+            self.state.managed_devices.push(DeviceUIState {
+                device_setting: dev.content.clone(),
+                generic: GenericDevice::id_only(dev.id.clone()),
+                status: DeviceStatus::Disconnected,
+            })
+        }
+    }
     fn merge_scanned_devices(&mut self, new_devs: Vec<GenericDevice>) {
         // Mark disconnected
         for dev in &mut self.state.managed_devices {

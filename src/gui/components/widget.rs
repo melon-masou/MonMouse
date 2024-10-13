@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use eframe::{
     egui::{self, Widget},
     epaint::Color32,

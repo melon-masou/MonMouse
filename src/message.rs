@@ -36,6 +36,17 @@ pub struct GenericDevice {
     pub platform_specific_infos: Vec<(String, String)>,
 }
 
+impl GenericDevice {
+    pub fn id_only(id: String) -> GenericDevice {
+        GenericDevice {
+            id: id.clone(),
+            device_type: DeviceType::Unknown,
+            product_name: id,
+            platform_specific_infos: Vec::new(),
+        }
+    }
+}
+
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
