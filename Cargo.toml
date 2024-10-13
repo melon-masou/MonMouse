@@ -15,6 +15,10 @@ path = "src/cli/main.rs"
 name = "monmouse"
 path = "src/gui/main.rs"
 
+[[example]]
+name = "dep-only"
+path = "dep-only/main.rs"
+
 [dependencies]
 thiserror = "1.0"
 log = "0.4"

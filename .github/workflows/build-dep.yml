@@ -1,0 +1,30 @@
+# Build dependency in one workflow, so that build failure won't affect the saving of cache
+name: BuildDep
+on: workflow_call
+env:
+  CARGO_TERM_COLOR: always
+jobs:
+  build-dep-cache:
+    runs-on: windows-latest
+    steps:
+    - name: Checkout dep
+      uses: actions/checkout@v4
+      with:
+        sparse-checkout: |
+          Cargo.toml
+          Cargo.lock
+          dep-only
+          build.rs
+        sparse-checkout-cone-mode: false
+    - name: Cache
+      id: cache-step
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: dep-cache-${{ hashFiles('Cargo.lock') }}-${{ runner.os }}
+    - name: Build-dep
+      if: steps.cache-step.outputs.cache-hit != 'true'
+      run: cargo build --release --example dep-only

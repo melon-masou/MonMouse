@@ -3,10 +3,12 @@ use std::str::FromStr;
 
 use clap::Parser;
 use log::{debug, error, info};
-use monmouse::errors::Error;
-use monmouse::message::{setup_reactors, GenericDevice, UINotifyNoop};
-use monmouse::setting::{read_config, CONFIG_FILE_NAME};
-use monmouse::SingleProcess;
+use monmouse::{
+    errors::Error,
+    message::{setup_reactors, GenericDevice, UINotifyNoop},
+    setting::{read_config, CONFIG_FILE_NAME},
+    SingleProcess,
+};
 
 #[cfg(not(debug_assertions))]
 const CLI_DEFAULT_CONFIG_DIR: &str = ".";

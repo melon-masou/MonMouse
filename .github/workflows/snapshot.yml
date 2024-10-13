@@ -4,9 +4,20 @@ env:
   CARGO_TERM_COLOR: always
 jobs:
   build:
+    uses: ./.github/workflows/build-dep.yml
+  snapshot:
     runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v4
+    - name: Restore dep cache
+      uses: actions/cache/restore@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: dep-cache-${{ hashFiles('Cargo.lock') }}-${{ runner.os }}
+    - name: Checkout source
+      uses: actions/checkout@v4
     - name: Build
       run: cargo build --release
     - name: Pack
