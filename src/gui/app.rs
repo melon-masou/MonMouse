@@ -286,6 +286,7 @@ impl App {
             .filter(|d| d.device_setting.is_effective())
             .map(|d| d.clone_setting())
             .collect();
+        self.state.settings.processor.devices = new_settings.processor.devices.clone();
         self.save_config(new_settings);
     }
     fn save_config(&mut self, new_settings: Settings) {
@@ -302,7 +303,8 @@ impl App {
         }
         self.result_ok("Config saved".to_owned());
         self.state.saved_settings = new_settings.clone();
-        self.state.settings = new_settings;
+        // Don't write the whole new_settings into state.settings, since only one of global/devices config is to be saved.
+        // self.state.settings = new_settings;
     }
 
     pub fn result_ok(&mut self, msg: String) {
