@@ -125,8 +125,9 @@ impl MouseRelocator {
         if self.monitors.is_empty() {
             return;
         }
-        let next_id = if let Some(cur_id) = self.monitors.locate_id(&self.cur_pos) {
-            *vec_ensure_get_mut(&mut self.last_jump_pos, cur_id) = Some(self.cur_pos);
+        let next_id = if let Some((cur_id, cur_mon)) = self.monitors.locate_id(&self.cur_pos) {
+            let saved_cur_pos = cur_mon.capture_pos_no_edge(&self.cur_pos);
+            *vec_ensure_get_mut(&mut self.last_jump_pos, cur_id) = Some(saved_cur_pos);
             self.monitors.next_id(cur_id)
         } else {
             0 // maybe go to primary monitor?
@@ -222,9 +223,9 @@ impl MonitorAreasList {
     pub fn locate(&self, p: &MousePos) -> Option<&MonitorArea> {
         self.list.iter().find(|&ma| ma.contains(p))
     }
-    pub fn locate_id(&self, p: &MousePos) -> Option<usize> {
-        if let Some((i, _)) = self.list.iter().enumerate().find(|(_, &ma)| ma.contains(p)) {
-            Some(i)
+    pub fn locate_id(&self, p: &MousePos) -> Option<(usize, &MonitorArea)> {
+        if let Some(v) = self.list.iter().enumerate().find(|(_, &ma)| ma.contains(p)) {
+            Some(v)
         } else {
             None
         }
@@ -256,27 +257,51 @@ impl Display for MonitorAreasList {
 pub struct MonitorArea {
     pub lefttop: MousePos,
     pub rigtbtm: MousePos,
+    edge_reserve: i32,
 }
 
 impl MonitorArea {
-    pub fn contains(&self, p: &MousePos) -> bool {
-        (self.lefttop.x <= p.x && p.x <= self.rigtbtm.x)
-            && (self.lefttop.y <= p.y && p.y <= self.rigtbtm.y)
+    const EDGE_RESERVE_PIXEL: i32 = 10;
+    pub fn new(lefttop: MousePos, rigtbtm: MousePos) -> MonitorArea {
+        let edge_reserve = std::cmp::min(
+            Self::EDGE_RESERVE_PIXEL,
+            std::cmp::min(rigtbtm.x - lefttop.x, rigtbtm.y - lefttop.y) / 10,
+        );
+
+        MonitorArea {
+            lefttop,
+            rigtbtm,
+            edge_reserve,
+        }
     }
-    const RESERVE_PIXEL: i32 = 3;
-    pub fn capture_pos(&self, p: &MousePos) -> MousePos {
-        let rp = Self::RESERVE_PIXEL;
-        let x1 = match (p.x < self.lefttop.x, p.x > self.rigtbtm.x - rp) {
-            (true, _) => self.lefttop.x,
-            (_, true) => self.rigtbtm.x - rp,
+    pub fn contains(&self, p: &MousePos) -> bool {
+        (self.lefttop.x <= p.x && p.x < self.rigtbtm.x)
+            && (self.lefttop.y <= p.y && p.y < self.rigtbtm.y)
+    }
+    fn capture_pos_resv(&self, p: &MousePos, reserve_lt: i32, reserve_rb: i32) -> MousePos {
+        // The value will prevent mouse moving to the edge of monitor, which is hard to say belonging to which
+        // monitor. But it will cause the cursor hardly reaching the bottom of screen, affecting displaying hidden taskbar.
+        let rp_min: i32 = reserve_lt;
+        let rp_max: i32 = reserve_rb + 1 /* right-open */;
+
+        let x1 = match (p.x < self.lefttop.x + rp_min, p.x > self.rigtbtm.x - rp_max) {
+            (true, _) => self.lefttop.x + rp_min,
+            (_, true) => self.rigtbtm.x - rp_max,
             _ => p.x,
         };
-        let y1 = match (p.y < self.lefttop.y, p.y > self.rigtbtm.y - rp) {
-            (true, _) => self.lefttop.y,
-            (_, true) => self.rigtbtm.y - rp,
+        let y1 = match (p.y < self.lefttop.y + rp_min, p.y > self.rigtbtm.y - rp_max) {
+            (true, _) => self.lefttop.y + rp_min,
+            (_, true) => self.rigtbtm.y - rp_max,
             _ => p.y,
         };
         MousePos::from(x1, y1)
+    }
+
+    pub fn capture_pos_no_edge(&self, p: &MousePos) -> MousePos {
+        self.capture_pos_resv(p, self.edge_reserve, self.edge_reserve)
+    }
+    pub fn capture_pos(&self, p: &MousePos) -> MousePos {
+        self.capture_pos_resv(p, 0, 0)
     }
     pub fn center(&self) -> MousePos {
         MousePos::from(
@@ -303,10 +328,7 @@ mod tests {
     #[test]
     fn test_monitor_area_capture_pos() {
         let pt = MousePos::from;
-        let m = MonitorArea {
-            lefttop: pt(-100, 500),
-            rigtbtm: pt(300, 1500),
-        };
+        let m = MonitorArea::new(pt(-100, 500), pt(301, 1501));
         assert_eq!(m.capture_pos(&pt(50, 700)), pt(50, 700));
         assert_eq!(m.capture_pos(&pt(-150, 1500)), pt(-100, 1500));
         assert_eq!(m.capture_pos(&pt(350, 500)), pt(300, 500));

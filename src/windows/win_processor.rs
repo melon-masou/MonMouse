@@ -478,11 +478,14 @@ impl WinDeviceProcessor {
         register_rawinput_devices(&to_register)
     }
 
+    fn filter_monitor(mon: &MonitorInfo) -> bool {
+        mon.rect.left < mon.rect.right && mon.rect.top < mon.rect.bottom
+    }
     fn monitor_area_from(mi: &MonitorInfo) -> MonitorArea {
-        MonitorArea {
-            lefttop: MousePos::from(mi.rect.left, mi.rect.top),
-            rigtbtm: MousePos::from(mi.rect.right, mi.rect.bottom),
-        }
+        MonitorArea::new(
+            MousePos::from(mi.rect.left, mi.rect.top),
+            MousePos::from(mi.rect.right, mi.rect.bottom),
+        )
     }
 
     fn try_update_devices(&mut self, must: bool) -> Result<()> {
@@ -523,6 +526,7 @@ impl WinDeviceProcessor {
         };
         let mon_areas = MonitorAreasList::from(
             mons.iter()
+                .filter(|v| Self::filter_monitor(v))
                 .map(WinDeviceProcessor::monitor_area_from)
                 .collect(),
         );
