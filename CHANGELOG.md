@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.2
+- Fix locked mouse cannot reach the edge of screen
+- Improve shortcut input UI logic
+
 ## v0.1.1
 - Fix config saving and loading at launch
 - Fix that window size decrease each time it's opened
