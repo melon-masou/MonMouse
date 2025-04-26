@@ -426,14 +426,18 @@ pub struct ShortcutInputResponse {
 
 pub fn shortcut_input_ui(
     ui: &mut egui::Ui,
-    buf: &mut String,
+    state: &mut ShortcutChooseState,
     show_modifier: bool,
+    gain_focus: bool,
     textinput_style: impl FnOnce(egui::TextEdit) -> egui::TextEdit,
 ) -> ShortcutInputResponse {
-    let mut b = EatInputBuffer::from(buf);
+    let mut b = EatInputBuffer::from(&state.key_input);
     let textinput = textinput_style(egui::TextEdit::singleline(&mut b).desired_width(140.0));
 
     let inner = textinput.ui(ui);
+    if gain_focus {
+        inner.request_focus();
+    }
 
     if inner.gained_focus() {
         ui.ctx()
@@ -444,7 +448,7 @@ pub fn shortcut_input_ui(
             .send_viewport_cmd(egui::ViewportCommand::IMEAllowed(true));
     }
     let focus = inner.has_focus();
-    if inner.has_focus() {
+    if focus {
         let (modifiers, key) =
             ui.input(|input| (input.modifiers, input.keys_down.iter().next().cloned()));
         let new_shortcut = shortcut_to_str(
@@ -455,7 +459,14 @@ pub fn shortcut_input_ui(
             },
             key.map(egui_to_key),
         );
-        *buf = new_shortcut;
+        state.key_input = new_shortcut;
+        if modifiers.ctrl || modifiers.alt || modifiers.shift {
+            state.ctrl_checked = modifiers.ctrl;
+            state.alt_checked = modifiers.alt;
+            state.shift_checked = modifiers.shift;
+        }
+        // FIXME: egui currently not support catch win modifier
+
         // Had key, stop input
         if key.is_some() {
             ui.memory_mut(|mem| mem.stop_text_input());
@@ -474,6 +485,7 @@ pub fn shortcut_input_ui(
 
 #[derive(Default, Clone, serde::Deserialize, serde::Serialize)]
 pub struct ShortcutChooseState {
+    changed: bool,
     key_input: String,
     ctrl_checked: bool,
     meta_checked: bool,
@@ -520,18 +532,27 @@ impl ShortcutChoosePopup {
         changed |= ui.checkbox(&mut state.shift_checked, "Shift").clicked();
         changed |= ui.checkbox(&mut state.alt_checked, "Alt").clicked();
 
-        changed |= shortcut_input_ui(ui, &mut state.key_input, false, |textinput| {
-            textinput.desired_width(50.0)
-        })
-        .changed;
+        ui.horizontal(|ui| {
+            changed |= shortcut_input_ui(ui, &mut state, false, action.just_open, |textinput| {
+                textinput.desired_width(50.0)
+            })
+            .changed;
 
+            if ui.button("Clear").clicked() {
+                changed = true;
+                state.key_input = "".to_string();
+                action.mark_close();
+            }
+        });
+
+        state.changed |= changed;
         if changed {
             ui.memory_mut(|mem| mem.data.insert_persisted(id, state.clone()));
         }
         state
     }
 
-    pub fn short_cut_from_state(&mut self, state: ShortcutChooseState) -> String {
+    pub fn short_cut_from_state(&mut self, state: &ShortcutChooseState) -> String {
         if state.key_input.is_empty() {
             return "".to_owned();
         }
@@ -564,8 +585,8 @@ impl ShortcutChoosePopup {
             Some(r) => (r.action.close, r.inner),
             None => return r,
         };
-        if close {
-            *buf = self.short_cut_from_state(state);
+        if close && state.changed {
+            *buf = self.short_cut_from_state(&state);
         }
         r.changed |= close;
         r
