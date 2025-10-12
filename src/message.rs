@@ -127,6 +127,7 @@ pub enum Message {
     InspectDevicesStatus(RoundtripData<(), Vec<(String, DeviceStatus)>>),
     ApplyProcessorSetting(RoundtripData<ProcessorSettings, ()>),
     ApplyOneDeviceSetting(SendData<DeviceSettingItem>),
+    SysMouseEvent(SysMouseEvent),
 }
 
 #[repr(i32)]
@@ -134,6 +135,12 @@ pub enum Message {
 pub enum ShortcutID {
     CurMouseLock = 1000,
     CurMouseJumpNext = 1001,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct SysMouseEvent {
+    pub pos_x: i32,
+    pub pos_y: i32,
 }
 
 pub struct SignalSender(SyncSender<()>);
@@ -175,6 +182,7 @@ pub fn setup_reactors(
     };
     let mouse_ctrl = MouseControlReactor {
         ui_tx: MessageSender::from(&ui_tx),
+        mouse_control_tx: MessageSender::from(&mouse_control_tx.clone()),
         mouse_control_rx: MessageReceiver::from(mouse_control_rx),
         ui_notify: ui_notify2,
     };
@@ -212,6 +220,7 @@ pub struct UIReactor {
 
 pub struct MouseControlReactor {
     pub ui_tx: MessageSender,
+    pub mouse_control_tx: MessageSender,
     pub mouse_control_rx: MessageReceiver,
     ui_notify: Box<dyn UINotify>,
 }
@@ -237,6 +246,7 @@ impl MouseControlReactor {
     }
 }
 
+#[derive(Debug)]
 pub struct MessageReceiver(Receiver<Message>);
 
 impl MessageReceiver {
@@ -271,7 +281,7 @@ impl MessageReceiver {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct MessageSender(Sender<Message>);
 
 impl MessageSender {

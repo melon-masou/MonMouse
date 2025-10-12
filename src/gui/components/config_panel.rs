@@ -36,7 +36,7 @@ impl ConfigPanel {
     }
 
     #[inline]
-    fn textedit(text: &mut String, char_limit: usize) -> egui::TextEdit {
+    fn textedit(text: &'_ mut String, char_limit: usize) -> egui::TextEdit<'_> {
         egui::TextEdit::singleline(text)
             .char_limit(char_limit)
             .desired_width(char_limit as f32 * 10.0)

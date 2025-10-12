@@ -35,7 +35,8 @@ Glad to hear new ideas, feature requests, and feedback, which you can share on [
 cargo build
 
 # Release
-# - windows Resource Compiler should be found at PATH or set RC_EXEC
+# - Windows RC(Resource Compiler) should be found at PATH or set RC_EXEC; 
+#   Usually located at path like "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64"
 cargo build --release
 ```
 

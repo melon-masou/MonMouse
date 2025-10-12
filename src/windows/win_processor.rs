@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use crate::device_type::DeviceType;
@@ -9,9 +10,11 @@ use crate::keyboard::key_windows::shortcut_str_to_win;
 use crate::message::DeviceStatus;
 use crate::message::GenericDevice;
 use crate::message::Message;
+use crate::message::MessageSender;
 use crate::message::MouseControlReactor;
 use crate::message::Positioning;
 use crate::message::ShortcutID;
+use crate::message::SysMouseEvent;
 use crate::mouse_control::DeviceController;
 use crate::mouse_control::MonitorArea;
 use crate::mouse_control::MonitorAreasList;
@@ -23,7 +26,6 @@ use crate::setting::ProcessorSettings;
 use crate::setting::Settings;
 use crate::utils::SimpleRatelimit;
 
-use core::cell::OnceCell;
 use log::{debug, error, trace, warn};
 use windows::Win32::UI::Input::RAWINPUTDEVICE;
 use windows::Win32::UI::Input::RIDEV_PAGEONLY;
@@ -311,6 +313,7 @@ struct WinHook {
 
 impl WinHook {
     fn new() -> Self {
+        let _ = G_HOOK_EV_SENDER.get().unwrap();
         WinHook {
             mouse_ll_hook: None,
         }
@@ -325,11 +328,15 @@ impl WinHook {
         }
         Ok(())
     }
+    fn set_ev_sender(sender: MessageSender) {
+        G_HOOK_EV_SENDER.set(sender).unwrap();
+    }
 }
 
+static G_HOOK_EV_SENDER: OnceLock<MessageSender> = OnceLock::new();
 impl MouseLowLevelHook for WinHook {
     fn on_mouse_ll(action: u32, e: &mut MSLLHOOKSTRUCT) -> bool {
-        let processor = unsafe { G_PROCESSOR.get_mut().unwrap() };
+        let hook_ev_sender = G_HOOK_EV_SENDER.get().unwrap();
 
         trace!(
             "mousell hook: action={}, pt=({},{})",
@@ -338,10 +345,10 @@ impl MouseLowLevelHook for WinHook {
             e.pt.y
         );
 
-        let ctrl = processor.devices.active().map(|v| &mut v.ctrl);
-        processor
-            .relocator
-            .on_pos_update(ctrl, MousePos::from(e.pt.x, e.pt.y));
+        hook_ev_sender.send(Message::SysMouseEvent(SysMouseEvent {
+            pos_x: e.pt.x,
+            pos_y: e.pt.y,
+        }));
         true
     }
 }
@@ -360,11 +367,6 @@ struct WinDeviceProcessor {
     rl_update_mon: SimpleRatelimit,
     rl_update_dev: SimpleRatelimit,
 }
-// Since Windows hook accept only a function pointer callback, not a closure.
-// And it is hard to pass a WinDeviceProcessor instance as context to hook handler.
-// To resolve this problem, we define the hook callback as static functions(defined in WinHook),
-// the callback obtains the singleton instance WinDeviceProcessor as the context.
-static mut G_PROCESSOR: OnceCell<WinDeviceProcessor> = OnceCell::new();
 
 impl WinDeviceProcessor {
     fn new() -> Self {
@@ -393,14 +395,6 @@ impl WinDeviceProcessor {
 }
 
 impl WinDeviceProcessor {
-    fn init_global_once(processor: WinDeviceProcessor) -> &'static mut WinDeviceProcessor {
-        unsafe {
-            if G_PROCESSOR.set(processor).is_err() {
-                panic!("WinDeviceProcessor::init_global_once() called twice")
-            }
-            G_PROCESSOR.get_mut().unwrap()
-        }
-    }
     fn initialize(&mut self) -> Result<()> {
         match self.register_raw_devices() {
             Ok(_) => (),
@@ -634,6 +628,12 @@ impl WinDeviceProcessor {
         self.resolve_relocation();
     }
 
+    fn on_mouse_event(&mut self, ev: &SysMouseEvent) {
+        let ctrl = self.devices.active().map(|v| &mut v.ctrl);
+        self.relocator
+            .on_pos_update(ctrl, MousePos::from(ev.pos_x, ev.pos_y));
+    }
+
     fn resolve_pending_updating_task(&mut self) {
         if self.relocator.pop_need_update_monitors() {
             self.to_update_monitors = true;
@@ -658,7 +658,7 @@ impl WinDeviceProcessor {
 
 pub struct WinEventLoop {
     hook: WinHook,
-    processor: &'static mut WinDeviceProcessor,
+    processor: WinDeviceProcessor,
     headless: bool,
     hotkey_mgr: HotKeyManager<ShortcutID>,
     mouse_control_reactor: MouseControlReactor,
@@ -763,8 +763,10 @@ impl WinEventLoop {
 
 impl WinEventLoop {
     pub fn new(headless: bool, mouse_control_reactor: MouseControlReactor) -> Self {
+        WinHook::set_ev_sender(mouse_control_reactor.mouse_control_tx.clone());
         let hook = WinHook::new();
-        let processor = WinDeviceProcessor::init_global_once(WinDeviceProcessor::new());
+        let processor = WinDeviceProcessor::new();
+
         WinEventLoop {
             hook,
             processor,
@@ -901,6 +903,9 @@ impl WinEventLoop {
             match &mut msg {
                 Message::Exit => {
                     return true;
+                }
+                Message::SysMouseEvent(mouse_ev) => {
+                    self.processor.on_mouse_event(mouse_ev);
                 }
                 Message::ScanDevices(data) => {
                     data.set_result(self.scan_devices());

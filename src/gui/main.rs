@@ -6,7 +6,7 @@ mod config;
 mod styles;
 mod tray;
 
-use std::panic::PanicInfo;
+use std::panic::PanicHookInfo;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::{cell::RefCell, panic, process, rc::Rc, thread};
@@ -288,7 +288,7 @@ fn exit_with_message(text: String) {
 }
 
 #[cfg(target_os = "windows")]
-fn windows_panic_hook(panic_info: &PanicInfo) {
+fn windows_panic_hook(panic_info: &PanicHookInfo) {
     use monmouse::windows::wintypes::WString;
     use monmouse::windows::winwrap::popup_message_box;
 
