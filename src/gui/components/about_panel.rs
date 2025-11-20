@@ -4,6 +4,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 const VERSION_ANNO: &str = env!("VERSION_ANNO");
 const VERSION_SHA: &str = env!("VERSION_SHA");
 
+#[allow(clippy::const_is_empty)]
 fn full_ver_str() -> String {
     let mut v = format!("v{}", VERSION);
     if !VERSION_ANNO.is_empty() {

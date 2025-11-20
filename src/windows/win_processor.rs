@@ -98,25 +98,19 @@ impl std::fmt::Display for WinDevice {
             }
             _ => (),
         }
-        match &self.iface {
-            Some(infos) => {
-                writeln!(f, "iface info::")?;
-                writeln!(f, "instance_id: {}", infos.instance_id)?;
-                writeln!(f, "name: {}", infos.name)?;
-                writeln!(f, "service: {}", infos.service)?;
-                writeln!(f, "class: {}", infos.class)?;
-                writeln!(f, "manufacurer: {}", infos.manufacurer)?;
-            }
-            None => (),
+        if let Some(infos) = &self.iface {
+            writeln!(f, "iface info::")?;
+            writeln!(f, "instance_id: {}", infos.instance_id)?;
+            writeln!(f, "name: {}", infos.name)?;
+            writeln!(f, "service: {}", infos.service)?;
+            writeln!(f, "class: {}", infos.class)?;
+            writeln!(f, "manufacurer: {}", infos.manufacurer)?;
         };
-        match &self.hid {
-            Some(infos) => {
-                writeln!(f, "hid info::")?;
-                writeln!(f, "serial_number: {}", infos.serial_number)?;
-                writeln!(f, "product: {}", infos.product)?;
-                writeln!(f, "manufacturer: {}", infos.manufacturer)?;
-            }
-            None => (),
+        if let Some(infos) = &self.hid {
+            writeln!(f, "hid info::")?;
+            writeln!(f, "serial_number: {}", infos.serial_number)?;
+            writeln!(f, "product: {}", infos.product)?;
+            writeln!(f, "manufacturer: {}", infos.manufacturer)?;
         };
         Ok(())
     }
@@ -424,10 +418,7 @@ impl WinDeviceProcessor {
     }
 
     fn collect_all_raw_devices(&mut self) -> Result<Vec<WinDevice>> {
-        let all_devs = match device_list_all() {
-            Ok(v) => v,
-            Err(e) => return Err(e),
-        };
+        let all_devs = device_list_all()?;
         Ok(all_devs
             .into_iter()
             .filter_map(|d| {

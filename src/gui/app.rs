@@ -128,7 +128,7 @@ impl App {
     fn init_managed_devices(&mut self, settings: &ProcessorSettings) {
         for dev in &settings.devices {
             self.state.managed_devices.push(DeviceUIState {
-                device_setting: dev.content.clone(),
+                device_setting: dev.content,
                 generic: GenericDevice::id_only(dev.id.clone()),
                 status: DeviceStatus::Disconnected,
             })

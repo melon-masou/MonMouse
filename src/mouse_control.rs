@@ -224,11 +224,7 @@ impl MonitorAreasList {
         self.list.iter().find(|&ma| ma.contains(p))
     }
     pub fn locate_id(&self, p: &MousePos) -> Option<(usize, &MonitorArea)> {
-        if let Some(v) = self.list.iter().enumerate().find(|(_, &ma)| ma.contains(p)) {
-            Some(v)
-        } else {
-            None
-        }
+        self.list.iter().enumerate().find(|(_, &ma)| ma.contains(p))
     }
 
     pub fn is_empty(&self) -> bool {

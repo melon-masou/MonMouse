@@ -81,7 +81,7 @@ pub fn shortcut_from_str(s: &str) -> Option<(Modifiers, Code)> {
         true
     };
 
-    for (i, c) in s.chars().enumerate() {
+    for (i, c) in s.char_indices() {
         if c == '+' {
             if i == 0 {
                 return None;

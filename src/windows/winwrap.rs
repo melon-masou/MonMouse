@@ -477,7 +477,7 @@ pub fn device_get_parents(instance_id: &WString, dep_limit: Option<usize>) -> Re
         match get_parent(inst)? {
             Some(v) => {
                 ret.push(v);
-                inst = &ret.last().unwrap();
+                inst = ret.last().unwrap();
             }
             None => break,
         }

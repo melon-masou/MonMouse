@@ -197,7 +197,7 @@ impl WString {
     pub fn to_wbuffer(&self) -> WBuffer {
         let mut a = Vec::<u8>::new();
         self.0.iter().for_each(|x| {
-            a.push((x & std::u8::MAX as u16) as u8);
+            a.push((x & u8::MAX as u16) as u8);
             a.push((x >> 8) as u8);
         });
         WBuffer(a)
