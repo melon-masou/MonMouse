@@ -65,7 +65,7 @@ impl App {
         self.state.config_input.mark_changed(false);
     }
     pub fn apply_new_settings(&mut self) {
-        match self.state.config_input.parse_all(&mut self.state.settings) {
+        match self.state.config_input.set_into(&mut self.state.settings) {
             Ok(_) => {
                 let duration =
                     Duration::from_millis(self.state.settings.ui.inspect_device_interval_ms);
@@ -78,11 +78,11 @@ impl App {
         }
     }
     pub fn restore_settings(&mut self) {
-        self.state.config_input.set(&self.state.settings);
+        self.state.config_input.set_from(&self.state.settings);
         self.result_ok("Settings restored".to_owned());
     }
     pub fn set_default_settings(&mut self) {
-        self.state.config_input.set(&Settings::default());
+        self.state.config_input.set_from(&Settings::default());
         self.result_ok("Default settings restored".to_owned());
     }
 }
@@ -116,7 +116,7 @@ impl App {
                 self.result_error_alert(format!("Cannot load config, use default config: {}", e))
             }
         };
-        self.state.config_input.set(&self.state.settings);
+        self.state.config_input.set_from(&self.state.settings);
         self.config_path = config_path;
         self
     }
@@ -194,6 +194,13 @@ impl App {
             shortcuts: self.state.settings.processor.shortcuts.clone(),
             ..self.state.settings.processor
         }
+    }
+
+    pub fn on_launch_wait_start_ui(&mut self) -> bool {
+        if !self.state.settings.ui.hide_ui_on_launch {
+            return self.should_exit;
+        }
+        self.wait_for_restart_background()
     }
 
     pub fn wait_for_restart_background(&mut self) -> bool /* exit? */ {

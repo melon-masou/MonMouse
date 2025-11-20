@@ -110,6 +110,9 @@ fn egui_eventloop(
     app.trigger_settings_changed();
 
     let app = Rc::new(RefCell::new(app));
+    if app.borrow_mut().on_launch_wait_start_ui() {
+        return Ok(());
+    }
     loop {
         let app_ref = app.clone();
         let egui_notify1 = egui_notify.clone();

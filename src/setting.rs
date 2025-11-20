@@ -140,6 +140,9 @@ pub struct UISettings {
 
     #[serde(default = "UISettings::default_inspect_device_interval_ms")]
     pub inspect_device_interval_ms: u64,
+
+    #[serde(default = "bool_const::<true>")]
+    pub hide_ui_on_launch: bool,
 }
 
 impl Default for UISettings {
@@ -147,6 +150,7 @@ impl Default for UISettings {
         Self {
             theme: Self::default_theme(),
             inspect_device_interval_ms: Self::default_inspect_device_interval_ms(),
+            hide_ui_on_launch: true,
         }
     }
 }

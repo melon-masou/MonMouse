@@ -17,18 +17,18 @@ impl ConfigPanel {
         ui.label(text)
     }
 
-    fn config_item<T: ToString, P: Parser<T>>(
+    fn config_item<U: FieldState>(
         ui: &mut egui::Ui,
         text: &str,
-        ist: &mut InputState<T, P>,
-        add_contents: impl FnOnce(&mut egui::Ui, &mut InputState<T, P>) -> bool,
+        ist: &mut U,
+        add_contents: impl FnOnce(&mut egui::Ui, &mut U) -> bool,
     ) -> bool {
         ui.label(text);
         let changed = add_contents(ui, ist);
         if changed {
             ist.parse_only();
         }
-        if let Some(errmsg) = &ist.errmsg {
+        if let Some(errmsg) = &ist.get_err() {
             ui.label(RichText::from(errmsg.to_owned()).color(error_color(ui, false)));
         }
         ui.end_row();
@@ -55,6 +55,13 @@ impl ConfigPanel {
             "Merge unassociated events within next(MS)",
             &mut input.merge_unassociated_events_ms,
             |ui, ist| ui.add(Self::textedit(ist.buf(), 8)).changed(),
+        );
+
+        input.changed |= Self::config_item(
+            ui,
+            "Hide UI on launch",
+            &mut input.hide_ui_on_launch,
+            |ui, ist| ui.checkbox(ist.value(), "").changed(),
         );
 
         // For debugging colors Only
@@ -189,11 +196,53 @@ impl<T: Ord + FromStr + Display + Copy> Parser<T> for OrderParser<T> {
     }
 }
 
+trait FieldState {
+    fn parse_only(&mut self);
+    fn get_err(&self) -> Option<&str>;
+}
+
+struct ValueState<T: Copy> {
+    v: T,
+}
+
+impl<T: Copy> FieldState for ValueState<T> {
+    fn parse_only(&mut self) {}
+
+    fn get_err(&self) -> Option<&str> {
+        None
+    }
+}
+
+impl<T: Copy> ValueState<T> {
+    fn new(v: T) -> Self {
+        Self { v }
+    }
+    fn value(&mut self) -> &mut T {
+        &mut self.v
+    }
+    fn set_from(&mut self, v: &T) {
+        self.v = *v;
+    }
+    fn set_into(&mut self, dst: &mut T) -> Result<(), String> {
+        *dst = self.v;
+        Ok(())
+    }
+}
+
 struct InputState<T: ToString, P: Parser<T>> {
     buf: String,
     errmsg: Option<String>,
     p: P,
     t: std::marker::PhantomData<T>,
+}
+
+impl<T: ToString, P: Parser<T>> FieldState for InputState<T, P> {
+    fn parse_only(&mut self) {
+        self.errmsg = self.p.parse(self.buf.as_str()).err();
+    }
+    fn get_err(&self) -> Option<&str> {
+        self.errmsg.as_deref()
+    }
 }
 
 impl<T: ToString, P: Parser<T>> InputState<T, P> {
@@ -205,16 +254,13 @@ impl<T: ToString, P: Parser<T>> InputState<T, P> {
             t: std::marker::PhantomData,
         }
     }
-    fn set(&mut self, v: &T) {
-        self.buf = v.to_string();
-    }
     fn buf(&mut self) -> &mut String {
         &mut self.buf
     }
-    fn parse_only(&mut self) {
-        self.errmsg = self.p.parse(self.buf.as_str()).err();
+    fn set_from(&mut self, v: &T) {
+        self.buf = v.to_string();
     }
-    fn parse_into(&mut self, dst: &mut T) -> Result<(), String> {
+    fn set_into(&mut self, dst: &mut T) -> Result<(), String> {
         self.p.parse(self.buf.as_str()).map(|v| *dst = v)
     }
 }
@@ -224,6 +270,7 @@ pub struct ConfigInputState {
     theme: InputState<String, NonCheck>,
     inspect_device_interval_ms: InputState<u64, OrderParser<u64>>,
     merge_unassociated_events_ms: InputState<i64, OrderParser<i64>>,
+    hide_ui_on_launch: ValueState<bool>,
     cur_mouse_lock: InputState<String, NonCheck>,
     cur_mouse_jump_next: InputState<String, NonCheck>,
 }
@@ -241,6 +288,7 @@ impl Default for ConfigInputState {
             theme: InputState::new(NonCheck()),
             inspect_device_interval_ms: InputState::new(OrderParser::new(20, 1000)),
             merge_unassociated_events_ms: InputState::new(OrderParser::new(-1, 1000)),
+            hide_ui_on_launch: ValueState::new(false),
             cur_mouse_lock: InputState::new(NonCheck()),
             cur_mouse_jump_next: InputState::new(NonCheck()),
         }
@@ -249,29 +297,31 @@ impl Default for ConfigInputState {
 
 macro_rules! set_from {
     ($dst: expr, $src: expr, $field: ident) => {
-        $dst.$field.set(&$src.$field)
+        $dst.$field.set_from(&$src.$field)
     };
 }
-macro_rules! parse_into {
+macro_rules! set_into {
     ($dst: expr, $src: expr, $field: ident) => {
-        $dst.$field.parse_into(&mut $src.$field)?
+        $dst.$field.set_into(&mut $src.$field)?
     };
 }
 impl ConfigInputState {
-    pub fn set(&mut self, s: &Settings) {
+    pub fn set_from(&mut self, s: &Settings) {
         set_from!(self, s.ui, theme);
         set_from!(self, s.ui, inspect_device_interval_ms);
+        set_from!(self, s.ui, hide_ui_on_launch);
         set_from!(self, s.processor, merge_unassociated_events_ms);
         set_from!(self, s.processor.shortcuts, cur_mouse_lock);
         set_from!(self, s.processor.shortcuts, cur_mouse_jump_next);
     }
 
-    pub fn parse_all(&mut self, s: &mut Settings) -> Result<(), String> {
-        parse_into!(self, s.ui, theme);
-        parse_into!(self, s.ui, inspect_device_interval_ms);
-        parse_into!(self, s.processor, merge_unassociated_events_ms);
-        parse_into!(self, s.processor.shortcuts, cur_mouse_lock);
-        parse_into!(self, s.processor.shortcuts, cur_mouse_jump_next);
+    pub fn set_into(&mut self, s: &mut Settings) -> Result<(), String> {
+        set_into!(self, s.ui, theme);
+        set_into!(self, s.ui, inspect_device_interval_ms);
+        set_into!(self, s.ui, hide_ui_on_launch);
+        set_into!(self, s.processor, merge_unassociated_events_ms);
+        set_into!(self, s.processor.shortcuts, cur_mouse_lock);
+        set_into!(self, s.processor.shortcuts, cur_mouse_jump_next);
         Ok(())
     }
 }
