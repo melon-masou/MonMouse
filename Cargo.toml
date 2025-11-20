@@ -31,7 +31,7 @@ clap = { version = "4.4.11", features = ["derive"] }
 eframe = { version = "0.24", features = ["persistence", "wgpu"] }
 egui_extras = "0.24.2"
 serde = { version = "1.0.193", features = ["derive"] }
-tray-icon = "0.11.1"
+tray-icon = "0.21.2"
 image = "0.24.7"
 serde_yaml = "0.9.28"
 keyboard-types = "0.7.0"

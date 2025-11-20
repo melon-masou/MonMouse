@@ -3,7 +3,6 @@ use tray_icon::menu::Menu;
 use tray_icon::menu::MenuEvent;
 use tray_icon::menu::MenuItem;
 use tray_icon::menu::PredefinedMenuItem;
-use tray_icon::ClickType;
 use tray_icon::TrayIcon;
 use tray_icon::TrayIconBuilder;
 use tray_icon::TrayIconEvent;
@@ -49,7 +48,10 @@ impl Tray {
 
     pub fn poll_events(&self) {
         if let Ok(event) = TrayIconEvent::receiver().try_recv() {
-            if event.click_type == ClickType::Double {
+            if matches!(
+                event,
+                TrayIconEvent::Click { .. } | TrayIconEvent::DoubleClick { .. }
+            ) {
                 self.tray_reactor.restart_ui();
             }
         }
