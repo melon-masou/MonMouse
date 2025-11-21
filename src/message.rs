@@ -314,6 +314,7 @@ pub enum TimerOperation {
 
 pub struct TimerOperator {
     op_tx: Sender<TimerOperation>,
+    handle: std::thread::JoinHandle<()>,
 }
 
 impl TimerOperator {
@@ -321,7 +322,8 @@ impl TimerOperator {
         let _ = self.op_tx.send(TimerOperation::ResetInterval(dur));
     }
     pub fn stop(self) {
-        drop(self.op_tx)
+        drop(self.op_tx);
+        let _ = self.handle.join();
     }
 }
 
@@ -333,7 +335,7 @@ pub fn timer_spawn(
 ) -> TimerOperator {
     let (op_tx, op_rx) = channel::<TimerOperation>();
 
-    std::thread::spawn(move || loop {
+    let handle = std::thread::spawn(move || loop {
         loop {
             match op_rx.try_recv() {
                 Ok(o) => match o {
@@ -350,5 +352,5 @@ pub fn timer_spawn(
         }
     });
 
-    TimerOperator { op_tx }
+    TimerOperator { op_tx, handle }
 }
