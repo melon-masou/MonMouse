@@ -12,10 +12,6 @@ use std::sync::{Arc, Mutex};
 use std::{cell::RefCell, panic, process, rc::Rc, thread};
 
 use app::App;
-use components::about_panel::AboutPanel;
-use components::config_panel::ConfigPanel;
-use components::devices_panel::DevicesPanel;
-use components::status_bar::{status_bar_ui, status_popup_show};
 use eframe::egui;
 use log::info;
 use monmouse::message::UINotify;
@@ -30,6 +26,7 @@ use tray::Tray;
 
 #[cfg(debug_assertions)]
 use crate::components::debug::DebugInfo;
+use crate::components::layout::layout_ui;
 use crate::config::get_config_dir;
 
 pub fn load_icon() -> egui::IconData {
@@ -125,7 +122,7 @@ fn egui_eventloop(
 ) -> Result<(), eframe::Error> {
     let mut app = App::new(ui_reactor).load_config(config, config_path);
     app.trigger_scan_devices();
-    app.trigger_settings_changed();
+    app.trigger_system_apply_settings();
 
     let app = Rc::new(RefCell::new(app));
     if app.borrow_mut().on_launch_wait_start_ui(egui_dummy_launch) {
@@ -192,15 +189,15 @@ fn ui_options_main_window() -> eframe::NativeOptions {
     }
 }
 
-#[derive(PartialEq, Eq, Debug, Copy, Clone)]
+#[derive(PartialEq, Eq, Debug, Copy, Clone, Default)]
 enum PanelTag {
+    #[default]
     Devices,
     Config,
     About,
 }
 
 struct AppWrap {
-    cur_panel: PanelTag,
     app: Rc<RefCell<App>>,
     egui_notify: EguiNotify,
 
@@ -211,7 +208,6 @@ struct AppWrap {
 impl AppWrap {
     fn new(app: Rc<RefCell<App>>, egui_notify: EguiNotify) -> Self {
         Self {
-            cur_panel: PanelTag::Devices,
             app,
             egui_notify,
 
@@ -262,35 +258,7 @@ impl eframe::App for AppWrap {
 
         // Start painting
         Self::init_visuals(ctx, app.get_theme());
-        egui::TopBottomPanel::bottom("StatusBar").show(ctx, |ui| {
-            ui.horizontal(|ui| status_bar_ui(ui, &mut app));
-        });
-        status_popup_show(ctx, &mut app);
-        egui::SidePanel::left("TabChooser")
-            .resizable(false)
-            .show_separator_line(true)
-            .min_width(100.0)
-            .show(ctx, |ui| {
-                ui.add_space(5.0);
-                let mut tab_button = |tag| {
-                    let text = format!("{:?}", tag);
-                    let tab = egui::RichText::from(text).heading().strong();
-                    ui.selectable_value(&mut self.cur_panel, tag, tab);
-                };
-                tab_button(PanelTag::Devices);
-                tab_button(PanelTag::Config);
-                tab_button(PanelTag::About);
-
-                #[cfg(debug_assertions)]
-                self.debug_info.ui(ui);
-            });
-        egui::CentralPanel::default().show(ctx, |ui| {
-            match self.cur_panel {
-                PanelTag::Devices => DevicesPanel::ui(ui, &mut app),
-                PanelTag::Config => ConfigPanel::ui(ui, &mut app),
-                PanelTag::About => AboutPanel::ui(ui),
-            };
-        });
+        layout_ui(ctx, &mut app, &mut self.debug_info);
 
         #[cfg(debug_assertions)]
         self.debug_info

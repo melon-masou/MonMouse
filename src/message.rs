@@ -125,9 +125,20 @@ pub enum Message {
     LockCurMouse(String),
     ScanDevices(RoundtripData<(), Vec<GenericDevice>>),
     InspectDevicesStatus(RoundtripData<(), Vec<(String, DeviceStatus)>>),
-    ApplyProcessorSetting(RoundtripData<ProcessorSettings, ()>),
+    ApplyProcessorSetting(RoundtripData<ApplyProcessorSettingsData, ApplyProcessorSettingsCtx>),
     ApplyOneDeviceSetting(SendData<DeviceSettingItem>),
     SysMouseEvent(SysMouseEvent),
+}
+
+#[derive(Debug)]
+pub struct ApplyProcessorSettingsData {
+    pub ctx: ApplyProcessorSettingsCtx,
+    pub proc_settings: ProcessorSettings,
+}
+
+#[derive(Debug)]
+pub struct ApplyProcessorSettingsCtx {
+    pub user_requested: bool,
 }
 
 #[repr(i32)]

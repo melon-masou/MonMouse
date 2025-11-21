@@ -1,15 +1,15 @@
 use std::{path::PathBuf, time::Duration};
 
+use crate::{components::config_panel::ConfigInputState, styles::Theme, EguiNotify, PanelTag};
 use monmouse::{
     errors::Error,
     message::{
-        timer_spawn, DeviceStatus, GenericDevice, Message, RoundtripData, SendData, TimerDueKind,
-        TimerOperator, UINotify, UIReactor,
+        timer_spawn, ApplyProcessorSettingsCtx, ApplyProcessorSettingsData, DeviceStatus,
+        GenericDevice, Message, RoundtripData, SendData, TimerDueKind, TimerOperator, UINotify,
+        UIReactor,
     },
     setting::{write_config, DeviceSetting, DeviceSettingItem, ProcessorSettings, Settings},
 };
-
-use crate::{components::config_panel::ConfigInputState, styles::Theme, EguiNotify};
 
 pub struct App {
     pub state: AppState,
@@ -41,12 +41,21 @@ impl App {
             .send(Message::ApplyOneDeviceSetting(SendData::new(item)));
     }
 
-    pub fn trigger_settings_changed(&mut self) {
+    pub fn trigger_user_change_settings(&mut self) {
+        self.trigger_settings_changed(true);
+    }
+    pub fn trigger_system_apply_settings(&mut self) {
+        self.trigger_settings_changed(false);
+    }
+    fn trigger_settings_changed(&mut self, user_requested: bool) {
         self.result_clear();
         self.ui_reactor
             .mouse_control_tx
             .send(Message::ApplyProcessorSetting(RoundtripData::new(
-                self.collect_processor_settings(),
+                ApplyProcessorSettingsData {
+                    proc_settings: self.collect_processor_settings(),
+                    ctx: ApplyProcessorSettingsCtx { user_requested },
+                },
             )));
     }
 
@@ -61,10 +70,18 @@ impl App {
         self.inspect_timer = Some(timer);
     }
 
-    pub fn on_settings_applied(&mut self) {
-        self.state.config_input.mark_changed(false);
+    pub fn lock_panel(&mut self, reason: String) {
+        self.state.locked_panel = Some((self.state.cur_panel, reason))
     }
-    pub fn apply_new_settings(&mut self) {
+    pub fn unlock_panel(&mut self) {
+        self.state.locked_panel = None
+    }
+
+    pub fn on_settings_applied(&mut self) {
+        self.state.config_input.on_change_applied();
+        self.unlock_panel();
+    }
+    pub fn apply_user_new_settings_async(&mut self) {
         match self.state.config_input.set_into(&mut self.state.settings) {
             Ok(_) => {
                 let duration =
@@ -72,7 +89,7 @@ impl App {
                 if let Some(timer) = self.inspect_timer.as_ref() {
                     timer.update_interval(duration);
                 }
-                self.trigger_settings_changed();
+                self.trigger_user_change_settings();
             }
             Err(_) => self.result_error_alert("Not all fields contain valid value".to_owned()),
         }
@@ -279,23 +296,26 @@ impl App {
                 }
             },
             Message::ApplyProcessorSetting(data) => match data.take_rsp() {
-                Ok(_) => {
+                Ok(ctx) => {
                     self.result_ok("New settings applyed".to_owned());
-                    self.on_settings_applied();
+                    if ctx.user_requested {
+                        self.on_settings_applied();
+                    }
                 }
                 Err(e) => self.result_error_alert(format!("Failed to apply settings: {}", e)),
             },
+
             #[allow(unreachable_patterns)]
             _ => panic!("recv unexpected msg: {:?}", msg),
         }
     }
 
-    pub fn save_global_config(&mut self) {
+    pub fn save_global_config(&mut self) -> bool {
         let mut new_settings = self.state.settings.clone();
         new_settings.processor.devices = self.state.saved_settings.processor.devices.clone();
-        self.save_config(new_settings);
+        self.save_config(new_settings)
     }
-    pub fn save_devices_config(&mut self) {
+    pub fn save_devices_config(&mut self) -> bool {
         let mut new_settings = self.state.saved_settings.clone();
         new_settings.processor.devices = self
             .state
@@ -305,24 +325,25 @@ impl App {
             .map(|d| d.clone_setting())
             .collect();
         self.state.settings.processor.devices = new_settings.processor.devices.clone();
-        self.save_config(new_settings);
+        self.save_config(new_settings)
     }
-    fn save_config(&mut self, new_settings: Settings) {
+    fn save_config(&mut self, new_settings: Settings) -> bool {
         let Some(path) = &self.config_path else {
             self.result_error_alert("No path to save config".to_owned());
-            return;
+            return false;
         };
         match write_config(path, &new_settings) {
             Ok(_) => (),
             Err(e) => {
                 self.result_error_alert(format!("Failed to write config file: {}", e));
-                return;
+                return false;
             }
         }
         self.result_ok("Config saved".to_owned());
         self.state.saved_settings = new_settings.clone();
         // Don't write the whole new_settings into state.settings, since only one of global/devices config is to be saved.
         // self.state.settings = new_settings;
+        true
     }
 
     pub fn result_ok(&mut self, msg: String) {
@@ -345,6 +366,8 @@ pub struct AppState {
     pub saved_settings: Settings,
     pub managed_devices: Vec<DeviceUIState>,
     pub config_input: ConfigInputState,
+    pub cur_panel: PanelTag,
+    pub locked_panel: Option<(PanelTag, String)>,
 }
 
 pub struct DeviceUIState {

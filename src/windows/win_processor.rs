@@ -921,7 +921,7 @@ impl WinEventLoop {
                 }
                 Message::ApplyProcessorSetting(data) => {
                     let req = data.take_req();
-                    data.set_result(self.apply_new_settings(req));
+                    data.set_result(self.apply_new_settings(req.proc_settings).map(|_| req.ctx));
                     self.mouse_control_reactor.return_msg(msg)
                 }
                 Message::ApplyOneDeviceSetting(data) => {

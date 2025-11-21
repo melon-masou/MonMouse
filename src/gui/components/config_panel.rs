@@ -43,21 +43,22 @@ impl ConfigPanel {
     }
 
     pub fn advanced_config(ui: &mut egui::Ui, input: &mut ConfigInputState) {
-        input.changed |= Self::config_item(
+        let mut changed = false;
+        changed |= Self::config_item(
             ui,
             "Inspect device activity internal(MS)",
             &mut input.inspect_device_interval_ms,
             |ui, ist| ui.add(Self::textedit(ist.buf(), 8)).changed(),
         );
 
-        input.changed |= Self::config_item(
+        changed |= Self::config_item(
             ui,
             "Merge unassociated events within next(MS)",
             &mut input.merge_unassociated_events_ms,
             |ui, ist| ui.add(Self::textedit(ist.buf(), 8)).changed(),
         );
 
-        input.changed |= Self::config_item(
+        changed |= Self::config_item(
             ui,
             "Hide UI on launch",
             &mut input.hide_ui_on_launch,
@@ -67,7 +68,7 @@ impl ConfigPanel {
         // For debugging colors Only
         #[cfg(debug_assertions)]
         {
-            input.changed |= Self::config_item(ui, "Theme(Debug):", &mut input.theme, |ui, ist| {
+            changed |= Self::config_item(ui, "Theme(Debug):", &mut input.theme, |ui, ist| {
                 use crate::styles::Theme;
                 egui::ComboBox::from_id_source("ThemeChooser")
                     .selected_text(ist.buf().as_str())
@@ -82,10 +83,12 @@ impl ConfigPanel {
                     .clicked()
             });
         }
+        input.on_changed(changed);
     }
 
     pub fn shortcuts_config(ui: &mut egui::Ui, input: &mut ConfigInputState) {
-        input.changed |= Self::config_item(
+        let mut changed = false;
+        changed |= Self::config_item(
             ui,
             "Lock current mouse",
             &mut input.cur_mouse_lock,
@@ -96,7 +99,7 @@ impl ConfigPanel {
             },
         );
 
-        input.changed |= Self::config_item(
+        changed |= Self::config_item(
             ui,
             "Mouse jumping to next monitor",
             &mut input.cur_mouse_jump_next,
@@ -106,6 +109,7 @@ impl ConfigPanel {
                     .changed
             },
         );
+        input.on_changed(changed);
     }
 
     const SPACING: f32 = 10.0;
@@ -115,24 +119,28 @@ impl ConfigPanel {
                 .add_enabled(app.state.config_input.changed, manage_button("Apply"))
                 .clicked()
             {
-                app.apply_new_settings();
+                app.apply_user_new_settings_async();
             }
             if ui
                 .add_enabled(app.state.config_input.changed, manage_button("Restore"))
                 .clicked()
             {
                 app.restore_settings();
-                app.state.config_input.mark_changed(false);
+                app.state.config_input.on_change_restored();
+                app.unlock_panel();
             }
             if ui.add(manage_button("Default")).clicked() {
                 app.set_default_settings();
-                app.state.config_input.mark_changed(true);
+                app.state.config_input.on_changed(true);
             }
             if ui
-                .add_enabled(!app.state.config_input.changed, manage_button("Save"))
+                .add_enabled(app.state.config_input.to_save, manage_button("Save"))
                 .clicked()
             {
-                app.save_global_config();
+                let saved = app.save_global_config();
+                if saved {
+                    app.state.config_input.on_change_saved();
+                }
             }
         });
 
@@ -160,6 +168,14 @@ impl ConfigPanel {
                 });
             ui.add_space(Self::SPACING);
         });
+
+        Self::check_new_change(app);
+    }
+
+    fn check_new_change(app: &mut App) {
+        if app.state.config_input.take_new_changed() {
+            app.lock_panel("Settings changed but not applied".to_string());
+        }
     }
 }
 
@@ -267,6 +283,8 @@ impl<T: ToString, P: Parser<T>> InputState<T, P> {
 
 pub struct ConfigInputState {
     changed: bool,
+    have_new_change: bool,
+    to_save: bool,
     theme: InputState<String, NonCheck>,
     inspect_device_interval_ms: InputState<u64, OrderParser<u64>>,
     merge_unassociated_events_ms: InputState<i64, OrderParser<i64>>,
@@ -276,8 +294,28 @@ pub struct ConfigInputState {
 }
 
 impl ConfigInputState {
-    pub fn mark_changed(&mut self, v: bool) {
-        self.changed = v;
+    pub fn on_changed(&mut self, changed: bool) {
+        if changed && !self.changed {
+            self.changed = true;
+            self.have_new_change = true;
+        }
+    }
+    pub fn on_change_applied(&mut self) {
+        self.changed = false;
+        self.to_save = true;
+    }
+    pub fn on_change_restored(&mut self) {
+        self.changed = false;
+    }
+    pub fn on_change_saved(&mut self) {
+        self.to_save = false;
+    }
+    pub fn take_new_changed(&mut self) -> bool {
+        if self.have_new_change {
+            self.have_new_change = false;
+            return true;
+        }
+        false
     }
 }
 
@@ -285,6 +323,8 @@ impl Default for ConfigInputState {
     fn default() -> Self {
         Self {
             changed: false,
+            to_save: false,
+            have_new_change: false,
             theme: InputState::new(NonCheck()),
             inspect_device_interval_ms: InputState::new(OrderParser::new(20, 1000)),
             merge_unassociated_events_ms: InputState::new(OrderParser::new(-1, 1000)),
