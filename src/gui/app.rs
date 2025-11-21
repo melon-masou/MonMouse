@@ -196,10 +196,11 @@ impl App {
         }
     }
 
-    pub fn on_launch_wait_start_ui(&mut self) -> bool {
+    pub fn on_launch_wait_start_ui<T: Fn()>(&mut self, fn_before_wait: T) -> bool {
         if !self.state.settings.ui.hide_ui_on_launch {
             return self.should_exit;
         }
+        fn_before_wait();
         self.wait_for_restart_background()
     }
 

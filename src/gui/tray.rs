@@ -3,6 +3,7 @@ use tray_icon::menu::Menu;
 use tray_icon::menu::MenuEvent;
 use tray_icon::menu::MenuItem;
 use tray_icon::menu::PredefinedMenuItem;
+use tray_icon::MouseButton;
 use tray_icon::TrayIcon;
 use tray_icon::TrayIconBuilder;
 use tray_icon::TrayIconEvent;
@@ -32,6 +33,7 @@ impl Tray {
         let trayicon = TrayIconBuilder::new()
             .with_tooltip("MonMouse")
             .with_menu(Box::new(tray_menu))
+            .with_menu_on_left_click(false)
             .with_icon(
                 tray_icon::Icon::from_rgba(icon.rgba, icon.width, icon.height)
                     .expect("Failed to open icon"),
@@ -50,7 +52,13 @@ impl Tray {
         if let Ok(event) = TrayIconEvent::receiver().try_recv() {
             if matches!(
                 event,
-                TrayIconEvent::Click { .. } | TrayIconEvent::DoubleClick { .. }
+                TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    ..
+                } | TrayIconEvent::DoubleClick {
+                    button: MouseButton::Left,
+                    ..
+                }
             ) {
                 self.tray_reactor.restart_ui();
             }

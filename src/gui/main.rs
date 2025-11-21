@@ -99,6 +99,24 @@ fn mouse_control_spawn(mut eventloop: monmouse::Eventloop, tray: Tray) -> Result
     Ok(())
 }
 
+// Without running this dummy window, the win_processor event loop may block after ui
+// windows open (when hide_ui_on_launch = true). Suspect this is related to eframe
+// initialization.
+fn egui_dummy_launch() {
+    let opts = eframe::NativeOptions {
+        viewport: egui::viewport::ViewportBuilder::default()
+            .with_inner_size([1.0, 1.0])
+            .with_decorations(false)
+            .with_visible(false)
+            .with_resizable(false),
+        ..Default::default()
+    };
+
+    let _ = eframe::run_simple_native("MonMouseDummy", opts, move |ctx, _frame| {
+        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+    });
+}
+
 fn egui_eventloop(
     ui_reactor: UIReactor,
     config: Result<Settings, Error>,
@@ -110,7 +128,7 @@ fn egui_eventloop(
     app.trigger_settings_changed();
 
     let app = Rc::new(RefCell::new(app));
-    if app.borrow_mut().on_launch_wait_start_ui() {
+    if app.borrow_mut().on_launch_wait_start_ui(egui_dummy_launch) {
         return Ok(());
     }
     loop {
