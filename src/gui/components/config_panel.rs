@@ -116,12 +116,6 @@ impl ConfigPanel {
     pub fn ui(ui: &mut egui::Ui, app: &mut App) {
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(app.state.config_input.changed, manage_button("Apply"))
-                .clicked()
-            {
-                app.apply_user_new_settings_async();
-            }
-            if ui
                 .add_enabled(app.state.config_input.changed, manage_button("Restore"))
                 .clicked()
             {
@@ -133,14 +127,8 @@ impl ConfigPanel {
                 app.set_default_settings();
                 app.state.config_input.on_changed(true);
             }
-            if ui
-                .add_enabled(app.state.config_input.to_save, manage_button("Save"))
-                .clicked()
-            {
-                let saved = app.save_global_config();
-                if saved {
-                    app.state.config_input.on_change_saved();
-                }
+            if ui.add(manage_button("Save")).clicked() {
+                app.apply_user_new_settings_async();
             }
         });
 
@@ -284,7 +272,6 @@ impl<T: ToString, P: Parser<T>> InputState<T, P> {
 pub struct ConfigInputState {
     changed: bool,
     have_new_change: bool,
-    to_save: bool,
     theme: InputState<String, NonCheck>,
     inspect_device_interval_ms: InputState<u64, OrderParser<u64>>,
     merge_unassociated_events_ms: InputState<i64, OrderParser<i64>>,
@@ -302,13 +289,9 @@ impl ConfigInputState {
     }
     pub fn on_change_applied(&mut self) {
         self.changed = false;
-        self.to_save = true;
     }
     pub fn on_change_restored(&mut self) {
         self.changed = false;
-    }
-    pub fn on_change_saved(&mut self) {
-        self.to_save = false;
     }
     pub fn take_new_changed(&mut self) -> bool {
         if self.have_new_change {
@@ -323,7 +306,6 @@ impl Default for ConfigInputState {
     fn default() -> Self {
         Self {
             changed: false,
-            to_save: false,
             have_new_change: false,
             theme: InputState::new(NonCheck()),
             inspect_device_interval_ms: InputState::new(OrderParser::new(20, 1000)),

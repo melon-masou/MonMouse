@@ -8,7 +8,7 @@ pub struct DebugInfo {
 }
 
 impl DebugInfo {
-    pub fn on_paint(&mut self, tick: u64) {
+    pub fn on_paint_frame(&mut self, tick: u64) {
         self.paint_times += 1;
         self.last_paint = self.cur_paint;
         self.cur_paint = tick;

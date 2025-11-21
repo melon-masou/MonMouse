@@ -5,14 +5,13 @@ use crate::{
     components::{
         about_panel::AboutPanel,
         config_panel::ConfigPanel,
-        debug::DebugInfo,
         devices_panel::DevicesPanel,
         status_bar::{status_bar_ui, status_popup_show},
     },
     PanelTag,
 };
 
-pub fn layout_ui(ctx: &egui::Context, app: &mut App, debug_info: &mut DebugInfo) {
+pub fn layout_ui(ctx: &egui::Context, app: &mut App) {
     egui::TopBottomPanel::bottom("StatusBar").show(ctx, |ui| {
         ui.horizontal(|ui| status_bar_ui(ui, app));
     });
@@ -44,7 +43,7 @@ pub fn layout_ui(ctx: &egui::Context, app: &mut App, debug_info: &mut DebugInfo)
             tab_button(PanelTag::About);
 
             #[cfg(debug_assertions)]
-            debug_info.ui(ui);
+            app.debug_info.ui(ui);
         });
     egui::CentralPanel::default().show(ctx, |ui| {
         match app.state.cur_panel {

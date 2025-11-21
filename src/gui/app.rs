@@ -1,5 +1,7 @@
 use std::{path::PathBuf, time::Duration};
 
+#[cfg(debug_assertions)]
+use crate::components::debug::DebugInfo;
 use crate::{components::config_panel::ConfigInputState, styles::Theme, EguiNotify, PanelTag};
 use monmouse::{
     errors::Error,
@@ -19,6 +21,8 @@ pub struct App {
     should_exit: bool,
     ui_reactor: UIReactor,
     inspect_timer: Option<TimerOperator>,
+    #[cfg(debug_assertions)]
+    pub debug_info: DebugInfo,
 }
 
 impl App {
@@ -80,6 +84,7 @@ impl App {
     pub fn on_settings_applied(&mut self) {
         self.state.config_input.on_change_applied();
         self.unlock_panel();
+        self.save_global_config();
     }
     pub fn apply_user_new_settings_async(&mut self) {
         match self.state.config_input.set_into(&mut self.state.settings) {
@@ -102,6 +107,11 @@ impl App {
         self.state.config_input.set_from(&Settings::default());
         self.result_ok("Default settings restored".to_owned());
     }
+
+    #[cfg(debug_assertions)]
+    pub fn on_paint_frame(&mut self, tick: u64) {
+        self.debug_info.on_paint_frame(tick);
+    }
 }
 
 impl App {
@@ -114,6 +124,8 @@ impl App {
             should_exit: false,
             ui_reactor,
             inspect_timer: None,
+            #[cfg(debug_assertions)]
+            debug_info: DebugInfo::default(),
         }
     }
 

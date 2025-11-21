@@ -200,20 +200,11 @@ enum PanelTag {
 struct AppWrap {
     app: Rc<RefCell<App>>,
     egui_notify: EguiNotify,
-
-    #[cfg(debug_assertions)]
-    debug_info: DebugInfo,
 }
 
 impl AppWrap {
     fn new(app: Rc<RefCell<App>>, egui_notify: EguiNotify) -> Self {
-        Self {
-            app,
-            egui_notify,
-
-            #[cfg(debug_assertions)]
-            debug_info: DebugInfo::default(),
-        }
+        Self { app, egui_notify }
     }
 }
 
@@ -258,11 +249,10 @@ impl eframe::App for AppWrap {
 
         // Start painting
         Self::init_visuals(ctx, app.get_theme());
-        layout_ui(ctx, &mut app, &mut self.debug_info);
+        layout_ui(ctx, &mut app);
 
         #[cfg(debug_assertions)]
-        self.debug_info
-            .on_paint(ctx.input(|input| (input.time * 1000.0).round()) as u64);
+        app.on_paint_frame(ctx.input(|input| (input.time * 1000.0).round()) as u64);
     }
 }
 
