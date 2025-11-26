@@ -214,7 +214,7 @@ pub fn device_list_all() -> Result<Vec<RAWINPUTDEVICELIST>> {
 
         let res = unsafe {
             GetRawInputDeviceList(
-                Some(wmut_vec(&mut dev_list)),
+                Some(dev_list.as_mut_ptr()),
                 &mut cnt,
                 wsize_of::<RAWINPUTDEVICELIST>(),
             )
@@ -240,7 +240,7 @@ pub fn device_get_rawinput_rid_info(handle: HANDLE) -> Result<RID_DEVICE_INFO> {
     let mut dst = RID_DEVICE_INFO::default();
     let mut size = wsize_of_val(&dst);
     let r = unsafe {
-        GetRawInputDeviceInfoW(handle, RIDI_DEVICEINFO, Some(wmut_obj(&mut dst)), &mut size)
+        GetRawInputDeviceInfoW(handle, RIDI_DEVICEINFO, Some(as_cvoid(&mut dst)), &mut size)
     };
     if r == u32::MAX {
         if size <= wsize_of_val(&dst) {
@@ -291,14 +291,7 @@ pub fn device_get_iface_prop(
     let mut mtyp = typ;
 
     let cr = unsafe {
-        CM_Get_Device_Interface_PropertyW(
-            iface.as_pcwstr(),
-            wptr(&key),
-            wmut_ptr(&mut mtyp),
-            None,
-            &mut size,
-            0,
-        )
+        CM_Get_Device_Interface_PropertyW(iface.as_pcwstr(), &key, &mut mtyp, None, &mut size, 0)
     };
     match cr {
         CR_BUFFER_SMALL | CR_SUCCESS => {
@@ -314,8 +307,8 @@ pub fn device_get_iface_prop(
     let cr = unsafe {
         CM_Get_Device_Interface_PropertyW(
             iface.as_pcwstr(),
-            wptr(&key),
-            wmut_ptr(&mut mtyp),
+            &key,
+            &mut mtyp,
             Some(buf.as_mut_ptr()),
             &mut size,
             0,
@@ -340,9 +333,7 @@ pub fn device_get_node_prop(
     let mut size: WSize = 0;
     let mut mtyp = typ;
 
-    let cr = unsafe {
-        CM_Get_DevNode_PropertyW(devinst, wptr(&key), wmut_ptr(&mut mtyp), None, &mut size, 0)
-    };
+    let cr = unsafe { CM_Get_DevNode_PropertyW(devinst, &key, &mut mtyp, None, &mut size, 0) };
     match cr {
         CR_BUFFER_SMALL | CR_SUCCESS => {
             if mtyp != typ {
@@ -357,8 +348,8 @@ pub fn device_get_node_prop(
     let cr = unsafe {
         CM_Get_DevNode_PropertyW(
             devinst,
-            wptr(&key),
-            wmut_ptr(&mut mtyp),
+            &key,
+            &mut mtyp,
             Some(buf.as_mut_ptr()),
             &mut size,
             0,
@@ -428,7 +419,7 @@ pub fn device_get_ifaces_list(
         let cr = unsafe {
             CM_Get_Device_Interface_List_SizeW(
                 &mut size,
-                wptr(class_guid),
+                class_guid,
                 instance_id.as_pcwstr(),
                 CM_GET_DEVICE_INTERFACE_LIST_PRESENT,
             )
@@ -446,7 +437,7 @@ pub fn device_get_ifaces_list(
         };
         let cr = unsafe {
             CM_Get_Device_Interface_ListW(
-                wptr(class_guid),
+                class_guid,
                 instance_id.as_pcwstr(),
                 buf.as_mut_slice(),
                 pre_flag,
@@ -675,7 +666,7 @@ pub fn set_subclass<T: SubclassHandler>(
                 hwnd,
                 Some(subclass_proc::<T>),
                 uidsubclass,
-                wmut_ptr(h) as usize,
+                h as *mut T as usize,
             )
         },
         None => unsafe { SetWindowSubclass(hwnd, None, uidsubclass, 0) },

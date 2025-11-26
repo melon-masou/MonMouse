@@ -19,24 +19,8 @@ macro_rules! ce {
     }};
 }
 
-pub fn wmut_vec<T>(v: &mut Vec<T>) -> *mut T {
-    v.as_mut_ptr()
-}
-
-pub fn wmut_obj<T>(v: &mut T) -> *mut std::ffi::c_void {
+pub fn as_cvoid<T>(v: &mut T) -> *mut std::ffi::c_void {
     v as *mut _ as *mut std::ffi::c_void
-}
-
-pub fn wmut_buf<T>(v: &mut Vec<T>) -> *mut std::ffi::c_void {
-    v.as_mut_ptr() as *mut std::ffi::c_void
-}
-
-pub fn wptr<T>(v: &T) -> *const T {
-    v as *const T
-}
-
-pub fn wmut_ptr<T>(v: &mut T) -> *mut T {
-    v as *mut T
 }
 
 #[allow(clippy::mut_from_ref)]
@@ -74,7 +58,7 @@ pub struct WObj {
 impl WObj {
     pub fn from<T>(t: &mut T) -> WObj {
         WObj {
-            ptr: wmut_obj(t),
+            ptr: as_cvoid(t),
             size: wsize_of_val(t),
         }
     }
