@@ -1,4 +1,4 @@
-use eframe::egui;
+use eframe::egui::{self, TextBuffer};
 use egui_extras::{Column, Size, StripBuilder, TableBuilder};
 use monmouse::{
     message::{DeviceStatus, GenericDevice, Positioning},
@@ -54,7 +54,10 @@ impl DevicesPanel {
         let mut changed = false;
         row.col(|ui| {
             indicator_ui(ui, device_status_color(ui, &device.status));
-            ui.label(Self::active_str(&device.status));
+            ui.label(t!(format!(
+                "devices.activity.{}",
+                Self::active_str(&device.status)
+            )));
         });
         row.col(|ui| {
             if toggle_ui(ui, &mut device.device_setting.switch, "switch").changed() {
@@ -79,10 +82,10 @@ impl DevicesPanel {
             details_popup.collapsed(ui, d.product_name.clone(), |ui, action| {
                 let details_text = Self::device_details_text(&device.generic);
                 ui.horizontal(|ui| {
-                    if ui.button("Close").clicked() {
+                    if ui.button(t!("btn.Close")).clicked() {
                         action.mark_close();
                     }
-                    if ui.button("Copy").clicked() {
+                    if ui.button(t!("btn.Copy")).clicked() {
                         ui.ctx().copy_text(details_text.clone());
                     }
                 });
@@ -104,26 +107,26 @@ impl DevicesPanel {
             .drag_to_scroll(true)
             .auto_shrink(false)
             .cell_layout(egui::Layout::left_to_right(egui::Align::LEFT))
-            .column(Column::exact(100.0))
+            .column(Column::exact(110.0))
             .columns(Column::auto(), 3)
             .column(Column::remainder());
 
         table
             .header(20.0, |mut header| {
                 header.col(|ui| {
-                    ui.strong("Activity");
+                    ui.strong(t!("devices.col.Activity"));
                 });
                 header.col(|ui| {
-                    ui.strong("Switch");
+                    ui.strong(t!("devices.col.Switch"));
                 });
                 header.col(|ui| {
-                    ui.strong("Locked");
+                    ui.strong(t!("devices.col.Locked"));
                 });
                 header.col(|ui| {
-                    ui.strong("Type");
+                    ui.strong(t!("devices.col.Type"));
                 });
                 header.col(|ui| {
-                    ui.strong("Product");
+                    ui.strong(t!("devices.col.Device"));
                 });
             })
             .body(|mut body| {
@@ -162,10 +165,16 @@ impl DevicesPanel {
 
     pub fn ui(ui: &mut egui::Ui, app: &mut App) {
         ui.horizontal(|ui| {
-            if ui.add(manage_button("Scan")).clicked() {
+            if ui
+                .add(manage_button(t!("devices.btn.Scan").as_str()))
+                .clicked()
+            {
                 app.trigger_scan_devices();
             }
-            if ui.add(manage_button("Save")).clicked() {
+            if ui
+                .add(manage_button(t!("devices.btn.Save").as_str()))
+                .clicked()
+            {
                 app.save_devices_config();
             }
         });

@@ -151,6 +151,9 @@ pub struct UISettings {
     #[serde(default = "UISettings::default_theme")]
     pub theme: String,
 
+    #[serde(default = "UISettings::default_language")]
+    pub language: String,
+
     #[serde(default = "UISettings::default_inspect_device_interval_ms")]
     pub inspect_device_interval_ms: u64,
 
@@ -162,6 +165,7 @@ impl Default for UISettings {
     fn default() -> Self {
         Self {
             theme: Self::default_theme(),
+            language: Self::default_language(),
             inspect_device_interval_ms: Self::default_inspect_device_interval_ms(),
             hide_ui_on_launch: Self::default_hide_ui_on_launch(),
         }
@@ -171,6 +175,9 @@ impl Default for UISettings {
 impl UISettings {
     fn default_theme() -> String {
         "".to_owned()
+    }
+    fn default_language() -> String {
+        "en".to_owned()
     }
     fn default_inspect_device_interval_ms() -> u64 {
         100

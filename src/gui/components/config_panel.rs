@@ -1,9 +1,9 @@
-use std::{cmp::Ordering, fmt::Display, str::FromStr};
+use std::{borrow::Cow, cmp::Ordering, fmt::Display, str::FromStr};
 
-use eframe::egui::{self, RichText};
+use eframe::egui::{self, RichText, TextBuffer};
 use monmouse::setting::Settings;
 
-use crate::app::App;
+use crate::{app::App, font::setup_fonts_for_lang};
 
 use super::widget::{error_color, manage_button, ShortcutChoosePopup};
 
@@ -17,13 +17,13 @@ impl ConfigPanel {
         ui.label(text)
     }
 
-    fn config_item<U: FieldState>(
+    fn config_item<'a, U: FieldState>(
         ui: &mut egui::Ui,
-        text: &str,
+        text: impl Into<Cow<'a, str>>,
         ist: &mut U,
         add_contents: impl FnOnce(&mut egui::Ui, &mut U) -> bool,
     ) -> bool {
-        ui.label(text);
+        ui.label(text.into().as_str());
         let changed = add_contents(ui, ist);
         if changed {
             ist.parse_only();
@@ -42,41 +42,73 @@ impl ConfigPanel {
             .desired_width(char_limit as f32 * 10.0)
     }
 
-    pub fn advanced_config(ui: &mut egui::Ui, input: &mut ConfigInputState) {
+    pub fn basic_config(ui: &mut egui::Ui, input: &mut ConfigInputState) {
         let mut changed = false;
+
         changed |= Self::config_item(
             ui,
-            "Inspect device activity internal(MS)",
-            &mut input.inspect_device_interval_ms,
-            |ui, ist| ui.add(Self::textedit(ist.buf(), 8)).changed(),
+            t!("config.desc.language"),
+            &mut input.language,
+            |ui, ist| {
+                egui::ComboBox::from_id_salt("LanguageChooser")
+                    .selected_text(t!("lang", locale = ist.buf().as_str()))
+                    .show_ui(ui, |ui| {
+                        rust_i18n::available_locales!().iter().for_each(|loc| {
+                            let new_lang = ui
+                                .selectable_value(
+                                    ist.buf(),
+                                    loc.to_string(),
+                                    t!("lang", locale = loc),
+                                )
+                                .changed();
+                            if new_lang {
+                                setup_fonts_for_lang(ui.ctx(), loc);
+                            }
+                        });
+                    })
+                    .response
+                    .clicked()
+            },
         );
 
         changed |= Self::config_item(
             ui,
-            "Merge unassociated events within next(MS)",
-            &mut input.merge_unassociated_events_ms,
-            |ui, ist| ui.add(Self::textedit(ist.buf(), 8)).changed(),
-        );
-
-        changed |= Self::config_item(
-            ui,
-            "Hide UI on launch",
+            t!("config.desc.hide_ui_on_launch"),
             &mut input.hide_ui_on_launch,
             |ui, ist| ui.checkbox(ist.value(), "").changed(),
         );
 
         changed |= Self::config_item(
             ui,
-            "Show inactive switch-enabled cursors",
+            t!("config.desc.show_inactive_cursors"),
             &mut input.show_inactive_cursors,
             |ui, ist| ui.checkbox(ist.value(), "").changed(),
         );
 
         changed |= Self::config_item(
             ui,
-            "Show marker on inactive cursors",
+            t!("config.desc.show_inactive_cursor_markers"),
             &mut input.show_inactive_cursor_markers,
             |ui, ist| ui.checkbox(ist.value(), "").changed(),
+        );
+
+        input.on_changed(changed);
+    }
+
+    pub fn advanced_config(ui: &mut egui::Ui, input: &mut ConfigInputState) {
+        let mut changed = false;
+        changed |= Self::config_item(
+            ui,
+            t!("config.desc.inspect_device_interval_ms"),
+            &mut input.inspect_device_interval_ms,
+            |ui, ist| ui.add(Self::textedit(ist.buf(), 8)).changed(),
+        );
+
+        changed |= Self::config_item(
+            ui,
+            t!("config.desc.merge_unassociated_events_ms"),
+            &mut input.merge_unassociated_events_ms,
+            |ui, ist| ui.add(Self::textedit(ist.buf(), 8)).changed(),
         );
 
         // For debugging colors Only
@@ -104,7 +136,7 @@ impl ConfigPanel {
         let mut changed = false;
         changed |= Self::config_item(
             ui,
-            "Lock current mouse",
+            t!("config.shortcut.cur_mouse_lock"),
             &mut input.cur_mouse_lock,
             |ui, ist| {
                 ShortcutChoosePopup::new("cur_mouse_lock")
@@ -115,7 +147,7 @@ impl ConfigPanel {
 
         changed |= Self::config_item(
             ui,
-            "Mouse jumping to next monitor",
+            t!("config.shortcut.cur_mouse_jump_next"),
             &mut input.cur_mouse_jump_next,
             |ui, ist| {
                 ShortcutChoosePopup::new("cur_mouse_jump_next")
@@ -130,25 +162,43 @@ impl ConfigPanel {
     pub fn ui(ui: &mut egui::Ui, app: &mut App) {
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(app.state.config_input.changed, manage_button("Restore"))
+                .add_enabled(
+                    app.state.config_input.changed,
+                    manage_button(t!("config.btn.Restore").as_str()),
+                )
                 .clicked()
             {
                 app.restore_settings();
                 app.state.config_input.on_change_restored();
                 app.unlock_panel();
             }
-            if ui.add(manage_button("Default")).clicked() {
+            if ui
+                .add(manage_button(t!("config.btn.Default").as_str()))
+                .clicked()
+            {
                 app.set_default_settings();
                 app.state.config_input.on_changed(true);
             }
-            if ui.add(manage_button("Save")).clicked() {
+            if ui
+                .add(manage_button(t!("config.btn.Save").as_str()))
+                .clicked()
+            {
                 app.apply_user_new_settings_async();
             }
         });
 
         ui.separator();
         egui::ScrollArea::vertical().show(ui, |ui| {
-            Self::title(ui, "Shortcuts");
+            egui::Grid::new("BasicPart")
+                .num_columns(2)
+                .spacing([40.0, 8.0])
+                .striped(false)
+                .show(ui, |ui| {
+                    Self::basic_config(ui, &mut app.state.config_input);
+                });
+            ui.add_space(Self::SPACING);
+
+            Self::title(ui, t!("config.part.Shortcuts").as_str());
             ui.add_space(Self::SPACING);
             egui::Grid::new("ShortcutsPart")
                 .num_columns(2)
@@ -159,7 +209,7 @@ impl ConfigPanel {
                 });
             ui.add_space(Self::SPACING);
 
-            Self::title(ui, "Advanced");
+            Self::title(ui, t!("config.part.Advanced").as_str());
             ui.add_space(Self::SPACING);
             egui::Grid::new("AdvancedPart")
                 .num_columns(2)
@@ -176,7 +226,7 @@ impl ConfigPanel {
 
     fn check_new_change(app: &mut App) {
         if app.state.config_input.take_new_changed() {
-            app.lock_panel("Settings changed. Save or restore to continue".to_string());
+            app.lock_panel(t!("msg.settings_changed_cont").to_string());
         }
     }
 }
@@ -205,10 +255,15 @@ impl<T: Ord + FromStr + Display + Copy> Parser<T> for OrderParser<T> {
     fn parse(&mut self, st: &str) -> Result<T, String> {
         let v = match T::from_str(st) {
             Ok(v) => v,
-            Err(_) => return Err("not a valid value".to_owned()),
+            Err(_) => return Err(t!("config.validate.invalid_value").to_string()),
         };
         if self.min.cmp(&v) == Ordering::Greater || v.cmp(&self.max) == Ordering::Greater {
-            return Err(format!("value should among {}-{}", self.min, self.max));
+            return Err(format!(
+                "{} {}-{}",
+                t!("config.validate.value_should_among"),
+                self.min,
+                self.max
+            ));
         }
         Ok(v)
     }
@@ -287,6 +342,7 @@ pub struct ConfigInputState {
     changed: bool,
     have_new_change: bool,
     theme: InputState<String, NonCheck>,
+    language: InputState<String, NonCheck>,
     inspect_device_interval_ms: InputState<u64, OrderParser<u64>>,
     merge_unassociated_events_ms: InputState<i64, OrderParser<i64>>,
     show_inactive_cursors: ValueState<bool>,
@@ -324,6 +380,7 @@ impl Default for ConfigInputState {
             changed: false,
             have_new_change: false,
             theme: InputState::new(NonCheck()),
+            language: InputState::new(NonCheck()),
             inspect_device_interval_ms: InputState::new(OrderParser::new(20, 1000)),
             merge_unassociated_events_ms: InputState::new(OrderParser::new(-1, 1000)),
             show_inactive_cursors: ValueState::new(false),
@@ -348,6 +405,7 @@ macro_rules! set_into {
 impl ConfigInputState {
     pub fn set_from(&mut self, s: &Settings) {
         set_from!(self, s.ui, theme);
+        set_from!(self, s.ui, language);
         set_from!(self, s.ui, inspect_device_interval_ms);
         set_from!(self, s.ui, hide_ui_on_launch);
         set_from!(self, s.processor, merge_unassociated_events_ms);
@@ -359,6 +417,7 @@ impl ConfigInputState {
 
     pub fn set_into(&mut self, s: &mut Settings) -> Result<(), String> {
         set_into!(self, s.ui, theme);
+        set_into!(self, s.ui, language);
         set_into!(self, s.ui, inspect_device_interval_ms);
         set_into!(self, s.ui, hide_ui_on_launch);
         set_into!(self, s.processor, merge_unassociated_events_ms);

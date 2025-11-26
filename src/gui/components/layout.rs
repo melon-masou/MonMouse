@@ -1,4 +1,5 @@
 use eframe::egui;
+use rust_i18n::t;
 
 use crate::{
     app::App,
@@ -23,7 +24,7 @@ pub fn layout_ui(ctx: &egui::Context, app: &mut App) {
         .show(ctx, |ui| {
             ui.add_space(5.0);
             let mut tab_button = |tag| {
-                let text = format!("{:?}", tag);
+                let text = t!(format!("panel.{:?}", tag));
                 let tab = egui::RichText::from(text).heading().strong();
                 if ui
                     .selectable_label(app.state.cur_panel == tag, tab)

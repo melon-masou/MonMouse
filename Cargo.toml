@@ -35,6 +35,8 @@ tray-icon = "0.21.2"
 image = "0.24.7"
 serde_yaml = "0.9.28"
 keyboard-types = "0.7.0"
+rust-i18n = "3"
+fontdb = "0.23.0"
 
 [target.'cfg(target_os = "windows")'.dependencies.windows]
 version = "0.58"

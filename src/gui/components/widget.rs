@@ -232,7 +232,7 @@ impl NotificationPopup {
                         ui.add_space(self.content_space);
                         let resp = popup_ui(ui, &mut action);
                         ui.add_space(self.content_space);
-                        if ui.button("Close").clicked() {
+                        if ui.button(t!("btn.Close")).clicked() {
                             action.mark_close();
                         }
                         resp
@@ -548,7 +548,7 @@ impl ShortcutChoosePopup {
             })
             .changed;
 
-            if ui.button("Clear").clicked() {
+            if ui.button(t!("btn.Clear")).clicked() {
                 changed = true;
                 state.key_input = "".to_string();
                 action.mark_close();

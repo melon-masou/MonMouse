@@ -1,0 +1,67 @@
+lang: "Simplified Chinese"
+btn:
+  Close: 关闭
+  Copy: 复制
+  Clear: 清空
+panel:
+  Devices: 设备
+  Config: 配置
+  About: 关于
+# device_panel
+devices:
+  btn:
+    Scan: 扫描
+    Save: 保存
+  col:
+    Activity: 活动
+    Switch: 切换
+    Locked: 锁定
+    Type: 类型
+    Device: 设备
+  activity:
+    Active: 活跃
+    Relative: 相对
+    Absolute: 绝对
+    Idle: 空闲
+    Disconnected: 拔出
+    Unknown: 未知
+# config_panel
+config:
+  part:
+    Shortcuts: 快捷键
+    Advanced: 高级
+  btn:
+    Restore: 恢复
+    Default: 默认
+    Save: 保存
+  desc:
+    language: 语言
+    inspect_device_interval_ms: 检查设备活动间隔 (毫秒)
+    hide_ui_on_launch: 启动时隐藏界面
+    merge_unassociated_events_ms: 合并下一时段未关联的事件 (毫秒)
+    show_inactive_cursors: 显示非活动的可切换光标
+    show_inactive_cursor_markers: 为非活动光标显示标记
+  shortcut:
+    cur_mouse_lock: 锁定当前鼠标
+    cur_mouse_jump_next: 鼠标跳转到下一显示器
+  validate:
+    invalid_value: 无效的值
+    value_should_among: 值应在以下范围内
+about:
+  Version: 版本
+  License: 许可证
+  Source: 源码
+msg:
+  settings_changed_cont: 配置已更改， 请保存或恢复后继续
+  settings_restored: 配置已恢复
+  settings_default_restored: 已恢复为默认配置
+  settings_apply_fail: 应用新配置失败
+  settings_applied: 新配置已应用
+  settings_invalid_field: 有无效配置项值
+  settings_load_failed_use_default: 无法加载配置， 已使用默认配置
+  settings_saved: 配置已保存
+  settings_undefined_save_path: 未定义配置保存路径
+  settings_write_fail: 写入配置文件失败
+  scanned_devices: "扫描到 %{number} 个设备"
+  scan_fail: 设备扫描失败
+  inspect_device_fail: 探测设备状态失败

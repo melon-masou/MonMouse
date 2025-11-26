@@ -17,8 +17,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     LoadImageW, PostQuitMessage, RegisterClassW, SetLayeredWindowAttributes, SetWindowLongPtrW,
     SetWindowPos, ShowWindow, DI_NORMAL, GWLP_USERDATA, HICON, HWND_TOPMOST, ICONINFO, IDC_ARROW,
     IMAGE_CURSOR, LR_SHARED, LWA_COLORKEY, SM_CXCURSOR, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,
-    SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SWP_NOACTIVATE, SWP_NOZORDER, SW_HIDE, SW_SHOW,
-    SW_SHOWNA, WM_DESTROY, WM_PAINT, WNDCLASSW, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+    SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SWP_NOACTIVATE, SWP_NOZORDER, SW_HIDE, SW_SHOWNOACTIVATE,
+    WM_DESTROY, WM_PAINT, WNDCLASSW, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
     WS_EX_TRANSPARENT, WS_POPUP,
 };
 use windows::Win32::{
@@ -312,7 +312,7 @@ pub fn create_overlay_window(module: Option<HMODULE>) -> Result<(HMODULE, HWND)>
     let ctx = Box::new(OverlayContext::create());
     unsafe {
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(ctx) as isize);
-        let _ = ShowWindow(hwnd, SW_SHOW);
+        let _ = ShowWindow(hwnd, SW_HIDE);
     };
 
     Ok((hinstance, hwnd))
@@ -338,7 +338,7 @@ pub fn refresh_overlay_window(hwnd: HWND) -> Result<()> {
 
 fn show_overlay(hwnd: HWND) {
     unsafe {
-        let _ = ShowWindow(hwnd, SW_SHOWNA);
+        let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
         let _ = UpdateWindow(hwnd);
     }
 }

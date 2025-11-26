@@ -1,0 +1,67 @@
+lang: English
+btn:
+  Close: Close
+  Copy: Copy
+  Clear: Clear
+panel:
+  Devices: Devices
+  Config: Config
+  About: About
+# device_panel
+devices:
+  btn:
+    Scan: Scan
+    Save: Save
+  col:
+    Activity: Activity
+    Switch: Switch
+    Locked: Locked
+    Type: Type
+    Device: Device
+  activity:
+    Active: Active
+    Relative: Relative
+    Absolute: Absolute
+    Idle: Idle
+    Disconnected: Disconnected
+    Unknown: Unknown
+# config_panel
+config:
+  part:
+    Shortcuts: Shortcuts
+    Advanced: Advanced
+  btn:
+    Restore: Restore
+    Default: Default
+    Save: Save
+  desc:
+    language: Language
+    inspect_device_interval_ms: Inspect device activity internal (MS)
+    hide_ui_on_launch: Hide UI on launch
+    merge_unassociated_events_ms: Merge unassociated events within next (MS)
+    show_inactive_cursors: Show inactive switch-enabled cursors
+    show_inactive_cursor_markers: Show marker on inactive cursors
+  shortcut:
+    cur_mouse_lock: Lock current mouse
+    cur_mouse_jump_next: Mouse jumping to next monitor
+  validate:
+    invalid_value: Not a valid value
+    value_should_among: Value should among
+about:
+  Version: Version
+  License: License
+  Source: Source
+msg:
+  settings_changed_cont: Settings changed. Save or restore to continue
+  settings_restored: Settings restored
+  settings_default_restored: Default settings restored
+  settings_apply_fail: Failed to apply settings
+  settings_applied: New settings applied
+  settings_invalid_field: Not all settings fields contain valid value
+  settings_load_failed_use_default: Cannot load settings, use default settings
+  settings_saved: Settings saved
+  settings_undefined_save_path: Undefined settings save path
+  settings_write_fail: Failed to write settings file
+  scanned_devices: "Scanned %{number} devices"
+  scan_fail: Failed to scan devices
+  inspect_device_fail: Failed to inspect device status

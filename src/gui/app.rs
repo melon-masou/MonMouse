@@ -54,6 +54,7 @@ impl App {
     }
     fn trigger_settings_changed(&mut self, user_requested: bool) {
         self.result_clear();
+        self.trigger_settings_changed_ui();
         self.ui_reactor
             .mouse_control_tx
             .send(Message::ApplyProcessorSetting(RoundtripData::new(
@@ -62,6 +63,13 @@ impl App {
                     ctx: ApplyProcessorSettingsCtx { user_requested },
                 },
             )));
+    }
+    fn trigger_settings_changed_ui(&mut self) {
+        let duration = Duration::from_millis(self.state.settings.ui.inspect_device_interval_ms);
+        if let Some(timer) = self.inspect_timer.as_ref() {
+            timer.update_interval(duration);
+        }
+        rust_i18n::set_locale(&self.state.settings.ui.language);
     }
 
     pub fn setup_inspect_timer(&mut self, egui_notify: &EguiNotify) {
@@ -90,23 +98,18 @@ impl App {
     pub fn apply_user_new_settings_async(&mut self) {
         match self.state.config_input.set_into(&mut self.state.settings) {
             Ok(_) => {
-                let duration =
-                    Duration::from_millis(self.state.settings.ui.inspect_device_interval_ms);
-                if let Some(timer) = self.inspect_timer.as_ref() {
-                    timer.update_interval(duration);
-                }
                 self.trigger_user_change_settings();
             }
-            Err(_) => self.result_error_alert("Not all fields contain valid value".to_owned()),
+            Err(_) => self.result_error_alert(t!("msg.settings_invalid_field").to_string()),
         }
     }
     pub fn restore_settings(&mut self) {
         self.state.config_input.set_from(&self.state.settings);
-        self.result_ok("Settings restored".to_owned());
+        self.result_ok(t!("msg.settings_restored").to_string());
     }
     pub fn set_default_settings(&mut self) {
         self.state.config_input.set_from(&Settings::default());
-        self.result_ok("Default settings restored".to_owned());
+        self.result_ok(t!("msg.settings_default_restored").to_string());
     }
 
     pub fn on_start_app_ui(&mut self, egui_notify: &EguiNotify) {
@@ -157,9 +160,11 @@ impl App {
                 self.state.saved_settings = s;
             }
             Err(Error::ConfigFileNotExists(_)) => (),
-            Err(e) => {
-                self.result_error_alert(format!("Cannot load config, use default config: {}", e))
-            }
+            Err(e) => self.result_error_alert(format!(
+                "{}: {}",
+                t!("msg.settings_load_failed_use_default"),
+                e
+            )),
         };
         self.state.config_input.set_from(&self.state.settings);
         self.config_path = config_path;
@@ -168,6 +173,9 @@ impl App {
 
     pub fn get_theme(&self) -> Theme {
         Theme::from_string(self.state.settings.ui.theme.as_str())
+    }
+    pub fn get_locale(&self) -> String {
+        self.state.settings.ui.language.clone()
     }
 
     fn init_managed_devices(&mut self, settings: &ProcessorSettings) {
@@ -311,25 +319,27 @@ impl App {
                 Ok(devs) => {
                     let dev_num = devs.len();
                     self.merge_scanned_devices(devs);
-                    self.result_ok(format!("Scanned {} devices", dev_num))
+                    self.result_ok(t!("msg.scanned_devices", number = dev_num).to_string())
                 }
-                Err(e) => self.result_error_alert(format!("Failed to scan devices: {}", e)),
+                Err(e) => self.result_error_alert(format!("{}: {}", t!("msg.scan_fail"), e)),
             },
             Message::TimerDue(TimerDueKind::InspectDevice) => self.trigger_inspect_devices_status(),
             Message::InspectDevicesStatus(data) => match data.take_rsp() {
                 Ok(devs) => self.update_devices_status(devs),
                 Err(e) => {
-                    self.result_error_silent(format!("Failed to update device status: {}", e))
+                    self.result_error_silent(format!("{}: {}", t!("msg.inspect_device_fail"), e))
                 }
             },
             Message::ApplyProcessorSetting(data) => match data.take_rsp() {
                 Ok(ctx) => {
-                    self.result_ok("New settings applyed".to_owned());
                     if ctx.user_requested {
+                        self.result_ok(t!("msg.settings_applied").to_string());
                         self.on_settings_applied();
                     }
                 }
-                Err(e) => self.result_error_alert(format!("Failed to apply settings: {}", e)),
+                Err(e) => {
+                    self.result_error_alert(format!("{}: {}", t!("msg.settings_apply_fail"), e))
+                }
             },
 
             #[allow(unreachable_patterns)]
@@ -356,17 +366,17 @@ impl App {
     }
     fn save_config(&mut self, new_settings: Settings) -> bool {
         let Some(path) = &self.config_path else {
-            self.result_error_alert("No path to save config".to_owned());
+            self.result_error_alert(t!("msg.settings_undefined_save_path").to_string());
             return false;
         };
         match write_config(path, &new_settings) {
             Ok(_) => (),
             Err(e) => {
-                self.result_error_alert(format!("Failed to write config file: {}", e));
+                self.result_error_alert(format!("{}: {}", t!("msg.settings_write_fail"), e));
                 return false;
             }
         }
-        self.result_ok("Config saved".to_owned());
+        self.result_ok(t!("msg.settings_saved").to_string());
         self.state.saved_settings = new_settings.clone();
         // Don't write the whole new_settings into state.settings, since only one of global/devices config is to be saved.
         // self.state.settings = new_settings;

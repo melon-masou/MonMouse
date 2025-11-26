@@ -1,8 +1,14 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
+#[macro_use]
+extern crate rust_i18n;
+
+i18n!("locales", fallback = "en", minify_key = true);
+
 mod app;
 mod components;
 mod config;
+mod font;
 mod styles;
 mod tray;
 
@@ -28,6 +34,7 @@ use tray::Tray;
 
 use crate::components::layout::layout_ui;
 use crate::config::get_config_dir;
+use crate::font::setup_fonts_for_lang_defs;
 
 pub fn load_icon() -> egui::IconData {
     let icon_data = include_bytes!("..\\..\\assets\\monmouse.ico");
@@ -117,7 +124,7 @@ fn egui_eventloop(
             "MonMouse",
             ui_options_main_window(),
             Box::new(move |c| {
-                AppWrap::init_ctx(&c.egui_ctx);
+                AppWrap::init_ctx(&c.egui_ctx, app_ref.borrow().get_locale().as_str());
                 app_ref.borrow_mut().on_start_app_ui(&egui_notify1);
                 egui_notify1.update_ctx(Some(c.egui_ctx.clone()));
                 Ok(Box::new(AppWrap::new(app_ref, egui_notify1)))
@@ -191,7 +198,7 @@ impl AppWrap {
 }
 
 impl AppWrap {
-    fn init_ctx(ctx: &egui::Context) {
+    fn init_ctx(ctx: &egui::Context, locale: &str) {
         // TODO:
         //  The value currently should be 1.0, before egui ctx.set_zoom_factor() is normal working.
         //  In case it was fixed, the value can be configurable.
@@ -209,6 +216,7 @@ impl AppWrap {
             font_data.insert(k.to_string(), Arc::new(font));
         });
         fonts.font_data = font_data;
+        setup_fonts_for_lang_defs(&mut fonts, locale);
         ctx.set_fonts(fonts);
     }
 

@@ -9,7 +9,7 @@ pub fn status_bar_ui(ui: &mut egui::Ui, app: &mut App) {
         #[cfg(debug_assertions)]
         if ui
             .add(egui::Button::new("📋").frame(false))
-            .on_hover_text("Copy")
+            .on_hover_text(t!("btn.Copy"))
             .clicked()
         {
             ui.ctx().copy_text(msg.clone());
