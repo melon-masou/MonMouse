@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.0
+- Add option to hide UI on launch
+- Add option to show inactive cursors
+- Add locale support
+- Improve config panel UI
+
 ## v0.1.2
 - Fix locked mouse cannot reach the edge of screen
 - Improve shortcut input UI logic
