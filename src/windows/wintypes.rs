@@ -11,6 +11,14 @@ use crate::errors::Error;
 
 use super::constants::STR_INVALID_WIN_WIDE_OS_STR;
 
+// core error
+#[macro_export]
+macro_rules! ce {
+    ( $call:expr ) => {{
+        $call.map_err(|e| core_error(e, stringify!($call)))
+    }};
+}
+
 pub fn wmut_vec<T>(v: &mut Vec<T>) -> *mut T {
     v.as_mut_ptr()
 }
@@ -47,7 +55,7 @@ pub fn lparam_from<T>(v: &mut T) -> LPARAM {
 }
 
 pub fn lparam_as_rawinput(lparam: LPARAM) -> HRAWINPUT {
-    HRAWINPUT(lparam.0)
+    HRAWINPUT(lparam.0 as *mut core::ffi::c_void)
 }
 
 pub type WSize = u32;
@@ -78,8 +86,13 @@ pub fn cr_error(cr: CONFIGRET) -> Error {
 }
 
 #[inline(always)]
-pub fn core_error(e: ::windows::core::Error) -> Error {
-    Error::WinCore(e.code().0)
+pub fn core_error(e: ::windows::core::Error, call: &'static str) -> Error {
+    Error::WinCore(e.code().0, call)
+}
+
+#[inline(always)]
+pub fn unknown_error(call: &'static str) -> Error {
+    Error::WinUnknown(call)
 }
 
 pub trait IBuffer {

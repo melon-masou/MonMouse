@@ -68,6 +68,12 @@ pub struct ProcessorSettings {
     #[serde(default = "ProcessorSettings::default_merge_unassociated_events_ms")]
     pub merge_unassociated_events_ms: i64,
 
+    #[serde(default = "ProcessorSettings::default_show_inactive_cursors")]
+    pub show_inactive_cursors: bool,
+
+    #[serde(default = "ProcessorSettings::default_show_inactive_cursor_markers")]
+    pub show_inactive_cursor_markers: bool,
+
     #[serde(default = "ProcessorSettings::default_devices")]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub devices: Vec<DeviceSettingItem>,
@@ -80,6 +86,8 @@ impl Default for ProcessorSettings {
     fn default() -> Self {
         Self {
             merge_unassociated_events_ms: Self::default_merge_unassociated_events_ms(),
+            show_inactive_cursors: Self::default_show_inactive_cursors(),
+            show_inactive_cursor_markers: Self::default_show_inactive_cursor_markers(),
             devices: Self::default_devices(),
             shortcuts: ShortcutSettings::default(),
         }
@@ -90,9 +98,14 @@ impl ProcessorSettings {
     fn default_merge_unassociated_events_ms() -> i64 {
         5
     }
-
     fn default_devices() -> Vec<DeviceSettingItem> {
         Vec::new()
+    }
+    fn default_show_inactive_cursors() -> bool {
+        false
+    }
+    fn default_show_inactive_cursor_markers() -> bool {
+        false
     }
 
     pub fn mut_device<R>(
@@ -141,7 +154,7 @@ pub struct UISettings {
     #[serde(default = "UISettings::default_inspect_device_interval_ms")]
     pub inspect_device_interval_ms: u64,
 
-    #[serde(default = "bool_const::<false>")]
+    #[serde(default = "UISettings::default_hide_ui_on_launch")]
     pub hide_ui_on_launch: bool,
 }
 
@@ -150,7 +163,7 @@ impl Default for UISettings {
         Self {
             theme: Self::default_theme(),
             inspect_device_interval_ms: Self::default_inspect_device_interval_ms(),
-            hide_ui_on_launch: false,
+            hide_ui_on_launch: Self::default_hide_ui_on_launch(),
         }
     }
 }
@@ -161,6 +174,9 @@ impl UISettings {
     }
     fn default_inspect_device_interval_ms() -> u64 {
         100
+    }
+    fn default_hide_ui_on_launch() -> bool {
+        false
     }
 }
 

@@ -108,6 +108,14 @@ impl App {
         self.result_ok("Default settings restored".to_owned());
     }
 
+    pub fn on_start_app_ui(&mut self, egui_notify: &EguiNotify) {
+        self.setup_inspect_timer(egui_notify);
+        #[cfg(debug_assertions)]
+        {
+            self.debug_info = DebugInfo::default();
+        }
+    }
+
     #[cfg(debug_assertions)]
     pub fn on_paint_frame(&mut self, tick: u64) {
         self.debug_info.on_paint_frame(tick);

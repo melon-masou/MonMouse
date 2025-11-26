@@ -65,6 +65,20 @@ impl ConfigPanel {
             |ui, ist| ui.checkbox(ist.value(), "").changed(),
         );
 
+        changed |= Self::config_item(
+            ui,
+            "Show inactive switch-enabled cursors",
+            &mut input.show_inactive_cursors,
+            |ui, ist| ui.checkbox(ist.value(), "").changed(),
+        );
+
+        changed |= Self::config_item(
+            ui,
+            "Show marker on inactive cursors",
+            &mut input.show_inactive_cursor_markers,
+            |ui, ist| ui.checkbox(ist.value(), "").changed(),
+        );
+
         // For debugging colors Only
         #[cfg(debug_assertions)]
         {
@@ -162,7 +176,7 @@ impl ConfigPanel {
 
     fn check_new_change(app: &mut App) {
         if app.state.config_input.take_new_changed() {
-            app.lock_panel("Settings changed but not applied".to_string());
+            app.lock_panel("Settings changed. Save or restore to continue".to_string());
         }
     }
 }
@@ -275,6 +289,8 @@ pub struct ConfigInputState {
     theme: InputState<String, NonCheck>,
     inspect_device_interval_ms: InputState<u64, OrderParser<u64>>,
     merge_unassociated_events_ms: InputState<i64, OrderParser<i64>>,
+    show_inactive_cursors: ValueState<bool>,
+    show_inactive_cursor_markers: ValueState<bool>,
     hide_ui_on_launch: ValueState<bool>,
     cur_mouse_lock: InputState<String, NonCheck>,
     cur_mouse_jump_next: InputState<String, NonCheck>,
@@ -310,6 +326,8 @@ impl Default for ConfigInputState {
             theme: InputState::new(NonCheck()),
             inspect_device_interval_ms: InputState::new(OrderParser::new(20, 1000)),
             merge_unassociated_events_ms: InputState::new(OrderParser::new(-1, 1000)),
+            show_inactive_cursors: ValueState::new(false),
+            show_inactive_cursor_markers: ValueState::new(false),
             hide_ui_on_launch: ValueState::new(false),
             cur_mouse_lock: InputState::new(NonCheck()),
             cur_mouse_jump_next: InputState::new(NonCheck()),
@@ -333,6 +351,8 @@ impl ConfigInputState {
         set_from!(self, s.ui, inspect_device_interval_ms);
         set_from!(self, s.ui, hide_ui_on_launch);
         set_from!(self, s.processor, merge_unassociated_events_ms);
+        set_from!(self, s.processor, show_inactive_cursors);
+        set_from!(self, s.processor, show_inactive_cursor_markers);
         set_from!(self, s.processor.shortcuts, cur_mouse_lock);
         set_from!(self, s.processor.shortcuts, cur_mouse_jump_next);
     }
@@ -342,6 +362,8 @@ impl ConfigInputState {
         set_into!(self, s.ui, inspect_device_interval_ms);
         set_into!(self, s.ui, hide_ui_on_launch);
         set_into!(self, s.processor, merge_unassociated_events_ms);
+        set_into!(self, s.processor, show_inactive_cursors);
+        set_into!(self, s.processor, show_inactive_cursor_markers);
         set_into!(self, s.processor.shortcuts, cur_mouse_lock);
         set_into!(self, s.processor.shortcuts, cur_mouse_jump_next);
         Ok(())

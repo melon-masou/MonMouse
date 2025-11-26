@@ -22,10 +22,10 @@ pub enum Error {
     #[error("ErrorInited")]
     MessageInited,
 
-    #[error("ErrorWinUnknown")]
-    WinUnknown,
-    #[error("ErrorWinCore(code=0x{0:X})")]
-    WinCore(i32),
+    #[error("ErrorWinUnknown(call={0})")]
+    WinUnknown(&'static str),
+    #[error("ErrorWinCore(code=0x{0:X},call={1})")]
+    WinCore(i32, &'static str),
     #[error("ErrorWinConfigRet(cr={0})")]
     WinConfigRet(u32),
     #[error("ErrorWinPredefineBufSmall(get={0},need={1})")]

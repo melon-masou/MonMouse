@@ -2,11 +2,13 @@ use std::collections::BTreeMap;
 use std::fmt::{self, Display};
 use std::mem::size_of;
 
+use crate::ce;
 use crate::errors::{Error, Result};
 use crate::windows::wintypes::*;
 
 use super::constants::*;
 use windows::Win32::Foundation::{ERROR_ALREADY_EXISTS, WAIT_OBJECT_0};
+
 use windows::Win32::System::Threading::{CreateMutexW, ReleaseMutex, WaitForSingleObject};
 use windows::Win32::UI::HiDpi::{
     SetProcessDpiAwareness, SetProcessDpiAwarenessContext,
@@ -165,13 +167,13 @@ impl HookWrap {
         lparam: LPARAM,
     ) -> LRESULT {
         if ncode < 0 {
-            return unsafe { CallNextHookEx(HHOOK(0), ncode, wparam, lparam) };
+            return unsafe { CallNextHookEx(None, ncode, wparam, lparam) };
         }
         let call_next = T::on_mouse_ll(wparam.0 as u32, lparam_ref::<MSLLHOOKSTRUCT>(&lparam));
         if call_next {
             LRESULT(0)
         } else {
-            unsafe { CallNextHookEx(HHOOK(0), ncode, wparam, lparam) }
+            unsafe { CallNextHookEx(None, ncode, wparam, lparam) }
         }
     }
 
@@ -184,17 +186,18 @@ impl HookWrap {
 }
 
 pub fn set_windows_hook(hook: HookWrap) -> Result<HHOOK> {
-    match unsafe { SetWindowsHookExA(hook.id, Some(hook.f), HINSTANCE::default(), 0) } {
-        Ok(v) => Ok(v),
-        Err(e) => Err(core_error(e)),
+    unsafe {
+        ce!(SetWindowsHookExA(
+            hook.id,
+            Some(hook.f),
+            HINSTANCE::default(),
+            0
+        ))
     }
 }
 
 pub fn unset_windows_hook(hook: HHOOK) -> Result<()> {
-    match unsafe { UnhookWindowsHookEx(hook) } {
-        Ok(v) => Ok(v),
-        Err(e) => Err(core_error(e)),
-    }
+    unsafe { ce!(UnhookWindowsHookEx(hook)) }
 }
 
 pub fn device_list_all() -> Result<Vec<RAWINPUTDEVICELIST>> {
@@ -203,7 +206,7 @@ pub fn device_list_all() -> Result<Vec<RAWINPUTDEVICELIST>> {
 
     let res = unsafe { GetRawInputDeviceList(None, &mut cnt, wsize_of::<RAWINPUTDEVICELIST>()) };
     if res == u32::MAX {
-        return Err(get_last_error());
+        return Err(get_last_error("GetRawInputDeviceList"));
     }
 
     loop {
@@ -221,18 +224,16 @@ pub fn device_list_all() -> Result<Vec<RAWINPUTDEVICELIST>> {
             return Ok(dev_list);
         }
 
-        let e = unsafe { GetLastError().unwrap_err() };
-        if e.code() != ERROR_INSUFFICIENT_BUFFER.to_hresult() {
+        let e = unsafe { GetLastError() };
+        if e != ERROR_INSUFFICIENT_BUFFER {
             continue;
         }
     }
 }
 
-pub fn get_last_error() -> Error {
-    match unsafe { GetLastError().err() } {
-        Some(e) => core_error(e),
-        None => Error::WinUnknown,
-    }
+pub fn get_last_error(call: &'static str) -> Error {
+    let e = unsafe { GetLastError() };
+    Error::WinCore(e.0 as i32, call)
 }
 
 pub fn device_get_rawinput_rid_info(handle: HANDLE) -> Result<RID_DEVICE_INFO> {
@@ -243,7 +244,7 @@ pub fn device_get_rawinput_rid_info(handle: HANDLE) -> Result<RID_DEVICE_INFO> {
     };
     if r == u32::MAX {
         if size <= wsize_of_val(&dst) {
-            return Err(get_last_error());
+            return Err(get_last_error("GetRawInputDeviceInfoW"));
         }
         return Err(Error::WinPredefineBufSmall(wsize_of_val(&dst), size));
     }
@@ -257,7 +258,7 @@ pub fn device_get_rawinput_info<T: IBuffer>(
     let mut size: WSize = 0;
     let r = unsafe { GetRawInputDeviceInfoW(handle, cmd, None, &mut size) };
     if r != 0 {
-        return Err(get_last_error());
+        return Err(get_last_error("GetRawInputDeviceInfoW"));
     }
 
     let mut buf = T::new(size);
@@ -265,7 +266,7 @@ pub fn device_get_rawinput_info<T: IBuffer>(
         let r = unsafe { GetRawInputDeviceInfoW(handle, cmd, Some(buf.as_mut_data()), &mut size) };
         if r == u32::MAX {
             if size <= buf.capacity() {
-                return Err(get_last_error());
+                return Err(get_last_error("GetRawInputDeviceInfoW"));
             }
             buf.resize(size);
             continue;
@@ -503,10 +504,7 @@ impl Drop for ScopeHandle {
 }
 
 pub fn close_handle(handle: HANDLE) -> Result<()> {
-    match unsafe { CloseHandle(handle) } {
-        Ok(_) => Ok(()),
-        Err(e) => Err(core_error(e)),
-    }
+    unsafe { ce!(CloseHandle(handle)) }
 }
 
 pub fn device_open_iface(iface: &WString, metaonly: bool) -> Result<ScopeHandle> {
@@ -525,19 +523,19 @@ pub fn device_open_iface(iface: &WString, metaonly: bool) -> Result<ScopeHandle>
             None,
             OPEN_EXISTING,
             FILE_ATTRIBUTE_NORMAL,
-            HANDLE(0),
+            None,
         )
     };
 
     match result {
         Ok(h) => {
             if h.is_invalid() {
-                Err(Error::WinInvalidHandle(h.0))
+                Err(Error::WinInvalidHandle(h.0 as isize))
             } else {
                 Ok(ScopeHandle::new(h))
             }
         }
-        Err(e) => Err(core_error(e)),
+        Err(e) => Err(core_error(e, "CreateFileW")),
     }
 }
 
@@ -593,15 +591,12 @@ pub fn device_get_hid_info(instance_id: &WString, present: bool) -> Result<HidDe
 pub fn create_dummy_window(module: Option<HMODULE>) -> Result<(HMODULE, HWND)> {
     let hinstance = match module {
         Some(m) => m,
-        None => match unsafe { GetModuleHandleW(None) } {
-            Ok(v) => v,
-            Err(e) => return Err(core_error(e)),
-        },
+        None => unsafe { ce!(GetModuleHandleW(None))? },
     };
     let class = WString::encode_from_str("Static").as_pcwstr();
 
     let hwnd = unsafe {
-        CreateWindowExW(
+        ce!(CreateWindowExW(
             WINDOW_EX_STYLE::default(),
             class,
             None,
@@ -614,27 +609,21 @@ pub fn create_dummy_window(module: Option<HMODULE>) -> Result<(HMODULE, HWND)> {
             None,
             hinstance,
             None,
-        )
+        ))?
     };
-    if hwnd.0 == 0 {
-        return Err(get_last_error());
-    }
     Ok((hinstance, hwnd))
 }
 
 pub fn create_message_only_window(module: Option<HMODULE>) -> Result<(HMODULE, HWND)> {
     let hinstance = match module {
         Some(m) => m,
-        None => match unsafe { GetModuleHandleW(None) } {
-            Ok(v) => v,
-            Err(e) => return Err(core_error(e)),
-        },
+        None => unsafe { ce!(GetModuleHandleW(None))? },
     };
     let class = WString::encode_from_str("Message").as_pcwstr();
 
     // create message-only window
     let hwnd = unsafe {
-        CreateWindowExW(
+        ce!(CreateWindowExW(
             WINDOW_EX_STYLE::default(),
             class,
             None,
@@ -647,11 +636,8 @@ pub fn create_message_only_window(module: Option<HMODULE>) -> Result<(HMODULE, H
             None,
             hinstance,
             None,
-        )
+        ))?
     };
-    if hwnd.0 == 0 {
-        return Err(get_last_error());
-    }
     Ok((hinstance, hwnd))
 }
 
@@ -699,16 +685,13 @@ pub fn set_subclass<T: SubclassHandler>(
     if ok {
         Ok(())
     } else {
-        Err(get_last_error())
+        Err(get_last_error("SetWindowSubclass"))
     }
 }
 
 pub fn register_rawinput_devices(devs: &[RAWINPUTDEVICE]) -> Result<()> {
     let cbsize = size_of::<RAWINPUTDEVICE>() as u32;
-    match unsafe { RegisterRawInputDevices(devs, cbsize) } {
-        Ok(_) => Ok(()),
-        Err(e) => Err(core_error(e)),
-    }
+    unsafe { ce!(RegisterRawInputDevices(devs, cbsize)) }
 }
 
 pub fn get_rawinput_data(handle: HRAWINPUT, data_buf: &mut WBuffer) -> Result<()> {
@@ -716,7 +699,7 @@ pub fn get_rawinput_data(handle: HRAWINPUT, data_buf: &mut WBuffer) -> Result<()
     let header_size = wsize_of::<RAWINPUTHEADER>();
     let res = unsafe { GetRawInputData(handle, RID_INPUT, None, &mut size, header_size) };
     if res != 0 {
-        return Err(get_last_error());
+        return Err(get_last_error("GetRawInputData"));
     }
 
     if data_buf.capacity() < size {
@@ -733,7 +716,7 @@ pub fn get_rawinput_data(handle: HRAWINPUT, data_buf: &mut WBuffer) -> Result<()
         )
     };
     if res == u32::MAX {
-        return Err(get_last_error());
+        return Err(get_last_error("GetRawInputData"));
     }
     Ok(())
 }
@@ -797,7 +780,7 @@ pub fn set_timer<T: TimerCallback>(hwnd: HWND, nid: usize, elapse_ms: u32) -> Re
 
     let res = unsafe { SetTimer(hwnd, nid, elapse_ms, Some(timer_proc::<T>)) };
     match res {
-        0 => Err(get_last_error()),
+        0 => Err(get_last_error("SetTimer")),
         _ => Ok(()),
     }
 }
@@ -808,19 +791,15 @@ pub fn get_cur_tick() -> u64 {
 
 pub fn get_cursor_pos() -> Result<(i32, i32)> {
     let mut pt = POINT::default();
-    match unsafe { GetPhysicalCursorPos(&mut pt) } {
-        Ok(()) => Ok((pt.x, pt.y)),
-        Err(e) => Err(core_error(e)),
-    }
+    unsafe { ce!(GetPhysicalCursorPos(&mut pt)) }?;
+    Ok((pt.x, pt.y))
 }
 
 pub fn set_cursor_pos(x: i32, y: i32) -> Result<()> {
-    match unsafe { SetPhysicalCursorPos(x, y) } {
-        Ok(()) => Ok(()),
-        Err(e) => Err(core_error(e)),
-    }
+    unsafe { ce!(SetPhysicalCursorPos(x, y)) }
 }
 
+#[derive(Debug)]
 pub struct MonitorInfo {
     pub handle: HMONITOR,
     pub rect: RECT,
@@ -859,10 +838,14 @@ pub fn get_monitor_scale_factor(hm: HMONITOR) -> Result<u32> {
     let set_aware = ScopeDpiAwareness::new(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE);
     let mut dpix: u32 = 0;
     let mut dpiy: u32 = 0;
-    match unsafe { GetDpiForMonitor(hm, MDT_EFFECTIVE_DPI, &mut dpix, &mut dpiy) } {
-        Ok(_) => (),
-        Err(e) => return Err(core_error(e)),
-    };
+    unsafe {
+        ce!(GetDpiForMonitor(
+            hm,
+            MDT_EFFECTIVE_DPI,
+            &mut dpix,
+            &mut dpiy
+        ))?;
+    }
     drop(set_aware);
 
     Ok(dpix * 100 / USER_DEFAULT_SCREEN_DPI)
@@ -909,11 +892,10 @@ pub fn get_all_monitors_info() -> Result<Vec<MonitorInfo>> {
     }
 
     let mut hms: Vec<MonitorInfo> = Vec::new();
-    match unsafe {
-        EnumDisplayMonitors(HDC(0), None, Some(enum_fn), lparam_from(&mut hms)).as_bool()
-    } {
+    match unsafe { EnumDisplayMonitors(None, None, Some(enum_fn), lparam_from(&mut hms)).as_bool() }
+    {
         true => (),
-        false => return Err(Error::WinUnknown),
+        false => return Err(Error::WinUnknown("EnumDisplayMonitors")),
     }
 
     for m in &mut hms {
@@ -931,7 +913,7 @@ pub fn rawinput_to_string(ri: &RAWINPUT) -> String {
         RIM_TYPEMOUSE => {
             let m = unsafe { &ri.data.mouse };
             format!(
-                "{{mouse({}); hdl={}, llast=({},{}), flag={}, extra={}}}",
+                "{{mouse({}); hdl={:?}, llast=({},{}), flag={:?}, extra={}}}",
                 ri.header.dwType,
                 ri.header.hDevice.0,
                 m.lLastX,
@@ -943,13 +925,13 @@ pub fn rawinput_to_string(ri: &RAWINPUT) -> String {
         RIM_TYPEHID => {
             let m = unsafe { &ri.data.hid };
             format!(
-                "{{hid({}); hdl={}, size={}, count={} }}",
+                "{{hid({}); hdl={:?}, size={}, count={} }}",
                 ri.header.dwType, ri.header.hDevice.0, m.dwSizeHid, m.dwCount
             )
         }
         _ => {
             format!(
-                "{{other({}), hdl={}}}",
+                "{{other({}), hdl={:?}}}",
                 ri.header.dwType, ri.header.hDevice.0
             )
         }
@@ -959,24 +941,16 @@ pub fn rawinput_to_string(ri: &RAWINPUT) -> String {
 pub fn check_mouse_event_is_absolute(ri: &RAWINPUT) -> Option<bool> {
     match RID_DEVICE_INFO_TYPE(ri.header.dwType) {
         RIM_TYPEMOUSE => unsafe {
-            Some((ri.data.mouse.usFlags & RAWINPUT_MOUSE_FLAGS_ABSOLUTE) > 0)
+            Some((ri.data.mouse.usFlags.0 & RAWINPUT_MOUSE_FLAGS_ABSOLUTE) > 0)
         },
         _ => None,
     }
 }
 
 pub fn popup_message_box(caption: WString, text: WString) -> Result<MESSAGEBOX_RESULT> {
-    let ret = unsafe {
-        MessageBoxExW(
-            HWND(0),
-            text.as_pcwstr(),
-            caption.as_pcwstr(),
-            MB_TOPMOST,
-            0,
-        )
-    };
+    let ret = unsafe { MessageBoxExW(None, text.as_pcwstr(), caption.as_pcwstr(), MB_TOPMOST, 0) };
     if ret.0 == 0 {
-        Err(get_last_error())
+        Err(get_last_error("MessageBoxExW"))
     } else {
         Ok(ret)
     }
@@ -997,16 +971,13 @@ pub fn register_hot_key(
         Ok(_) => Ok(callback_lparam),
         Err(e) => match e.code() {
             HRESULT_SHORTCUT_CONFLICT => Err(Error::ShortcutConflict(None.into())),
-            _ => Err(core_error(e)),
+            _ => Err(core_error(e, "RegisterHotKey")),
         },
     }
 }
 
 pub fn unregister_hot_key(hwnd: HWND, id: i32) -> Result<()> {
-    match unsafe { UnregisterHotKey(hwnd, id) } {
-        Ok(v) => Ok(v),
-        Err(e) => Err(core_error(e)),
-    }
+    unsafe { ce!(UnregisterHotKey(hwnd, id)) }
 }
 
 pub struct HotKeyManager<T> {
@@ -1065,7 +1036,7 @@ pub fn create_mutex(name: WString) -> Result<Option<HANDLE>> {
             if e.code() == ERROR_ALREADY_EXISTS.to_hresult() {
                 Ok(None)
             } else {
-                Err(core_error(e))
+                Err(core_error(e, "CreatMutexW"))
             }
         }
     }
@@ -1077,8 +1048,5 @@ pub fn try_lock_mutex(handle: HANDLE) -> bool {
 }
 
 pub fn release_mutex(handle: HANDLE) -> Result<()> {
-    match unsafe { ReleaseMutex(handle) } {
-        Ok(_) => Ok(()),
-        Err(e) => Err(core_error(e)),
-    }
+    unsafe { ce!(ReleaseMutex(handle)) }
 }

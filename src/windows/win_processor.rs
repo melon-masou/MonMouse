@@ -48,6 +48,7 @@ use windows::Win32::{
 };
 
 use super::constants::*;
+use super::overlay::*;
 use super::wintypes::*;
 use super::winwrap::*;
 
@@ -62,9 +63,15 @@ pub struct WinDevice {
     pub ctrl: DeviceController,
 }
 
+impl std::fmt::Debug for WinDevice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
 impl std::fmt::Display for WinDevice {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "Dev({})", self.handle.0)?;
+        writeln!(f, "Dev({:?})", self.handle.0)?;
 
         let rawinput = match &self.rawinput {
             Some(v) => v,
@@ -129,7 +136,7 @@ fn init_device_control(handle: HANDLE) -> DeviceController {
 // Ref: https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-rawinputheader
 //      https://stackoverflow.com/questions/57552844/rawinputheader-hdevice-null-on-wm-input-for-laptop-trackpad
 fn unassociated_events_capture_device() -> WinDevice {
-    let handle = HANDLE(0);
+    let handle = HANDLE(std::ptr::null_mut::<core::ffi::c_void>());
     WinDevice {
         handle,
         id: Some(String::from("UnassociatedEventsCapture")),
@@ -159,7 +166,7 @@ fn collect_rawinput_infos(dev: &RAWINPUTDEVICELIST) -> Result<RawinputInfo> {
     match device_collect_rawinput_infos(dev.hDevice) {
         Ok(v) => Ok(v),
         Err(e) => {
-            error!("Get dev info failed({}): {}", handlev, e);
+            error!("Get dev info failed({:?}): {}", handlev, e);
             Err(e)
         }
     }
@@ -178,7 +185,7 @@ fn collect_device_infos(
         }
         Err(e) => {
             error!(
-                "Get iface info failed({}): {}. interface={}",
+                "Get iface info failed({:?}): {}. interface={}",
                 handlev, e, rawinput.iface,
             );
             (None, None)
@@ -189,7 +196,7 @@ fn collect_device_infos(
             Ok(v) => v,
             Err(e) => {
                 error!(
-                    "Get device parents failed({}): {}. interface={}",
+                    "Get device parents failed({:?}): {}. interface={}",
                     handlev, e, rawinput.iface,
                 );
                 Vec::new()
@@ -202,7 +209,7 @@ fn collect_device_infos(
             Ok(v) => Some(v),
             Err(e) => {
                 error!(
-                    "Get hid info failed({}): {}. interface={}",
+                    "Get hid info failed({:?}): {:?}. interface={}",
                     handlev, e, rawinput.iface
                 );
                 None
@@ -232,7 +239,7 @@ struct WinDeviceSet {
 
 impl WinDeviceSet {
     fn map_key(h: HANDLE) -> isize {
-        h.0
+        h.0 as isize
     }
 
     pub fn new() -> WinDeviceSet {
@@ -249,6 +256,24 @@ impl WinDeviceSet {
         } else {
             None
         }
+    }
+
+    pub fn inactive_positions(&mut self) -> Vec<CursorPos> {
+        self.devs
+            .iter()
+            .enumerate()
+            .filter_map(|(i, d)| {
+                if Some(i) == self.active_id {
+                    return None;
+                }
+                if d.device_type.is_dummy() || !d.ctrl.setting.switch {
+                    return None;
+                }
+                d.ctrl
+                    .get_last_pos()
+                    .map(|(_, pos, _)| CursorPos(pos.x, pos.y, i))
+            })
+            .collect()
     }
 
     pub fn active_id(&mut self) -> Option<&String> {
@@ -425,7 +450,7 @@ impl WinDeviceProcessor {
                 let rawinput = match collect_rawinput_infos(&d) {
                     Ok(v) => v,
                     Err(e) => {
-                        error!("Failed to collect rawinput info({}): {}", d.hDevice.0, e);
+                        error!("Failed to collect rawinput info({:?}): {}", d.hDevice.0, e);
                         return None;
                     }
                 };
@@ -436,7 +461,7 @@ impl WinDeviceProcessor {
                 match collect_device_infos(d.hDevice, device_type, rawinput) {
                     Ok(v) => Some(v),
                     Err(e) => {
-                        error!("Failed to collect device info({}): {}", d.hDevice.0, e);
+                        error!("Failed to collect device info({:?}): {}", d.hDevice.0, e);
                         None
                     }
                 }
@@ -498,6 +523,10 @@ impl WinDeviceProcessor {
     }
 
     fn try_update_monitors(&mut self, must: bool) -> Result<()> {
+        if let Err(e) = refresh_overlay_window(self.hwnd) {
+            error!("refresh overlay window failed: {}", e);
+        }
+
         if !must && !self.rl_update_mon.allow(None).0 {
             return Ok(());
         }
@@ -561,6 +590,10 @@ impl WinDeviceProcessor {
             applied,
             settings.devices.len()
         );
+
+        if !settings.show_inactive_cursors {
+            self.clear_draw_inactive_mouses();
+        }
     }
 
     fn on_raw_input(&mut self, _wparam: WPARAM, lparam: LPARAM, tick: u32) {
@@ -587,7 +620,7 @@ impl WinDeviceProcessor {
         );
 
         // Try merging unassociated event
-        if ri.header.hDevice == HANDLE(0) {
+        if ri.header.hDevice.is_invalid() {
             // If configured
             if self.settings.merge_unassociated_events_ms >= 0 {
                 let merge_within = self.settings.merge_unassociated_events_ms as u64;
@@ -598,7 +631,11 @@ impl WinDeviceProcessor {
                         if active_tick + merge_within >= wtick {
                             // Eat the unassociated event
                             active_dev.ctrl.update_positioning(positioning);
-                            self.relocator.on_mouse_update(&mut active_dev.ctrl, wtick);
+                            let switched =
+                                self.relocator.on_mouse_update(&mut active_dev.ctrl, wtick);
+                            if switched {
+                                self.draw_inactive_mouses();
+                            }
                             return;
                         }
                     }
@@ -609,7 +646,10 @@ impl WinDeviceProcessor {
         match self.devices.get_and_update_active(ri.header.hDevice) {
             Some(dev) => {
                 dev.ctrl.update_positioning(positioning);
-                self.relocator.on_mouse_update(&mut dev.ctrl, wtick);
+                let switched = self.relocator.on_mouse_update(&mut dev.ctrl, wtick);
+                if switched {
+                    self.draw_inactive_mouses();
+                }
             }
             None => {
                 self.to_update_devices = true;
@@ -617,6 +657,25 @@ impl WinDeviceProcessor {
         };
         self.resolve_pending_updating_task();
         self.resolve_relocation();
+    }
+
+    fn draw_inactive_mouses(&mut self) {
+        if self.settings.show_inactive_cursors {
+            let cursor_list = self.devices.inactive_positions();
+            trigger_draw_cursors(
+                self.hwnd,
+                cursor_list,
+                self.settings.show_inactive_cursor_markers,
+            );
+        }
+    }
+
+    fn clear_draw_inactive_mouses(&mut self) {
+        trigger_draw_cursors(
+            self.hwnd,
+            vec![],
+            self.settings.show_inactive_cursor_markers,
+        );
     }
 
     fn on_mouse_event(&mut self, ev: &SysMouseEvent) {
@@ -789,10 +848,10 @@ impl WinEventLoop {
         if !process_set_dpi_aware() {
             warn!("Failed to set process as dpi aware");
         };
-        let hwnd = match create_dummy_window(None) {
+        let hwnd = match create_overlay_window(None) {
             Ok((_, v)) => v,
             Err(e) => {
-                error!("Create dummy window failed: {}", e);
+                error!("Create overlay window failed: {}", e);
                 return Err(e);
             }
         };
@@ -838,7 +897,7 @@ impl WinEventLoop {
                     return Ok(false);
                 }
                 self.handle_wm_message(&msg);
-                TranslateMessage(&msg);
+                let _ = TranslateMessage(&msg);
                 DispatchMessageW(&msg);
                 max_events -= 1;
             }

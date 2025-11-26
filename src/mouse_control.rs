@@ -24,8 +24,8 @@ impl Display for MousePos {
 
 #[derive(Debug)]
 pub struct DeviceController {
-    id: u64,
-    setting: DeviceSetting,
+    pub id: u64,
+    pub setting: DeviceSetting,
 
     last_active_tick: u64, // in ms
     last_active_pos: MousePos,
@@ -178,8 +178,9 @@ impl MouseRelocator {
         self.cur_pos = pos;
     }
 
-    pub fn on_mouse_update(&mut self, c: &mut DeviceController, tick: u64) {
-        if self.cur_mouse != c.id {
+    pub fn on_mouse_update(&mut self, c: &mut DeviceController, tick: u64) -> bool {
+        let switched = self.cur_mouse != c.id;
+        if switched {
             self.cur_mouse = c.id;
 
             if c.setting.switch {
@@ -200,6 +201,7 @@ impl MouseRelocator {
             }
         }
         c.update_pos(&self.cur_pos, tick);
+        switched
     }
 
     pub fn pop_relocate_pos(&mut self) -> Option<RelocatePos> {

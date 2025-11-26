@@ -75,6 +75,10 @@ impl DeviceType {
                 | DeviceType::OtherDigitizer
         )
     }
+
+    pub fn is_dummy(&self) -> bool {
+        matches!(self, DeviceType::Dummy)
+    }
 }
 
 impl Display for DeviceType {

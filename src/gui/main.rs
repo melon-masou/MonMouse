@@ -24,8 +24,6 @@ use monmouse::{SingleProcess, POLL_MSGS, POLL_TIMEOUT};
 use styles::{gscale, Theme};
 use tray::Tray;
 
-#[cfg(debug_assertions)]
-use crate::components::debug::DebugInfo;
 use crate::components::layout::layout_ui;
 use crate::config::get_config_dir;
 
@@ -136,7 +134,7 @@ fn egui_eventloop(
             ui_options_main_window(),
             Box::new(move |c| {
                 AppWrap::init_ctx(&c.egui_ctx);
-                app_ref.borrow_mut().setup_inspect_timer(&egui_notify1);
+                app_ref.borrow_mut().on_start_app_ui(&egui_notify1);
                 egui_notify1.update_ctx(Some(c.egui_ctx.clone()));
                 Box::new(AppWrap::new(app_ref, egui_notify1))
             }),
