@@ -18,8 +18,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SetWindowPos, ShowWindow, DI_NORMAL, GWLP_USERDATA, HICON, HWND_TOPMOST, ICONINFO, IDC_ARROW,
     IMAGE_CURSOR, LR_SHARED, LWA_COLORKEY, SM_CXCURSOR, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,
     SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SWP_NOACTIVATE, SWP_NOZORDER, SW_HIDE, SW_SHOWNOACTIVATE,
-    WM_DESTROY, WM_PAINT, WNDCLASSW, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
-    WS_EX_TRANSPARENT, WS_POPUP,
+    WM_DESTROY, WM_PAINT, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
 };
 use windows::Win32::{
     Foundation::{HINSTANCE, HMODULE, HWND, LPARAM, LRESULT, RECT, WPARAM},
@@ -264,6 +264,17 @@ fn get_overlay_context(hwnd: HWND) -> Option<*mut OverlayContext> {
     }
 }
 
+fn get_virtual_screen_rect() -> (i32, i32, i32, i32) {
+    // Add,minus one to prevent entering Do Not Disturb Mode
+    unsafe {
+        let vx = GetSystemMetrics(SM_XVIRTUALSCREEN) + 1;
+        let vy = GetSystemMetrics(SM_YVIRTUALSCREEN) + 1;
+        let vw = GetSystemMetrics(SM_CXVIRTUALSCREEN) - 1;
+        let vh = GetSystemMetrics(SM_CYVIRTUALSCREEN) - 1;
+        (vx, vy, vw, vh)
+    }
+}
+
 pub fn create_overlay_window(module: Option<HMODULE>) -> Result<(HMODULE, HWND)> {
     let hinstance = match module {
         Some(m) => m,
@@ -281,12 +292,9 @@ pub fn create_overlay_window(module: Option<HMODULE>) -> Result<(HMODULE, HWND)>
     unsafe { RegisterClassW(&wc) };
 
     let hwnd = unsafe {
-        let vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
-        let vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
-        let vw = GetSystemMetrics(SM_CXVIRTUALSCREEN);
-        let vh = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+        let (vx, vy, vw, vh) = get_virtual_screen_rect();
         ce!(CreateWindowExW(
-            WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
+            WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
             class_name,
             w!("MonMouseOverlay"),
             WS_POPUP,
@@ -320,10 +328,7 @@ pub fn create_overlay_window(module: Option<HMODULE>) -> Result<(HMODULE, HWND)>
 
 pub fn refresh_overlay_window(hwnd: HWND) -> Result<()> {
     unsafe {
-        let vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
-        let vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
-        let vw = GetSystemMetrics(SM_CXVIRTUALSCREEN);
-        let vh = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+        let (vx, vy, vw, vh) = get_virtual_screen_rect();
         ce!(SetWindowPos(
             hwnd,
             HWND_TOPMOST,
