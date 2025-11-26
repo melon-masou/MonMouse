@@ -6,13 +6,15 @@ mod config;
 mod styles;
 mod tray;
 
+use std::collections::BTreeMap;
+use std::ops::Deref;
 use std::panic::PanicHookInfo;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::{cell::RefCell, panic, process, rc::Rc, thread};
 
 use app::App;
-use eframe::egui;
+use eframe::egui::{self, FontData};
 use log::info;
 use monmouse::message::UINotify;
 use monmouse::setting::{read_config, Settings, CONFIG_FILE_NAME};
@@ -94,24 +96,6 @@ fn mouse_control_spawn(mut eventloop: monmouse::Eventloop, tray: Tray) -> Result
     Ok(())
 }
 
-// Without running this dummy window, the win_processor event loop may block after ui
-// windows open (when hide_ui_on_launch = true). Suspect this is related to eframe
-// initialization.
-fn egui_dummy_launch() {
-    let opts = eframe::NativeOptions {
-        viewport: egui::viewport::ViewportBuilder::default()
-            .with_inner_size([1.0, 1.0])
-            .with_decorations(false)
-            .with_visible(false)
-            .with_resizable(false),
-        ..Default::default()
-    };
-
-    let _ = eframe::run_simple_native("MonMouseDummy", opts, move |ctx, _frame| {
-        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-    });
-}
-
 fn egui_eventloop(
     ui_reactor: UIReactor,
     config: Result<Settings, Error>,
@@ -123,7 +107,7 @@ fn egui_eventloop(
     app.trigger_system_apply_settings();
 
     let app = Rc::new(RefCell::new(app));
-    if app.borrow_mut().on_launch_wait_start_ui(egui_dummy_launch) {
+    if app.borrow_mut().on_launch_wait_start_ui() {
         return Ok(());
     }
     loop {
@@ -136,7 +120,7 @@ fn egui_eventloop(
                 AppWrap::init_ctx(&c.egui_ctx);
                 app_ref.borrow_mut().on_start_app_ui(&egui_notify1);
                 egui_notify1.update_ctx(Some(c.egui_ctx.clone()));
-                Box::new(AppWrap::new(app_ref, egui_notify1))
+                Ok(Box::new(AppWrap::new(app_ref, egui_notify1)))
             }),
         )?;
         if app.borrow_mut().wait_for_restart_background() {
@@ -178,8 +162,8 @@ fn ui_options_main_window() -> eframe::NativeOptions {
             .with_app_id("monmouse")
             .with_window_level(egui::WindowLevel::Normal)
             .with_icon(load_icon()),
-        follow_system_theme: true,
         run_and_return: true,
+        vsync: false,
         centered: true,
         persist_window: true,
         renderer: eframe::Renderer::Wgpu,
@@ -216,10 +200,15 @@ impl AppWrap {
         ctx.options_mut(|o| o.zoom_with_keyboard = false);
         // As a workaround, only scale fonts
         let mut fonts = egui::FontDefinitions::default();
-        fonts
-            .font_data
-            .iter_mut()
-            .for_each(|font| font.1.tweak.scale = gscale(1.0));
+        let mut font_data: BTreeMap<String, Arc<egui::FontData>> = BTreeMap::new();
+        fonts.font_data.iter().for_each(|(k, v)| {
+            let mut font = FontData {
+                ..v.deref().clone()
+            };
+            font.tweak.scale = gscale(1.0);
+            font_data.insert(k.to_string(), Arc::new(font));
+        });
+        fonts.font_data = font_data;
         ctx.set_fonts(fonts);
     }
 

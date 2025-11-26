@@ -83,7 +83,7 @@ impl DevicesPanel {
                         action.mark_close();
                     }
                     if ui.button("Copy").clicked() {
-                        ui.output_mut(|o| o.copied_text = details_text.clone());
+                        ui.ctx().copy_text(details_text.clone());
                     }
                 });
                 ui.add(

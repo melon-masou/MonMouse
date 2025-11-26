@@ -432,6 +432,15 @@ impl WinDeviceProcessor {
         }
         Ok(())
     }
+    fn reinitialize(&mut self) {
+        // Register raw devices again when UI launch, which may replace the original registration
+        match self.register_raw_devices() {
+            Ok(_) => (),
+            Err(e) => {
+                error!("Reinit register raw devices failed: {}", e);
+            }
+        };
+    }
     fn terminate(&mut self) -> Result<()> {
         Ok(())
     }
@@ -953,6 +962,9 @@ impl WinEventLoop {
             match &mut msg {
                 Message::Exit => {
                     return true;
+                }
+                Message::Reinitilization => {
+                    self.processor.reinitialize();
                 }
                 Message::SysMouseEvent(mouse_ev) => {
                     self.processor.on_mouse_event(mouse_ev);

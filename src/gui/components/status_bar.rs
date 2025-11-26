@@ -12,9 +12,7 @@ pub fn status_bar_ui(ui: &mut egui::Ui, app: &mut App) {
             .on_hover_text("Copy")
             .clicked()
         {
-            ui.output_mut(|o| {
-                o.copied_text = msg.clone();
-            });
+            ui.ctx().copy_text(msg.clone());
         }
         indicator_ui(ui, error_color(ui, ok));
         ui.label(msg.as_str()).on_hover_text(msg.as_str());

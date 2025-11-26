@@ -102,6 +102,10 @@ pub fn shortcut_from_str(s: &str) -> Option<(Modifiers, Code)> {
     }
 }
 
+pub fn key_is_allowed(key: Code) -> bool {
+    key_to_str(key) != "Unknown"
+}
+
 pub fn key_to_str(key: Code) -> &'static str {
     match key {
         Code::ArrowDown => "Down",
@@ -119,8 +123,17 @@ pub fn key_to_str(key: Code) -> &'static str {
         Code::End => "End",
         Code::PageUp => "PageUp",
         Code::PageDown => "PageDown",
-        Code::Minus => "Minus",
-        Code::Equal => "Plus",
+        Code::Minus => "-",
+        Code::Equal => "=",
+        Code::Comma => ",",
+        Code::Backslash => "\\",
+        Code::Slash => "/",
+        Code::BracketLeft => "[",
+        Code::BracketRight => "]",
+        Code::Backquote => "`",
+        Code::Period => ".",
+        Code::Semicolon => ";",
+        Code::Quote => "'",
         Code::Digit0 => "0",
         Code::Digit1 => "1",
         Code::Digit2 => "2",
@@ -198,8 +211,17 @@ pub fn str_to_key(str: &str) -> Option<Code> {
         "End" => Code::End,
         "PageUp" => Code::PageUp,
         "PageDown" => Code::PageDown,
-        "Minus" => Code::Minus,
-        "Plus" => Code::Equal,
+        "-" => Code::Minus,
+        "=" => Code::Equal,
+        "," => Code::Comma,
+        "\\" => Code::Backslash,
+        "/" => Code::Slash,
+        "[" => Code::BracketLeft,
+        "]" => Code::BracketRight,
+        "`" => Code::Backquote,
+        "." => Code::Period,
+        ";" => Code::Semicolon,
+        "'" => Code::Quote,
         "0" => Code::Digit0,
         "1" => Code::Digit1,
         "2" => Code::Digit2,

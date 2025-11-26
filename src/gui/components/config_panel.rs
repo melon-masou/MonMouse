@@ -84,7 +84,7 @@ impl ConfigPanel {
         {
             changed |= Self::config_item(ui, "Theme(Debug):", &mut input.theme, |ui, ist| {
                 use crate::styles::Theme;
-                egui::ComboBox::from_id_source("ThemeChooser")
+                egui::ComboBox::from_id_salt("ThemeChooser")
                     .selected_text(ist.buf().as_str())
                     .show_ui(ui, |ui| {
                         let mut add_theme =

@@ -28,8 +28,8 @@ thiserror = "1.0"
 log = "0.4"
 env_logger = "0.10"
 clap = { version = "4.4.11", features = ["derive"] }
-eframe = { version = "0.24", features = ["persistence", "wgpu"] }
-egui_extras = "0.24.2"
+eframe = { version = "0.33.2", features = ["persistence", "wgpu"] }
+egui_extras = { version = "0.33.2", features = [], default-features = false }
 serde = { version = "1.0.193", features = ["derive"] }
 tray-icon = "0.21.2"
 image = "0.24.7"

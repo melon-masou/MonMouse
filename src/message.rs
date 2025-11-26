@@ -121,6 +121,7 @@ pub enum TimerDueKind {
 pub enum Message {
     Exit,
     RestartUI,
+    Reinitilization,
     TimerDue(TimerDueKind),
     LockCurMouse(String),
     ScanDevices(RoundtripData<(), Vec<GenericDevice>>),

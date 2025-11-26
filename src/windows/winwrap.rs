@@ -9,6 +9,7 @@ use crate::windows::wintypes::*;
 use super::constants::*;
 use windows::Win32::Foundation::{ERROR_ALREADY_EXISTS, WAIT_OBJECT_0};
 
+use windows::core::w;
 use windows::Win32::System::Threading::{CreateMutexW, ReleaseMutex, WaitForSingleObject};
 use windows::Win32::UI::HiDpi::{
     SetProcessDpiAwareness, SetProcessDpiAwarenessContext,
@@ -584,7 +585,7 @@ pub fn create_dummy_window(module: Option<HMODULE>) -> Result<(HMODULE, HWND)> {
         Some(m) => m,
         None => unsafe { ce!(GetModuleHandleW(None))? },
     };
-    let class = WString::encode_from_str("Static").as_pcwstr();
+    let class = w!("Static");
 
     let hwnd = unsafe {
         ce!(CreateWindowExW(

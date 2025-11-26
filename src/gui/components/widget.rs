@@ -108,7 +108,12 @@ pub fn toggle_ui(ui: &mut egui::Ui, on: &mut bool, label: impl ToString) -> egui
         response.mark_changed();
     }
     response.widget_info(|| {
-        egui::WidgetInfo::selected(egui::WidgetType::Checkbox, *on, label.to_string())
+        egui::WidgetInfo::selected(
+            egui::WidgetType::Checkbox,
+            ui.is_enabled(),
+            *on,
+            label.to_string(),
+        )
     });
 
     if ui.is_rect_visible(rect) {
@@ -116,8 +121,13 @@ pub fn toggle_ui(ui: &mut egui::Ui, on: &mut bool, label: impl ToString) -> egui
         let visuals = ui.style().interact_selectable(&response, *on);
         let rect = rect.expand(visuals.expansion);
         let radius = 0.5 * rect.height();
-        ui.painter()
-            .rect(rect, radius, visuals.bg_fill, visuals.bg_stroke);
+        ui.painter().rect(
+            rect,
+            radius,
+            visuals.bg_fill,
+            visuals.bg_stroke,
+            egui::StrokeKind::Middle,
+        );
         let circle_x = egui::lerp((rect.left() + radius)..=(rect.right() - radius), how_on);
         let center = egui::pos2(circle_x, rect.center().y);
         ui.painter()
@@ -133,7 +143,7 @@ pub fn center_anchor_area<R>(
     id: impl Into<egui::Id>,
     ui: impl FnOnce(&mut egui::Ui) -> R,
 ) -> R {
-    let area = egui::Area::new(id)
+    let area = egui::Area::new(id.into())
         .order(egui::Order::Foreground)
         .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::new(0.0, 0.0));
     let egui::InnerResponse {
@@ -180,10 +190,10 @@ impl NotificationPopup {
         Self {
             id: id.into(),
             margin: egui::Margin {
-                left: 20.0,
-                right: 20.0,
-                top: 5.0,
-                bottom: 15.0,
+                left: 20,
+                right: 20,
+                top: 5,
+                bottom: 15,
             },
             max_width: 300.0,
             content_space: 20.0,
@@ -196,7 +206,7 @@ impl NotificationPopup {
         title: impl Into<egui::WidgetText>,
         popup_ui: impl FnOnce(&mut egui::Ui, &mut PopupAction) -> R,
     ) -> PopupResponse<R> {
-        let center = ctx.screen_rect().center();
+        let center = ctx.content_rect().center();
         let area = egui::Area::new(self.id)
             .order(egui::Order::Foreground)
             .pivot(egui::Align2::CENTER_CENTER)
@@ -305,13 +315,13 @@ impl CommonPopup {
 
         let width_with_padding = self.width
             + ui.style().spacing.item_spacing.x
-            + ui.style().spacing.window_margin.left
-            + ui.style().spacing.window_margin.right;
+            + ui.style().spacing.window_margin.left as f32
+            + ui.style().spacing.window_margin.right as f32;
         if self.fit_in_frame {
             pos.x = pos
                 .x
                 .min(ui.clip_rect().right() - width_with_padding)
-                .max(ui.clip_rect().left() + ui.style().spacing.window_margin.left);
+                .max(ui.clip_rect().left() + ui.style().spacing.window_margin.left as f32);
         }
         pos
     }
@@ -327,7 +337,7 @@ impl CommonPopup {
             ui,
             |ui, action| {
                 let collapsing = egui::CollapsingHeader::new(text)
-                    .id_source(id_source)
+                    .id_salt(id_source)
                     .open(action.open_state);
                 let collapsing_response = collapsing.show(ui, |_| {
                     // Add nothing into body, create popup after collapsing is fully opened
@@ -383,14 +393,14 @@ impl CommonPopup {
                 .order(egui::Order::Foreground)
                 .fixed_pos(pos);
             if self.fit_in_frame {
-                area = area.constrain_to(ui.ctx().screen_rect());
+                area = area.constrain_to(ui.ctx().content_rect());
             }
             let egui::InnerResponse {
                 inner: popup,
                 response: area_response,
             } = area.show(ui.ctx(), |ui| {
                 egui::Frame::popup(ui.style())
-                    .inner_margin(egui::Margin::same(8.0))
+                    .inner_margin(egui::Margin::same(8))
                     .show(ui, |ui| {
                         ui.set_min_width(self.width);
                         ui.set_max_width(self.width);
@@ -528,9 +538,9 @@ impl ShortcutChoosePopup {
 
         let mut changed = false;
         changed |= ui.checkbox(&mut state.ctrl_checked, "Ctrl").clicked();
+        changed |= ui.checkbox(&mut state.alt_checked, "Alt").clicked();
         changed |= ui.checkbox(&mut state.meta_checked, META_STR).clicked();
         changed |= ui.checkbox(&mut state.shift_checked, "Shift").clicked();
-        changed |= ui.checkbox(&mut state.alt_checked, "Alt").clicked();
 
         ui.horizontal(|ui| {
             changed |= shortcut_input_ui(ui, &mut state, false, action.just_open, |textinput| {
@@ -605,6 +615,10 @@ impl<'a> EatInputBuffer<'a> {
 }
 
 impl<'a> egui::TextBuffer for EatInputBuffer<'a> {
+    fn type_id(&self) -> std::any::TypeId {
+        std::any::TypeId::of::<EatInputBuffer<'static>>()
+    }
+
     fn is_mutable(&self) -> bool {
         true
     }

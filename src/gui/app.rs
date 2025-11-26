@@ -19,6 +19,7 @@ pub struct App {
     pub alert_errors: Vec<String>,
     config_path: Option<PathBuf>,
     should_exit: bool,
+    first_launch: bool,
     ui_reactor: UIReactor,
     inspect_timer: Option<TimerOperator>,
     #[cfg(debug_assertions)]
@@ -110,6 +111,12 @@ impl App {
 
     pub fn on_start_app_ui(&mut self, egui_notify: &EguiNotify) {
         self.setup_inspect_timer(egui_notify);
+        if !self.first_launch {
+            self.ui_reactor
+                .mouse_control_tx
+                .send(Message::Reinitilization);
+            self.first_launch = true;
+        }
         #[cfg(debug_assertions)]
         {
             self.debug_info = DebugInfo::default();
@@ -130,6 +137,7 @@ impl App {
             alert_errors: Vec::new(),
             config_path: None,
             should_exit: false,
+            first_launch: false,
             ui_reactor,
             inspect_timer: None,
             #[cfg(debug_assertions)]
@@ -233,11 +241,10 @@ impl App {
         }
     }
 
-    pub fn on_launch_wait_start_ui<T: Fn()>(&mut self, fn_before_wait: T) -> bool {
+    pub fn on_launch_wait_start_ui(&mut self) -> bool {
         if !self.state.settings.ui.hide_ui_on_launch {
             return self.should_exit;
         }
-        fn_before_wait();
         self.wait_for_restart_background()
     }
 
