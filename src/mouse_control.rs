@@ -4,6 +4,9 @@ use crate::message::Positioning;
 use crate::setting::DeviceSetting;
 use crate::utils::vec_ensure_get_mut;
 
+const MOUSE_SWITCHING_MS: u64 = 100;
+const MOUSE_SWITCHING_JUMP_RESET_PX: i32 = 200;
+
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MousePos {
     pub x: i32,
@@ -94,6 +97,7 @@ pub struct MouseRelocator {
     relocate_pos: Option<RelocatePos>,
     to_update_monitors: bool,
     last_jump_pos: Vec<Option<MousePos>>,
+    switching_until: u64,
 }
 
 impl Default for MouseRelocator {
@@ -111,6 +115,7 @@ impl MouseRelocator {
             relocate_pos: None,
             to_update_monitors: false,
             last_jump_pos: Vec::new(),
+            switching_until: 0,
         }
     }
 
@@ -119,6 +124,31 @@ impl MouseRelocator {
         // clear previous state
         self.last_jump_pos.fill(None);
         self.relocate_pos = None
+    }
+
+    fn is_switching(&self, tick: u64) -> bool {
+        tick <= self.switching_until
+    }
+
+    // On Windows, switching to a remembered cursor position is not completed by
+    // a single SetCursorPos call. Mouse input already queued by Windows or the
+    // device driver can still move the cursor after relocation.
+    //
+    // We handle this with a short switching window. During this window, small
+    // cursor movements are accepted. If the cursor jumps far away from cur_pos,
+    // we treat it as a coordinate stream from before the switch and request
+    // another relocation back to cur_pos. Current mouse updates are ignored
+    // during the window so boundary events cannot trigger another switch or
+    // overwrite saved_pos.
+    fn start_switching(&mut self, tick: u64) {
+        self.switching_until = tick.saturating_add(MOUSE_SWITCHING_MS);
+    }
+
+    fn is_big_switching_jump(&self, pos: &MousePos) -> bool {
+        let dx = i64::from(pos.x) - i64::from(self.cur_pos.x);
+        let dy = i64::from(pos.y) - i64::from(self.cur_pos.y);
+        let threshold = i64::from(MOUSE_SWITCHING_JUMP_RESET_PX);
+        dx * dx + dy * dy > threshold * threshold
     }
 
     pub fn jump_to_next_monitor(&mut self, ctrl: Option<&mut DeviceController>) {
@@ -152,7 +182,19 @@ impl MouseRelocator {
         self.relocate_pos = RelocatePos::from(new_pos);
     }
 
-    pub fn on_pos_update(&mut self, optc: Option<&mut DeviceController>, pos: MousePos) {
+    pub fn on_pos_update(&mut self, optc: Option<&mut DeviceController>, pos: MousePos, tick: u64) {
+        if self.is_switching(tick) && self.is_big_switching_jump(&pos) {
+            self.relocate_pos = RelocatePos::from(self.cur_pos);
+            log::trace!(
+                "Reset cursor during mouse switching: event_pos={}, cur_pos={}, tick={}, switching_until={}",
+                pos,
+                self.cur_pos,
+                tick,
+                self.switching_until
+            );
+            return;
+        }
+
         if let Some(ctrl) = optc {
             if ctrl.setting.locked_in_monitor {
                 // Has been locked into one area
@@ -179,6 +221,11 @@ impl MouseRelocator {
     }
 
     pub fn on_mouse_update(&mut self, c: &mut DeviceController, tick: u64) -> bool {
+        if self.is_switching(tick) {
+            // ignore other mouse events when switching
+            return false;
+        }
+
         let switched = self.cur_mouse != c.id;
         if switched {
             self.cur_mouse = c.id;
@@ -201,6 +248,9 @@ impl MouseRelocator {
             }
         }
         c.update_pos(&self.cur_pos, tick);
+        if switched {
+            self.start_switching(tick);
+        }
         switched
     }
 

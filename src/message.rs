@@ -153,6 +153,7 @@ pub enum ShortcutID {
 pub struct SysMouseEvent {
     pub pos_x: i32,
     pub pos_y: i32,
+    pub time: u32,
 }
 
 pub struct SignalSender(SyncSender<()>);

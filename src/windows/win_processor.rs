@@ -367,6 +367,7 @@ impl MouseLowLevelHook for WinHook {
         hook_ev_sender.send(Message::SysMouseEvent(SysMouseEvent {
             pos_x: e.pt.x,
             pos_y: e.pt.y,
+            time: e.time,
         }));
         true
     }
@@ -606,6 +607,8 @@ impl WinDeviceProcessor {
     }
 
     fn on_raw_input(&mut self, _wparam: WPARAM, lparam: LPARAM, tick: u32) {
+        let wtick = self.tick_widen.widen(tick);
+
         match get_rawinput_data(lparam_as_rawinput(lparam), &mut self.raw_input_buf) {
             Ok(_) => (),
             Err(e) => {
@@ -615,7 +618,6 @@ impl WinDeviceProcessor {
         }
 
         let ri = self.raw_input_buf.get_ref::<RAWINPUT>();
-        let wtick = self.tick_widen.widen(tick);
         let positioning = match check_mouse_event_is_absolute(ri) {
             Some(true) => Positioning::Absolute,
             Some(false) => Positioning::Relative,
@@ -688,9 +690,22 @@ impl WinDeviceProcessor {
     }
 
     fn on_mouse_event(&mut self, ev: &SysMouseEvent) {
+        let wtick = self.tick_widen.widen(ev.time);
+        let now = get_cur_tick();
+        if wtick + STALE_MOUSE_EVENT_MS < now {
+            trace!(
+                "Ignore stale mouse hook event: tick={}, now={}, stale_after={}ms",
+                wtick,
+                now,
+                STALE_MOUSE_EVENT_MS
+            );
+            return;
+        }
+
         let ctrl = self.devices.active().map(|v| &mut v.ctrl);
-        self.relocator
-            .on_pos_update(ctrl, MousePos::from(ev.pos_x, ev.pos_y));
+        let pos = MousePos::from(ev.pos_x, ev.pos_y);
+        self.relocator.on_pos_update(ctrl, pos, wtick);
+        self.resolve_relocation();
     }
 
     fn resolve_pending_updating_task(&mut self) {
