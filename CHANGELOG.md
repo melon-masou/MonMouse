@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.1
+- Improve quick switching reliability for some mouse
+- Fix broken CLI
+- Add toggle shortcut for switching
+- Polish UI texts and config tips
+
 ## v0.2.0
 - Add option to hide UI on launch
 - Add option to show inactive cursors
