@@ -124,6 +124,7 @@ pub enum Message {
     Reinitilization,
     TimerDue(TimerDueKind),
     LockCurMouse(String),
+    SwitchCurMouse(String),
     ScanDevices(RoundtripData<(), Vec<GenericDevice>>),
     InspectDevicesStatus(RoundtripData<(), Vec<(String, DeviceStatus)>>),
     ApplyProcessorSetting(RoundtripData<ApplyProcessorSettingsData, ApplyProcessorSettingsCtx>),
@@ -147,6 +148,7 @@ pub struct ApplyProcessorSettingsCtx {
 pub enum ShortcutID {
     CurMouseLock = 1000,
     CurMouseJumpNext = 1001,
+    CurMouseSwitch = 1002,
 }
 
 #[derive(Clone, Copy, Debug)]

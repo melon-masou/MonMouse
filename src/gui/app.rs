@@ -315,6 +315,25 @@ impl App {
                         },
                     )));
             }
+            Message::SwitchCurMouse(id) => {
+                let Some(dev) = self
+                    .state
+                    .managed_devices
+                    .iter_mut()
+                    .find(|v| v.generic.id == id)
+                else {
+                    return;
+                };
+                dev.device_setting.switch = !dev.device_setting.switch;
+                self.ui_reactor
+                    .mouse_control_tx
+                    .send(Message::ApplyOneDeviceSetting(SendData::new(
+                        DeviceSettingItem {
+                            id,
+                            content: dev.device_setting,
+                        },
+                    )));
+            }
             Message::ScanDevices(data) => match data.take_rsp() {
                 Ok(devs) => {
                     let dev_num = devs.len();

@@ -147,6 +147,17 @@ impl ConfigPanel {
 
         changed |= Self::config_item(
             ui,
+            t!("config.shortcut.cur_mouse_switch"),
+            &mut input.cur_mouse_switch,
+            |ui, ist| {
+                ShortcutChoosePopup::new("cur_mouse_switch")
+                    .ui(ui, ist.buf())
+                    .changed
+            },
+        );
+
+        changed |= Self::config_item(
+            ui,
             t!("config.shortcut.cur_mouse_jump_next"),
             &mut input.cur_mouse_jump_next,
             |ui, ist| {
@@ -349,6 +360,7 @@ pub struct ConfigInputState {
     show_inactive_cursor_markers: ValueState<bool>,
     hide_ui_on_launch: ValueState<bool>,
     cur_mouse_lock: InputState<String, NonCheck>,
+    cur_mouse_switch: InputState<String, NonCheck>,
     cur_mouse_jump_next: InputState<String, NonCheck>,
 }
 
@@ -387,6 +399,7 @@ impl Default for ConfigInputState {
             show_inactive_cursor_markers: ValueState::new(false),
             hide_ui_on_launch: ValueState::new(false),
             cur_mouse_lock: InputState::new(NonCheck()),
+            cur_mouse_switch: InputState::new(NonCheck()),
             cur_mouse_jump_next: InputState::new(NonCheck()),
         }
     }
@@ -412,6 +425,7 @@ impl ConfigInputState {
         set_from!(self, s.processor, show_inactive_cursors);
         set_from!(self, s.processor, show_inactive_cursor_markers);
         set_from!(self, s.processor.shortcuts, cur_mouse_lock);
+        set_from!(self, s.processor.shortcuts, cur_mouse_switch);
         set_from!(self, s.processor.shortcuts, cur_mouse_jump_next);
     }
 
@@ -424,6 +438,7 @@ impl ConfigInputState {
         set_into!(self, s.processor, show_inactive_cursors);
         set_into!(self, s.processor, show_inactive_cursor_markers);
         set_into!(self, s.processor.shortcuts, cur_mouse_lock);
+        set_into!(self, s.processor.shortcuts, cur_mouse_switch);
         set_into!(self, s.processor.shortcuts, cur_mouse_jump_next);
         Ok(())
     }

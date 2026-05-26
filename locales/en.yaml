@@ -44,6 +44,7 @@ config:
   shortcut:
     cur_mouse_lock: Lock current mouse
     cur_mouse_jump_next: Mouse jumping to next monitor
+    cur_mouse_switch: Toggle current mouse switch mode
   validate:
     invalid_value: Not a valid value
     value_should_among: Value should among

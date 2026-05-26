@@ -54,6 +54,7 @@ impl Settings {
             processor: ProcessorSettings::default(),
         };
         c.processor.shortcuts.cur_mouse_lock = "Ctrl+Alt+A".to_owned();
+        c.processor.shortcuts.cur_mouse_switch = "".to_owned();
         c.processor.shortcuts.cur_mouse_jump_next = "Ctrl+Alt+Q".to_owned();
         c.processor.devices.push(DeviceSettingItem {
             id: "Device1".to_owned(),
@@ -164,6 +165,9 @@ impl ProcessorSettings {
 pub struct ShortcutSettings {
     #[serde(default = "empty_string")]
     pub cur_mouse_lock: String,
+
+    #[serde(default = "empty_string")]
+    pub cur_mouse_switch: String,
 
     #[serde(default = "empty_string")]
     pub cur_mouse_jump_next: String,

@@ -44,6 +44,7 @@ config:
   shortcut:
     cur_mouse_lock: 锁定当前鼠标
     cur_mouse_jump_next: 鼠标跳转到下一显示器
+    cur_mouse_switch: 开关当前鼠标的切换模式
   validate:
     invalid_value: 无效的值
     value_should_among: 值应在以下范围内

@@ -578,6 +578,21 @@ impl WinDeviceProcessor {
         device.ctrl.update_settings(&content);
     }
 
+    fn cur_mouse_switch_toogle(&mut self) {
+        let device = self.devices.active();
+        let Some(device) = device else {
+            return;
+        };
+        let Some(id) = &device.id else {
+            return;
+        };
+        let content = self.settings.ensure_mut_device(id, |d| {
+            d.switch = !d.switch;
+            *d
+        });
+        device.ctrl.update_settings(&content);
+    }
+
     fn apply_processor_settings(&mut self, new_settings: Option<ProcessorSettings>) {
         if let Some(new) = new_settings {
             self.settings = new;
@@ -793,6 +808,16 @@ impl WinEventLoop {
         if let Err(e) = Self::apply_one_shortcut(
             &mut self.hotkey_mgr,
             self.processor.hwnd,
+            &shortcuts.cur_mouse_switch,
+            ShortcutID::CurMouseSwitch,
+        ) {
+            error!("register shortcut cur_mouse_switch error: {}", e);
+            last_error = Err(e);
+        }
+
+        if let Err(e) = Self::apply_one_shortcut(
+            &mut self.hotkey_mgr,
+            self.processor.hwnd,
             &shortcuts.cur_mouse_jump_next,
             ShortcutID::CurMouseJumpNext,
         ) {
@@ -811,6 +836,7 @@ impl WinEventLoop {
         match id {
             ShortcutID::CurMouseLock => self.on_shortcut_cur_mouse_lock(),
             ShortcutID::CurMouseJumpNext => self.on_shortcut_cur_mouse_jump_next(),
+            ShortcutID::CurMouseSwitch => self.on_shortcut_cur_mouse_switch(),
         }
     }
 
@@ -824,6 +850,19 @@ impl WinEventLoop {
             self.mouse_control_reactor
                 .ui_tx
                 .send(Message::LockCurMouse(id.clone()));
+        }
+    }
+
+    fn on_shortcut_cur_mouse_switch(&mut self) {
+        debug!("Shortcut cur_mouse_switch pressed");
+        if self.headless {
+            self.processor.cur_mouse_switch_toogle();
+            return;
+        }
+        if let Some(id) = self.processor.devices.active_id() {
+            self.mouse_control_reactor
+                .ui_tx
+                .send(Message::SwitchCurMouse(id.clone()));
         }
     }
 
