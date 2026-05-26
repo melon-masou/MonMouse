@@ -32,12 +32,38 @@ pub fn write_config(file: &PathBuf, settings: &Settings) -> Result<(), Error> {
     })
 }
 
+pub fn config_string(settings: &Settings) -> Result<String, Error> {
+    match serde_yaml::to_string(settings) {
+        Ok(v) => Ok(v),
+        Err(e) => Err(Error::InvalidConfigFile(e.to_string())),
+    }
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Settings {
     #[serde(default)]
     pub ui: UISettings,
     #[serde(default)]
     pub processor: ProcessorSettings,
+}
+
+impl Settings {
+    pub fn example() -> Self {
+        let mut c = Self {
+            ui: UISettings::default(),
+            processor: ProcessorSettings::default(),
+        };
+        c.processor.shortcuts.cur_mouse_lock = "Ctrl+Alt+A".to_owned();
+        c.processor.shortcuts.cur_mouse_jump_next = "Ctrl+Alt+Q".to_owned();
+        c.processor.devices.push(DeviceSettingItem {
+            id: "Device1".to_owned(),
+            content: DeviceSetting {
+                locked_in_monitor: false,
+                switch: true,
+            },
+        });
+        c
+    }
 }
 
 // Settings for single device

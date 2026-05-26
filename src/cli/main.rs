@@ -6,8 +6,8 @@ use log::{debug, error, info};
 use monmouse::{
     errors::Error,
     message::{setup_reactors, GenericDevice, UINotifyNoop},
-    setting::{read_config, CONFIG_FILE_NAME},
-    SingleProcess,
+    setting::{config_string, read_config, Settings, CONFIG_FILE_NAME},
+    SingleProcess, POLL_MSGS, POLL_TIMEOUT,
 };
 
 #[cfg(not(debug_assertions))]
@@ -34,6 +34,9 @@ struct Args {
 
     #[arg(short, long)]
     print_devices: bool,
+
+    #[arg(long)]
+    print_example_config: bool,
 }
 
 fn setup_logger(o: Option<String>) -> Result<(), Error> {
@@ -50,11 +53,10 @@ fn setup_logger(o: Option<String>) -> Result<(), Error> {
 
 fn main() -> Result<(), Error> {
     let args = Args::parse();
-    setup_logger(args.log_level)?;
-    let single_process = SingleProcess::create()?;
-
-    let config = read_config(&PathBuf::from(args.config_file))?;
-    debug!("Config loaded: {:?}", config);
+    if args.print_example_config {
+        print!("{}", config_string(&Settings::example()).unwrap());
+        return Ok(());
+    }
 
     let (_, mouse_control_reactor, _) = setup_reactors(
         Box::<UINotifyNoop>::default(),
@@ -68,9 +70,15 @@ fn main() -> Result<(), Error> {
         return Ok(());
     }
 
+    setup_logger(args.log_level)?;
+    let single_process = SingleProcess::create()?;
+
+    let config = read_config(&PathBuf::from(args.config_file))?;
+    debug!("Config loaded: {:?}", config);
+
     eventloop.load_config(config)?;
     info!("monmouse-cli started");
-    let result = eventloop.run();
+    let result = mouse_control_spawn(eventloop);
     match &result {
         Ok(_) => info!("monmouse-cli ended normally"),
         Err(e) => error!("monmouse-cli ended with error: {}", e),
@@ -78,6 +86,20 @@ fn main() -> Result<(), Error> {
 
     drop(single_process);
     result
+}
+
+fn mouse_control_spawn(mut eventloop: monmouse::Eventloop) -> Result<(), Error> {
+    eventloop.initialize()?;
+    loop {
+        if !eventloop.poll_wm_messages(POLL_MSGS, POLL_TIMEOUT)? {
+            break;
+        }
+        if eventloop.poll_messages() {
+            break;
+        }
+    }
+    eventloop.terminate()?;
+    Ok(())
 }
 
 fn print_devices(devices: Vec<GenericDevice>) {

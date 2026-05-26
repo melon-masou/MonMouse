@@ -932,20 +932,6 @@ impl WinEventLoop {
 
         Ok(true)
     }
-
-    pub fn run(&mut self) -> Result<()> {
-        self.initialize()?;
-        loop {
-            if !self.poll_wm_messages(
-                WIN_EVENTLOOP_POLL_MAX_MESSAGES,
-                WIN_EVENTLOOP_POLL_WAIT_TIMEOUT_MS,
-            )? {
-                break;
-            }
-        }
-        self.terminate()?;
-        Ok(())
-    }
 }
 
 impl WinEventLoop {

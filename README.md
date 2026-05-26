@@ -29,6 +29,16 @@ Glad to hear new ideas, feature requests, and feedback, which you can share on [
   - If you find two rows including "UnassiciatedEventsCapture" show "active" in device panel, even though you are moving just one mouse. You can increase this period by changing value of "Merge unassociated events within next" in config panel. 
   - The merging feature can be totally disabled by setting the value as -1.
 
+## Command line tool
+```
+# Print pointer devices info
+monmouse-cli --print-devices
+# Print example config file
+monmouse-cli --print-example-config
+# Headless mode. Using same config file as GUI
+monmouse-cli
+```
+
 ## Build
 ```
 # Debug
