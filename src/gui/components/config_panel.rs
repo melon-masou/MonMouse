@@ -20,10 +20,20 @@ impl ConfigPanel {
     fn config_item<'a, U: FieldState>(
         ui: &mut egui::Ui,
         text: impl Into<Cow<'a, str>>,
+        tooltip: Option<Cow<'a, str>>,
         ist: &mut U,
         add_contents: impl FnOnce(&mut egui::Ui, &mut U) -> bool,
     ) -> bool {
-        ui.label(text.into().as_str());
+        let text = text.into();
+        if let Some(tooltip) = tooltip {
+            ui.horizontal(|ui| {
+                ui.label(text.as_ref());
+                ui.label(RichText::new("?").small().weak())
+                    .on_hover_text(tooltip.as_ref());
+            });
+        } else {
+            ui.label(text.as_ref());
+        }
         let changed = add_contents(ui, ist);
         if changed {
             ist.parse_only();
@@ -48,6 +58,7 @@ impl ConfigPanel {
         changed |= Self::config_item(
             ui,
             t!("config.desc.language"),
+            None,
             &mut input.language,
             |ui, ist| {
                 egui::ComboBox::from_id_salt("LanguageChooser")
@@ -74,6 +85,7 @@ impl ConfigPanel {
         changed |= Self::config_item(
             ui,
             t!("config.desc.hide_ui_on_launch"),
+            None,
             &mut input.hide_ui_on_launch,
             |ui, ist| ui.checkbox(ist.value(), "").changed(),
         );
@@ -81,6 +93,7 @@ impl ConfigPanel {
         changed |= Self::config_item(
             ui,
             t!("config.desc.show_inactive_cursors"),
+            Some(t!("config.tip.show_inactive_cursors")),
             &mut input.show_inactive_cursors,
             |ui, ist| ui.checkbox(ist.value(), "").changed(),
         );
@@ -88,6 +101,7 @@ impl ConfigPanel {
         changed |= Self::config_item(
             ui,
             t!("config.desc.show_inactive_cursor_markers"),
+            Some(t!("config.tip.show_inactive_cursor_markers")),
             &mut input.show_inactive_cursor_markers,
             |ui, ist| ui.checkbox(ist.value(), "").changed(),
         );
@@ -100,6 +114,7 @@ impl ConfigPanel {
         changed |= Self::config_item(
             ui,
             t!("config.desc.inspect_device_interval_ms"),
+            Some(t!("config.tip.inspect_device_interval_ms")),
             &mut input.inspect_device_interval_ms,
             |ui, ist| ui.add(Self::textedit(ist.buf(), 8)).changed(),
         );
@@ -107,6 +122,7 @@ impl ConfigPanel {
         changed |= Self::config_item(
             ui,
             t!("config.desc.merge_unassociated_events_ms"),
+            Some(t!("config.tip.merge_unassociated_events_ms")),
             &mut input.merge_unassociated_events_ms,
             |ui, ist| ui.add(Self::textedit(ist.buf(), 8)).changed(),
         );
@@ -114,7 +130,7 @@ impl ConfigPanel {
         // For debugging colors Only
         #[cfg(debug_assertions)]
         {
-            changed |= Self::config_item(ui, "Theme(Debug):", &mut input.theme, |ui, ist| {
+            changed |= Self::config_item(ui, "Theme(Debug):", None, &mut input.theme, |ui, ist| {
                 use crate::styles::Theme;
                 egui::ComboBox::from_id_salt("ThemeChooser")
                     .selected_text(ist.buf().as_str())
@@ -137,6 +153,7 @@ impl ConfigPanel {
         changed |= Self::config_item(
             ui,
             t!("config.shortcut.cur_mouse_lock"),
+            Some(t!("config.tip.cur_mouse_lock")),
             &mut input.cur_mouse_lock,
             |ui, ist| {
                 ShortcutChoosePopup::new("cur_mouse_lock")
@@ -148,6 +165,7 @@ impl ConfigPanel {
         changed |= Self::config_item(
             ui,
             t!("config.shortcut.cur_mouse_switch"),
+            Some(t!("config.tip.cur_mouse_switch")),
             &mut input.cur_mouse_switch,
             |ui, ist| {
                 ShortcutChoosePopup::new("cur_mouse_switch")
@@ -159,6 +177,7 @@ impl ConfigPanel {
         changed |= Self::config_item(
             ui,
             t!("config.shortcut.cur_mouse_jump_next"),
+            Some(t!("config.tip.cur_mouse_jump_next")),
             &mut input.cur_mouse_jump_next,
             |ui, ist| {
                 ShortcutChoosePopup::new("cur_mouse_jump_next")

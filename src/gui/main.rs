@@ -205,6 +205,10 @@ impl AppWrap {
         //  related issue: https://github.com/emilk/egui/issues/3736
         ctx.set_zoom_factor(1.0);
         ctx.options_mut(|o| o.zoom_with_keyboard = false);
+        ctx.style_mut(|style| {
+            style.interaction.show_tooltips_only_when_still = false;
+            style.interaction.tooltip_delay = 0.0;
+        });
         // As a workaround, only scale fonts
         let mut fonts = egui::FontDefinitions::default();
         let mut font_data: BTreeMap<String, Arc<egui::FontData>> = BTreeMap::new();

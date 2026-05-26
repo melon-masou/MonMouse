@@ -14,7 +14,7 @@ devices:
     Save: 保存
   col:
     Activity: 活动
-    Switch: 切换
+    Switch: 位置
     Locked: 锁定
     Type: 类型
     Device: 设备
@@ -36,18 +36,26 @@ config:
     Save: 保存
   desc:
     language: 语言
-    inspect_device_interval_ms: 检查设备活动间隔 (毫秒)
+    inspect_device_interval_ms: 设备状态刷新间隔 (ms)
     hide_ui_on_launch: 启动时隐藏界面
-    merge_unassociated_events_ms: 合并下一时段未关联的事件 (毫秒)
-    show_inactive_cursors: 显示非活动的可切换光标
-    show_inactive_cursor_markers: 为非活动光标显示标记
+    merge_unassociated_events_ms: 未关联事件合并窗口 (ms)
+    show_inactive_cursors: 显示启用位置恢复的非活动光标
+    show_inactive_cursor_markers: 在非活动光标旁显示标记
+  tip:
+    inspect_device_interval_ms: 窗口打开时，界面刷新鼠标活动状态的频率。
+    merge_unassociated_events_ms: 将无法匹配到真实设备的鼠标事件合并到虚拟的未关联设备上的时间窗口。填 -1 可关闭合并。
+    show_inactive_cursors: 即使鼠标当前不活跃，也继续显示启用位置恢复的光标。
+    show_inactive_cursor_markers: 在非活动光标附近显示小标记，用来和活动光标区分。
+    cur_mouse_lock: 开关当前鼠标是否锁定在当前屏幕内。
+    cur_mouse_jump_next: 跳转鼠标到下一显示器。
+    cur_mouse_switch: 开关当前鼠标位置恢复。启用后，切回这只鼠标时会恢复它上次的位置。
   shortcut:
-    cur_mouse_lock: 锁定当前鼠标
-    cur_mouse_jump_next: 鼠标跳转到下一显示器
-    cur_mouse_switch: 开关当前鼠标的切换模式
+    cur_mouse_lock: 开关当前鼠标屏幕锁定
+    cur_mouse_switch: 开关当前鼠标位置恢复
+    cur_mouse_jump_next: 将鼠标跳转到下一显示器
   validate:
     invalid_value: 无效的值
-    value_should_among: 值应在以下范围内
+    value_should_among: 值应在范围内
 about:
   Version: 版本
   License: 许可证
@@ -65,4 +73,4 @@ msg:
   settings_write_fail: 写入配置文件失败
   scanned_devices: "扫描到 %{number} 个设备"
   scan_fail: 设备扫描失败
-  inspect_device_fail: 探测设备状态失败
+  inspect_device_fail: 刷新设备状态失败

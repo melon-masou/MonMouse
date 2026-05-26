@@ -36,18 +36,26 @@ config:
     Save: Save
   desc:
     language: Language
-    inspect_device_interval_ms: Inspect device activity internal (MS)
+    inspect_device_interval_ms: Device status refresh interval (ms)
     hide_ui_on_launch: Hide UI on launch
-    merge_unassociated_events_ms: Merge unassociated events within next (MS)
+    merge_unassociated_events_ms: Unassociated event merge window (ms)
     show_inactive_cursors: Show inactive switch-enabled cursors
-    show_inactive_cursor_markers: Show marker on inactive cursors
+    show_inactive_cursor_markers: Show marker near inactive cursors
+  tip:
+    inspect_device_interval_ms: How often the UI refreshes mouse activity status while the window is open.
+    merge_unassociated_events_ms: Time window for merging mouse events that cannot be matched to a real device into the virtual unassociated device. Use -1 to disable merging.
+    show_inactive_cursors: Keep showing cursors for switch-enabled mice even when they are not the active mouse.
+    show_inactive_cursor_markers: Draw a small marker near inactive cursors to distinguish them from the active cursor.
+    cur_mouse_lock: Toggle whether the current mouse is locked to the current monitor.
+    cur_mouse_jump_next: Move the current mouse cursor to the next monitor.
+    cur_mouse_switch: Toggle switch for the current mouse. When enabled, switching to this mouse restores its last position.
   shortcut:
-    cur_mouse_lock: Lock current mouse
-    cur_mouse_jump_next: Mouse jumping to next monitor
-    cur_mouse_switch: Toggle current mouse switch mode
+    cur_mouse_lock: Toggle current mouse lock
+    cur_mouse_switch: Toggle current mouse switch
+    cur_mouse_jump_next: Jump mouse to next monitor
   validate:
     invalid_value: Not a valid value
-    value_should_among: Value should among
+    value_should_among: Value must be between
 about:
   Version: Version
   License: License
@@ -57,12 +65,12 @@ msg:
   settings_restored: Settings restored
   settings_default_restored: Default settings restored
   settings_apply_fail: Failed to apply settings
-  settings_applied: New settings applied
-  settings_invalid_field: Not all settings fields contain valid value
-  settings_load_failed_use_default: Cannot load settings, use default settings
+  settings_applied: Settings applied
+  settings_invalid_field: Some settings contain invalid values
+  settings_load_failed_use_default: Could not load settings; using defaults
   settings_saved: Settings saved
   settings_undefined_save_path: Undefined settings save path
   settings_write_fail: Failed to write settings file
   scanned_devices: "Scanned %{number} devices"
   scan_fail: Failed to scan devices
-  inspect_device_fail: Failed to inspect device status
+  inspect_device_fail: Failed to refresh device status
