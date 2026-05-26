@@ -33,9 +33,9 @@ egui_extras = { version = "0.33.2", features = [], default-features = false }
 serde = { version = "1.0.193", features = ["derive"] }
 tray-icon = "0.21.2"
 image = "0.24.7"
-serde_yaml = "0.9.28"
+serde_yaml = { package = "yaml_serde", version = "0.10" }
 keyboard-types = "0.7.0"
-rust-i18n = "3"
+rust-i18n = "4"
 fontdb = "0.23.0"
 
 [target.'cfg(target_os = "windows")'.dependencies.windows]
