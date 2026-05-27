@@ -1,9 +1,0 @@
-name: Snapshot
-on: workflow_dispatch
-jobs:
-  snapshot:
-    uses: ./.github/workflows/build.yml
-    with:
-      version_anno: "snapshot"
-      upload_name: ${{ github.sha }}
-      use_dep_cache: true

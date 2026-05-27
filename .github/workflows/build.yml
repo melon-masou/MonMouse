@@ -55,7 +55,6 @@ jobs:
         path: |
           target/release/monmouse.exe
           target/release/monmouse-cli.exe
-          - name: Releases
     - name: Pack
       if: inputs.release_name != ''
       run: cd target\release && tar -caf monmouse-${{ inputs.release_name }}-windows.zip monmouse.exe monmouse-cli.exe
