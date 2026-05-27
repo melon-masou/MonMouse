@@ -11,6 +11,7 @@ panel:
 devices:
   btn:
     Scan: 扫描
+    Reload: 重载
     Save: 保存
   col:
     Activity: 活动

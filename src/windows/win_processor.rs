@@ -31,12 +31,15 @@ use windows::Win32::UI::Input::RAWINPUTDEVICE;
 use windows::Win32::UI::Input::RIDEV_PAGEONLY;
 use windows::Win32::UI::WindowsAndMessaging::MsgWaitForMultipleObjects;
 use windows::Win32::UI::WindowsAndMessaging::PeekMessageW;
+use windows::Win32::UI::WindowsAndMessaging::PBT_APMRESUMEAUTOMATIC;
+use windows::Win32::UI::WindowsAndMessaging::PBT_APMRESUMESUSPEND;
 use windows::Win32::UI::WindowsAndMessaging::PM_REMOVE;
 use windows::Win32::UI::WindowsAndMessaging::QS_ALLINPUT;
 use windows::Win32::UI::WindowsAndMessaging::WM_DISPLAYCHANGE;
 use windows::Win32::UI::WindowsAndMessaging::WM_DPICHANGED;
 use windows::Win32::UI::WindowsAndMessaging::WM_HOTKEY;
 use windows::Win32::UI::WindowsAndMessaging::WM_INPUT_DEVICE_CHANGE;
+use windows::Win32::UI::WindowsAndMessaging::WM_POWERBROADCAST;
 use windows::Win32::{
     Foundation::{HANDLE, HWND, LPARAM, WPARAM},
     UI::{
@@ -434,7 +437,7 @@ impl WinDeviceProcessor {
         Ok(())
     }
     fn reinitialize(&mut self) {
-        // Register raw devices again when UI launch, which may replace the original registration
+        // Register raw devices again when UI launches, which may replace the original registration.
         match self.register_raw_devices() {
             Ok(_) => (),
             Err(e) => {
@@ -559,6 +562,7 @@ impl WinDeviceProcessor {
         self.devices.iter_mut().for_each(|v| {
             v.ctrl.reset();
         });
+        self.clear_draw_inactive_mouses();
         self.to_update_monitors = false;
         Ok(())
     }
@@ -938,6 +942,13 @@ impl WinEventLoop {
                 debug!("Trigger updating devices by WM_INPUT_DEVICE_CHANGE");
                 self.processor.to_update_devices = true;
             }
+            WM_POWERBROADCAST => match msg.wParam.0 as u32 {
+                PBT_APMRESUMEAUTOMATIC | PBT_APMRESUMESUSPEND => {
+                    debug!("Reinitialize after system resume");
+                    self.processor.reinitialize();
+                }
+                _ => (),
+            },
             WM_HOTKEY => {
                 self.on_shortcut(msg.lParam.0 as u32);
                 self.processor.resolve_relocation();

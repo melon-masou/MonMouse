@@ -11,6 +11,7 @@ panel:
 devices:
   btn:
     Scan: Scan
+    Reload: Reload
     Save: Save
   col:
     Activity: Activity

@@ -34,6 +34,13 @@ impl App {
             .send(Message::ScanDevices(RoundtripData::default()));
     }
 
+    pub fn trigger_reload_devices(&mut self) {
+        self.result_clear();
+        self.ui_reactor
+            .mouse_control_tx
+            .send(Message::Reinitilization);
+    }
+
     pub fn trigger_inspect_devices_status(&mut self) {
         self.ui_reactor
             .mouse_control_tx

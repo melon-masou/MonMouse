@@ -172,6 +172,12 @@ impl DevicesPanel {
                 app.trigger_scan_devices();
             }
             if ui
+                .add(manage_button(t!("devices.btn.Reload").as_str()))
+                .clicked()
+            {
+                app.trigger_reload_devices();
+            }
+            if ui
                 .add(manage_button(t!("devices.btn.Save").as_str()))
                 .clicked()
             {
