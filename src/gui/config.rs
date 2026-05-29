@@ -4,10 +4,10 @@ use std::path::PathBuf;
 #[cfg(target_os = "windows")]
 #[cfg(not(debug_assertions))]
 pub fn get_config_dir() -> Result<PathBuf, Error> {
-    match std::env::current_dir().map(PathBuf::from) {
-        Ok(v) => Ok(v),
-        Err(_) => Err(Error::ConfigFileNotExists("None".to_owned())),
-    }
+    std::env::current_exe()
+        .ok()
+        .and_then(|v| v.parent().map(PathBuf::from))
+        .ok_or_else(|| Error::ConfigFileNotExists("current exe dir".to_owned()))
 }
 
 #[cfg(debug_assertions)]
