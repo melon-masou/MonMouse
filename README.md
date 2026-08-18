@@ -1,6 +1,6 @@
 # MonMouse: seamless switching between multiple mouses on multiple monitors
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT) [![GitHub release (with filter)](https://img.shields.io/github/v/release/melon-masou/MonMouse)](https://github.com/melon-masou/MonMouse/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT) [![GitHub release (with filter)](https://img.shields.io/github/v/release/melon-masou/MonMouse)](https://github.com/melon-masou/MonMouse/releases) ![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/melon-masou/MonMouse/total)
 
 The initial motivation behind MonMouse was reducing mouse movement when primarily working on the primary monitor and 
 occasionally utilizing a pen tablet on the secondary monitor. The need to repeatedly move the mouse back to the primary monitor when switching to writing is tedious.
