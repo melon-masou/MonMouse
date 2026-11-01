@@ -891,10 +891,7 @@ pub fn get_all_monitors_info() -> Result<Vec<MonitorInfo>> {
     }
 
     for m in &mut hms {
-        match get_monitor_scale_factor(m.handle) {
-            Ok(scale) => m.scale = scale,
-            Err(e) => return Err(e),
-        }
+        m.scale = get_monitor_scale_factor(m.handle)?;
     }
 
     Ok(hms)

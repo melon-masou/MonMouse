@@ -34,8 +34,10 @@ config:
   btn:
     Restore: 恢复
     Default: 默认
+    Locate: 打开位置
     Save: 保存
   desc:
+    config_file: 配置文件
     language: 语言
     inspect_device_interval_ms: 设备状态刷新间隔 (ms)
     hide_ui_on_launch: 启动时隐藏界面
@@ -43,6 +45,7 @@ config:
     show_inactive_cursors: 显示启用位置恢复的非活动光标
     show_inactive_cursor_markers: 在非活动光标旁显示标记
   tip:
+    locate_config_file: 在资源管理器中打开配置文件所在位置。
     inspect_device_interval_ms: 窗口打开时，界面刷新鼠标活动状态的频率。
     merge_unassociated_events_ms: 将无法匹配到真实设备的鼠标事件合并到虚拟的未关联设备上的时间窗口。填 -1 可关闭合并。
     show_inactive_cursors: 即使鼠标当前不活跃，也继续显示启用位置恢复的光标。
@@ -72,6 +75,7 @@ msg:
   settings_saved: 配置已保存
   settings_undefined_save_path: 未定义配置保存路径
   settings_write_fail: 写入配置文件失败
+  settings_locate_fail: 打开配置文件位置失败
   scanned_devices: "扫描到 %{number} 个设备"
   scan_fail: 设备扫描失败
   inspect_device_fail: 刷新设备状态失败

@@ -373,6 +373,16 @@ impl App {
         }
     }
 
+    pub fn locate_config_file(&mut self) {
+        let Some(path) = &self.config_path else {
+            self.result_error_alert(t!("msg.settings_undefined_save_path").to_string());
+            return;
+        };
+        if let Err(e) = monmouse::locate_file(path) {
+            self.result_error_alert(format!("{}: {}", t!("msg.settings_locate_fail"), e));
+        }
+    }
+
     pub fn save_global_config(&mut self) -> bool {
         let mut new_settings = self.state.settings.clone();
         new_settings.processor.devices = self.state.saved_settings.processor.devices.clone();

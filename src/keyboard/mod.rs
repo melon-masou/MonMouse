@@ -290,8 +290,8 @@ mod tests {
     fn test_shortcut_str() {
         let test_ok = |modifiers, code, str| {
             assert_eq!(shortcut_to_str(Some(modifiers), code), str);
-            if code.is_some() {
-                assert_eq!(shortcut_from_str(str), Some((modifiers, code.unwrap())));
+            if let Some(code) = code {
+                assert_eq!(shortcut_from_str(str), Some((modifiers, code)));
             } else {
                 assert_eq!(shortcut_from_str(str), None);
             }

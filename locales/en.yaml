@@ -34,8 +34,10 @@ config:
   btn:
     Restore: Restore
     Default: Default
+    Locate: Locate
     Save: Save
   desc:
+    config_file: Config file
     language: Language
     inspect_device_interval_ms: Device status refresh interval (ms)
     hide_ui_on_launch: Hide UI on launch
@@ -43,6 +45,7 @@ config:
     show_inactive_cursors: Show inactive switch-enabled cursors
     show_inactive_cursor_markers: Show marker near inactive cursors
   tip:
+    locate_config_file: Show the config file in File Explorer.
     inspect_device_interval_ms: How often the UI refreshes mouse activity status while the window is open.
     merge_unassociated_events_ms: Time window for merging mouse events that cannot be matched to a real device into the virtual unassociated device. Use -1 to disable merging.
     show_inactive_cursors: Keep showing cursors for switch-enabled mice even when they are not the active mouse.
@@ -72,6 +75,7 @@ msg:
   settings_saved: Settings saved
   settings_undefined_save_path: Undefined settings save path
   settings_write_fail: Failed to write settings file
+  settings_locate_fail: Failed to locate settings file
   scanned_devices: "Scanned %{number} devices"
   scan_fail: Failed to scan devices
   inspect_device_fail: Failed to refresh device status

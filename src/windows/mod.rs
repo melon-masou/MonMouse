@@ -12,6 +12,19 @@ use self::{
     winwrap::{close_handle, create_mutex, release_mutex, try_lock_mutex},
 };
 
+pub fn locate_file(path: &std::path::Path) -> Result<(), Error> {
+    use std::os::windows::process::CommandExt;
+
+    path.metadata().map_err(Error::IO)?;
+    let path = std::path::absolute(path).map_err(Error::IO)?;
+    std::process::Command::new("explorer.exe")
+        .raw_arg("/select,")
+        .arg(path)
+        .spawn()
+        .map(|_| ())
+        .map_err(Error::IO)
+}
+
 #[derive(Debug)]
 pub struct SingleProcess {
     handle: HANDLE,

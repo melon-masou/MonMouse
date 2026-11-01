@@ -28,8 +28,15 @@ impl ConfigPanel {
         if let Some(tooltip) = tooltip {
             ui.horizontal(|ui| {
                 ui.label(text.as_ref());
-                ui.label(RichText::new("?").small().weak())
-                    .on_hover_text(tooltip.as_ref());
+                let help = ui
+                    .add(egui::Button::new(RichText::new("?").small()).frame(false))
+                    .on_hover_cursor(egui::CursorIcon::PointingHand);
+                egui::Popup::from_toggle_button_response(&help)
+                    .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                    .width(300.0)
+                    .show(|ui| {
+                        ui.add(egui::Label::new(tooltip.as_ref()).wrap());
+                    });
             });
         } else {
             ui.label(text.as_ref());
@@ -246,6 +253,15 @@ impl ConfigPanel {
                 .spacing([40.0, 8.0])
                 .striped(false)
                 .show(ui, |ui| {
+                    ui.label(t!("config.desc.config_file"));
+                    if ui
+                        .add(manage_button(t!("config.btn.Locate").as_str()))
+                        .on_hover_text(t!("config.tip.locate_config_file"))
+                        .clicked()
+                    {
+                        app.locate_config_file();
+                    }
+                    ui.end_row();
                     Self::advanced_config(ui, &mut app.state.config_input);
                 });
             ui.add_space(Self::SPACING);

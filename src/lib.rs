@@ -15,6 +15,7 @@ pub mod windows;
 #[cfg(target_os = "windows")]
 pub mod platform {
     use super::windows;
+    pub use windows::locate_file;
     pub type Eventloop = windows::win_processor::WinEventLoop;
     pub type SingleProcess = windows::SingleProcess;
     pub const POLL_MSGS: u32 = windows::constants::WIN_EVENTLOOP_POLL_MAX_MESSAGES;

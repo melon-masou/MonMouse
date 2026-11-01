@@ -65,7 +65,7 @@ pub fn indicator_ui(ui: &mut egui::Ui, color: impl Into<Color32>) -> egui::Respo
             rect.center(),
             0.5 * 0.5 * rect.height(),
             color,
-            egui::Stroke::new(0.5, visuals.fg_stroke.color),
+            egui::Stroke::new(0.5_f32, visuals.fg_stroke.color),
         );
     }
 

@@ -21,7 +21,9 @@ Glad to hear new ideas, feature requests, and feedback, which you can share on [
 
 
 ## Usage
-- Download prebuilt from [Releases](https://github.com/melon-masou/MonMouse/releases).
+- Download MonMouse:
+  - Prebuilt from [Releases](https://github.com/melon-masou/MonMouse/releases).
+  - Or install via winget (community maintained): `winget install melon-masou.MonMouse`.
 - MSVC library is required. You can get latest from [latest-supported-vc-redist](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)
 - Only turn on "Switch" for **relative** positioning device which you hope to remember the cursor position, like mouse or touchpad. There is no need to turn on it for absolute positioning device like touchscreen and pen tablet.
 - Some devices have multiple rows on "Devices" panel, which are corresponding to different usages. For example, changing "Pen Mode", "Mouse Mode", "Enable Windows Ink" setting of a Wacom tablet will cause mouse events emitted by different device.
