@@ -172,9 +172,9 @@ impl HookWrap {
         }
         let call_next = T::on_mouse_ll(wparam.0 as u32, lparam_ref::<MSLLHOOKSTRUCT>(&lparam));
         if call_next {
-            LRESULT(0)
-        } else {
             unsafe { CallNextHookEx(None, ncode, wparam, lparam) }
+        } else {
+            LRESULT(1)
         }
     }
 

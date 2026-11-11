@@ -31,7 +31,7 @@ use windows::Win32::{
 // blurring or erasing mouse edge pixels.
 const TRANSPARENT_COLOR: COLORREF = COLORREF(0x00090807);
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct CursorPos(pub i32, pub i32, pub usize); // x, y, id
 
 struct OverlayContext {
@@ -58,6 +58,18 @@ impl Drop for OverlayContext {
     }
 }
 
+fn cursor_dirty_rect(c: &CursorPos, vx: i32, vy: i32) -> RECT {
+    let x = c.0 - vx;
+    let y = c.1 - vy;
+    const PAD: i32 = 128;
+    RECT {
+        left: x - PAD,
+        top: y - PAD,
+        right: x + PAD,
+        bottom: y + PAD,
+    }
+}
+
 // Should be called in same thread with overlay window eventloop, as
 // a lock-free context is used to save cursors list for rendering.
 pub fn trigger_draw_cursors(hwnd: HWND, new_list: Vec<CursorPos>, show_marker: bool) {
@@ -67,14 +79,21 @@ pub fn trigger_draw_cursors(hwnd: HWND, new_list: Vec<CursorPos>, show_marker: b
             None => return,
         }
     };
+    if ctx.cursors_list == new_list && ctx.show_marker == show_marker {
+        return;
+    }
     let show = !new_list.is_empty() && ctx.cursors_list.is_empty();
     let hide = new_list.is_empty() && !ctx.cursors_list.is_empty();
+    unsafe {
+        let vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
+        let vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
+        for c in ctx.cursors_list.iter().chain(new_list.iter()) {
+            let dirty = cursor_dirty_rect(c, vx, vy);
+            let _ = InvalidateRect(hwnd, Some(&dirty), false);
+        }
+    }
     ctx.cursors_list = new_list;
     ctx.show_marker = show_marker;
-
-    unsafe {
-        let _ = InvalidateRect(hwnd, None, true);
-    }
     if show {
         show_overlay(hwnd);
     }
@@ -229,7 +248,7 @@ fn draw_overlay(hwnd: HWND) -> LRESULT {
         }
 
         let hdc = BeginPaint(hwnd, &mut ps);
-        FillRect(hdc, &rect, ctx.transparent_brush);
+        FillRect(hdc, &ps.rcPaint, ctx.transparent_brush);
         if let Err(e) = draw_cursors(ctx, hdc) {
             log::error!("draw cursors in overlay failed: {:?}", e);
         }

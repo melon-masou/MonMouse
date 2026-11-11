@@ -3,6 +3,7 @@ btn:
   Close: 关闭
   Copy: 复制
   Clear: 清空
+  Confirm: 确认
 panel:
   Devices: 设备
   Config: 配置

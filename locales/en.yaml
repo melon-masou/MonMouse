@@ -3,6 +3,7 @@ btn:
   Close: Close
   Copy: Copy
   Clear: Clear
+  Confirm: Confirm
 panel:
   Devices: Devices
   Config: Config

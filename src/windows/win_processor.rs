@@ -22,6 +22,7 @@ use crate::mouse_control::MousePos;
 use crate::mouse_control::MouseRelocator;
 use crate::mouse_control::RelocatePos;
 use crate::setting::DeviceSetting;
+use crate::setting::DeviceSettingItem;
 use crate::setting::ProcessorSettings;
 use crate::setting::Settings;
 use crate::utils::SimpleRatelimit;
@@ -261,7 +262,7 @@ impl WinDeviceSet {
         }
     }
 
-    pub fn inactive_positions(&mut self) -> Vec<CursorPos> {
+    pub fn inactive_positions(&self) -> Vec<CursorPos> {
         self.devs
             .iter()
             .enumerate()
@@ -335,21 +336,23 @@ struct WinHook {
 
 impl WinHook {
     fn new() -> Self {
-        let _ = G_HOOK_EV_SENDER.get().unwrap();
         WinHook {
             mouse_ll_hook: None,
         }
     }
+
     fn register(&mut self) -> Result<()> {
         self.mouse_ll_hook = Some(set_windows_hook(HookWrap::mouse_ll::<WinHook>())?);
         Ok(())
     }
+
     fn unregister(&mut self) -> Result<()> {
-        if let Some(h) = self.mouse_ll_hook {
-            let _ = unset_windows_hook(h);
+        if let Some(hook) = self.mouse_ll_hook.take() {
+            unset_windows_hook(hook)?;
         }
         Ok(())
     }
+
     fn set_ev_sender(sender: MessageSender) {
         G_HOOK_EV_SENDER.set(sender).unwrap();
     }
@@ -446,6 +449,7 @@ impl WinDeviceProcessor {
         };
     }
     fn terminate(&mut self) -> Result<()> {
+        self.clear_draw_inactive_mouses();
         Ok(())
     }
 }
@@ -597,6 +601,14 @@ impl WinDeviceProcessor {
         device.ctrl.update_settings(&content);
     }
 
+    fn apply_one_device_setting(&mut self, item: DeviceSettingItem) {
+        self.settings
+            .ensure_mut_device(&item.id, |d| *d = item.content);
+        self.devices.update_one(&item.id, |d| {
+            d.ctrl.update_settings(&item.content);
+        });
+    }
+
     fn apply_processor_settings(&mut self, new_settings: Option<ProcessorSettings>) {
         if let Some(new) = new_settings {
             self.settings = new;
@@ -620,9 +632,7 @@ impl WinDeviceProcessor {
             settings.devices.len()
         );
 
-        if !settings.show_inactive_cursors {
-            self.clear_draw_inactive_mouses();
-        }
+        self.draw_inactive_mouses();
     }
 
     fn on_raw_input(&mut self, _wparam: WPARAM, lparam: LPARAM, tick: u32) {
@@ -697,6 +707,8 @@ impl WinDeviceProcessor {
                 cursor_list,
                 self.settings.show_inactive_cursor_markers,
             );
+        } else {
+            self.clear_draw_inactive_mouses();
         }
     }
 
@@ -1048,9 +1060,7 @@ impl WinEventLoop {
                 }
                 Message::ApplyOneDeviceSetting(data) => {
                     let item = data.take();
-                    self.processor
-                        .devices
-                        .update_one_device_settings(&item.id, &item.content);
+                    self.processor.apply_one_device_setting(item);
                 }
                 _ => panic!("recv unexpected ui msg: {:?}", msg),
             };

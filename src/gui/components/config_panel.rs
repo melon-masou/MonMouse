@@ -225,47 +225,49 @@ impl ConfigPanel {
         });
 
         ui.separator();
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            egui::Grid::new("BasicPart")
-                .num_columns(2)
-                .spacing([40.0, 8.0])
-                .striped(false)
-                .show(ui, |ui| {
-                    Self::basic_config(ui, &mut app.state.config_input);
-                });
-            ui.add_space(Self::SPACING);
+        egui::ScrollArea::vertical()
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                egui::Grid::new("BasicPart")
+                    .num_columns(2)
+                    .spacing([40.0, 8.0])
+                    .striped(false)
+                    .show(ui, |ui| {
+                        Self::basic_config(ui, &mut app.state.config_input);
+                    });
+                ui.add_space(Self::SPACING);
 
-            Self::title(ui, t!("config.part.Shortcuts").as_str());
-            ui.add_space(Self::SPACING);
-            egui::Grid::new("ShortcutsPart")
-                .num_columns(2)
-                .spacing([40.0, 15.0])
-                .striped(false)
-                .show(ui, |ui| {
-                    Self::shortcuts_config(ui, &mut app.state.config_input);
-                });
-            ui.add_space(Self::SPACING);
+                Self::title(ui, t!("config.part.Shortcuts").as_str());
+                ui.add_space(Self::SPACING);
+                egui::Grid::new("ShortcutsPart")
+                    .num_columns(2)
+                    .spacing([40.0, 15.0])
+                    .striped(false)
+                    .show(ui, |ui| {
+                        Self::shortcuts_config(ui, &mut app.state.config_input);
+                    });
+                ui.add_space(Self::SPACING);
 
-            Self::title(ui, t!("config.part.Advanced").as_str());
-            ui.add_space(Self::SPACING);
-            egui::Grid::new("AdvancedPart")
-                .num_columns(2)
-                .spacing([40.0, 8.0])
-                .striped(false)
-                .show(ui, |ui| {
-                    ui.label(t!("config.desc.config_file"));
-                    if ui
-                        .add(manage_button(t!("config.btn.Locate").as_str()))
-                        .on_hover_text(t!("config.tip.locate_config_file"))
-                        .clicked()
-                    {
-                        app.locate_config_file();
-                    }
-                    ui.end_row();
-                    Self::advanced_config(ui, &mut app.state.config_input);
-                });
-            ui.add_space(Self::SPACING);
-        });
+                Self::title(ui, t!("config.part.Advanced").as_str());
+                ui.add_space(Self::SPACING);
+                egui::Grid::new("AdvancedPart")
+                    .num_columns(2)
+                    .spacing([40.0, 8.0])
+                    .striped(false)
+                    .show(ui, |ui| {
+                        ui.label(t!("config.desc.config_file"));
+                        if ui
+                            .add(manage_button(t!("config.btn.Locate").as_str()))
+                            .on_hover_text(t!("config.tip.locate_config_file"))
+                            .clicked()
+                        {
+                            app.locate_config_file();
+                        }
+                        ui.end_row();
+                        Self::advanced_config(ui, &mut app.state.config_input);
+                    });
+                ui.add_space(Self::SPACING);
+            });
 
         Self::check_new_change(app);
     }

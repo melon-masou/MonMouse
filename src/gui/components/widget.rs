@@ -395,6 +395,7 @@ impl CommonPopup {
             if self.fit_in_frame {
                 area = area.constrain_to(ui.ctx().content_rect());
             }
+            let child_popup_before = egui::Popup::is_any_open(ui.ctx());
             let egui::InnerResponse {
                 inner: popup,
                 response: area_response,
@@ -407,10 +408,15 @@ impl CommonPopup {
                         popup_ui(ui, &mut popup_action)
                     })
             });
+            let child_popup_after = egui::Popup::is_any_open(ui.ctx());
 
             let will_close = popup_action.close
                 || ui.input(|i| i.key_pressed(egui::Key::Escape))
-                || (!just_open && self.focus && area_response.clicked_elsewhere());
+                || (!just_open
+                    && self.focus
+                    && !child_popup_before
+                    && !child_popup_after
+                    && area_response.clicked_elsewhere());
             if will_close {
                 state.will_close = true;
                 popup_action.mark_close();
@@ -553,6 +559,9 @@ impl ShortcutChoosePopup {
                 state.key_input = "".to_string();
                 action.mark_close();
             }
+            if ui.button(t!("btn.Confirm")).clicked() {
+                action.mark_close();
+            }
         });
 
         state.changed |= changed;
@@ -582,7 +591,7 @@ impl ShortcutChoosePopup {
     }
 
     pub fn ui(mut self, ui: &mut egui::Ui, buf: &mut String) -> ShortcutInputResponse {
-        let resp = CommonPopup::new(self.id_source).width(140.0).ui(
+        let resp = CommonPopup::new(self.id_source).width(180.0).ui(
             ui,
             |ui, action| Self::button_ui(ui, action, buf.as_str()),
             |ui, action| self.popup_ui(ui, action),
