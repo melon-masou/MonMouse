@@ -6,21 +6,21 @@ use crate::device_type::DeviceType;
 use crate::device_type::WindowsRawinput;
 use crate::errors::Error;
 use crate::errors::Result;
+use crate::input_control::relocator::MouseDeviceTracker;
+use crate::input_control::relocator::MouseRelocator;
+use crate::input_control::relocator::RelocatePos;
+use crate::input_control::MonitorArea;
+use crate::input_control::MonitorAreasList;
+use crate::input_control::MousePos;
+use crate::input_control::Positioning;
+use crate::input_control::SysMouseEvent;
 use crate::keyboard::key_windows::shortcut_str_to_win;
 use crate::message::DeviceStatus;
 use crate::message::GenericDevice;
 use crate::message::Message;
 use crate::message::MessageSender;
 use crate::message::MouseControlReactor;
-use crate::message::Positioning;
 use crate::message::ShortcutID;
-use crate::message::SysMouseEvent;
-use crate::mouse_control::DeviceController;
-use crate::mouse_control::MonitorArea;
-use crate::mouse_control::MonitorAreasList;
-use crate::mouse_control::MousePos;
-use crate::mouse_control::MouseRelocator;
-use crate::mouse_control::RelocatePos;
 use crate::setting::DeviceSetting;
 use crate::setting::DeviceSettingItem;
 use crate::setting::ProcessorSettings;
@@ -64,7 +64,7 @@ pub struct WinDevice {
     pub iface: Option<DeviceIfaceInfo>,
     pub parents: Vec<WString>,
     pub hid: Option<HidDeviceInfo>,
-    pub ctrl: DeviceController,
+    pub ctrl: MouseDeviceTracker,
 }
 
 impl std::fmt::Debug for WinDevice {
@@ -127,12 +127,12 @@ impl std::fmt::Display for WinDevice {
     }
 }
 
-fn init_device_control(handle: HANDLE) -> DeviceController {
+fn init_device_control(handle: HANDLE) -> MouseDeviceTracker {
     let setting = DeviceSetting {
         locked_in_monitor: false,
         switch: false,
     };
-    DeviceController::new(handle.0 as u64, setting)
+    MouseDeviceTracker::new(handle.0 as u64, setting)
 }
 
 // A dummy device for WM_INPUT events which have null RAWINPUT.hDevice.

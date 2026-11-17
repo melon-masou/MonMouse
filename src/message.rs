@@ -10,15 +10,9 @@ use std::{
 use crate::{
     device_type::DeviceType,
     errors::Error,
+    input_control::{Positioning, SysMouseEvent},
     setting::{DeviceSettingItem, ProcessorSettings},
 };
-
-#[derive(Debug, Clone, Copy)]
-pub enum Positioning {
-    Unknown,
-    Relative,
-    Absolute,
-}
 
 #[derive(Debug)]
 pub enum DeviceStatus {
@@ -149,13 +143,6 @@ pub enum ShortcutID {
     CurMouseLock = 1000,
     CurMouseJumpNext = 1001,
     CurMouseSwitch = 1002,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct SysMouseEvent {
-    pub pos_x: i32,
-    pub pos_y: i32,
-    pub time: u32,
 }
 
 pub struct SignalSender(SyncSender<()>);

@@ -1,7 +1,8 @@
 use eframe::egui::{self, TextBuffer};
 use egui_extras::{Column, Size, StripBuilder, TableBuilder};
 use monmouse::{
-    message::{DeviceStatus, GenericDevice, Positioning},
+    input_control::Positioning,
+    message::{DeviceStatus, GenericDevice},
     setting::DeviceSettingItem,
 };
 

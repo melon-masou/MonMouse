@@ -1,8 +1,8 @@
 pub mod device_type;
 pub mod errors;
+pub mod input_control;
 pub mod keyboard;
 pub mod message;
-pub mod mouse_control;
 pub mod setting;
 pub mod utils;
 
