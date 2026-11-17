@@ -7,6 +7,9 @@ authors = ["melon.masou <melon.masou@outlook.com>"]
 default-run = "monmouse"
 build = "build.rs"
 
+[workspace]
+members = ["crates/monmouse-macros"]
+
 [[bin]]
 name = "monmouse-cli"
 path = "src/cli/main.rs"
@@ -24,6 +27,7 @@ required-features = ["dep-only"]
 dep-only = []
 
 [dependencies]
+monmouse-macros = { path = "crates/monmouse-macros" }
 thiserror = "1.0"
 log = "0.4"
 env_logger = "0.10"
@@ -31,6 +35,7 @@ clap = { version = "4.4.11", features = ["derive"] }
 eframe = { version = "0.33.2", features = ["persistence", "wgpu"] }
 egui_extras = { version = "0.33.2", features = [], default-features = false }
 serde = { version = "1.0.193", features = ["derive"] }
+validator = { version = "0.21", default-features = false, features = ["derive"] }
 tray-icon = "0.21.2"
 image = "0.24.7"
 serde_yaml = { package = "yaml_serde", version = "0.10" }

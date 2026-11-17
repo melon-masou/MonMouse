@@ -2,7 +2,7 @@ use std::{path::PathBuf, time::Duration};
 
 #[cfg(debug_assertions)]
 use crate::components::debug::DebugInfo;
-use crate::{components::config_panel::ConfigInputState, styles::Theme, EguiNotify, PanelTag};
+use crate::{components::validatable_input::InputsCache, styles::Theme, EguiNotify, PanelTag};
 use monmouse::{
     errors::Error,
     message::{
@@ -56,9 +56,12 @@ impl App {
     pub fn trigger_user_change_settings(&mut self) {
         self.trigger_settings_changed(true);
     }
-    pub fn trigger_system_apply_settings(&mut self) {
+
+    pub fn apply_startup_settings(&mut self) {
+        // Reuse the normal settings application at startup to setup processor
         self.trigger_settings_changed(false);
     }
+
     fn trigger_settings_changed(&mut self, user_requested: bool) {
         self.result_clear();
         self.trigger_settings_changed_ui();
@@ -90,32 +93,23 @@ impl App {
         self.inspect_timer = Some(timer);
     }
 
-    pub fn lock_panel(&mut self, reason: String) {
-        self.state.locked_panel = Some((self.state.cur_panel, reason))
-    }
-    pub fn unlock_panel(&mut self) {
-        self.state.locked_panel = None
+    pub fn apply_user_new_settings_async(&mut self) {
+        if !self.state.config_cache.validate() {
+            self.result_error_alert(t!("msg.settings_invalid_field").to_string());
+            return;
+        }
+        let mut processor = self.state.config_cache.object().processor.clone();
+        // Devices are edited independently of the Config draft.
+        processor.devices = self.state.settings.processor.devices.clone();
+        self.state.settings.ui = self.state.config_cache.object().ui.clone();
+        self.state.settings.processor = processor;
+        self.state.config_cache.clear_changes();
+        self.state.saving = true;
+        self.trigger_user_change_settings();
     }
 
-    pub fn on_settings_applied(&mut self) {
-        self.state.config_input.on_change_applied();
-        self.unlock_panel();
-        self.save_global_config();
-    }
-    pub fn apply_user_new_settings_async(&mut self) {
-        match self.state.config_input.set_into(&mut self.state.settings) {
-            Ok(_) => {
-                self.trigger_user_change_settings();
-            }
-            Err(_) => self.result_error_alert(t!("msg.settings_invalid_field").to_string()),
-        }
-    }
-    pub fn restore_settings(&mut self) {
-        self.state.config_input.set_from(&self.state.settings);
-        self.result_ok(t!("msg.settings_restored").to_string());
-    }
     pub fn set_default_settings(&mut self) {
-        self.state.config_input.set_from(&Settings::default());
+        self.state.config_cache.replace(Settings::default());
         self.result_ok(t!("msg.settings_default_restored").to_string());
     }
 
@@ -173,7 +167,7 @@ impl App {
                 e
             )),
         };
-        self.state.config_input.set_from(&self.state.settings);
+        self.state.config_cache = InputsCache::new(self.state.settings.clone());
         self.config_path = config_path;
         self
     }
@@ -349,25 +343,39 @@ impl App {
                 }
                 Err(e) => self.result_error_alert(format!("{}: {}", t!("msg.scan_fail"), e)),
             },
-            Message::TimerDue(TimerDueKind::InspectDevice) => self.trigger_inspect_devices_status(),
+            Message::TimerDue(TimerDueKind::InspectDevice) => {
+                self.trigger_inspect_devices_status();
+            }
             Message::InspectDevicesStatus(data) => match data.take_rsp() {
                 Ok(devs) => self.update_devices_status(devs),
                 Err(e) => {
                     self.result_error_silent(format!("{}: {}", t!("msg.inspect_device_fail"), e))
                 }
             },
-            Message::ApplyProcessorSetting(data) => match data.take_rsp() {
-                Ok(ctx) => {
-                    if ctx.user_requested {
-                        self.result_ok(t!("msg.settings_applied").to_string());
-                        self.on_settings_applied();
+            Message::ApplyProcessorSetting(data) => {
+                if data.req().ctx.user_requested {
+                    self.state.saving = false;
+                }
+                match data.take_rsp() {
+                    Ok(ctx) if ctx.user_requested => {
+                        let mut settings = self.state.saved_settings.clone();
+                        settings.ui = self.state.settings.ui.clone();
+                        let devices = std::mem::take(&mut settings.processor.devices);
+                        settings.processor = self.state.settings.processor.clone();
+                        settings.processor.devices = devices;
+                        self.save_config(settings);
                     }
+                    Ok(_) => (),
+                    Err(error) => self.result_error_alert(format!(
+                        "{}: {}",
+                        t!("msg.settings_apply_fail"),
+                        error
+                    )),
                 }
-                Err(e) => {
-                    self.result_error_alert(format!("{}: {}", t!("msg.settings_apply_fail"), e))
-                }
-            },
+                self.trigger_inspect_devices_status();
+            }
 
+            // Fallback
             #[allow(unreachable_patterns)]
             _ => panic!("recv unexpected msg: {:?}", msg),
         }
@@ -383,11 +391,6 @@ impl App {
         }
     }
 
-    pub fn save_global_config(&mut self) -> bool {
-        let mut new_settings = self.state.settings.clone();
-        new_settings.processor.devices = self.state.saved_settings.processor.devices.clone();
-        self.save_config(new_settings)
-    }
     pub fn save_devices_config(&mut self) -> bool {
         let mut new_settings = self.state.saved_settings.clone();
         new_settings.processor.devices = self
@@ -438,9 +441,10 @@ pub struct AppState {
     pub settings: Settings,
     pub saved_settings: Settings,
     pub managed_devices: Vec<DeviceUIState>,
-    pub config_input: ConfigInputState,
+    pub config_cache: InputsCache<Settings>,
+    pub saving: bool,
     pub cur_panel: PanelTag,
-    pub locked_panel: Option<(PanelTag, String)>,
+    pub discard_action: Option<Box<dyn FnOnce(&mut App)>>,
 }
 
 pub struct DeviceUIState {

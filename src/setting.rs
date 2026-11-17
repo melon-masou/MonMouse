@@ -1,7 +1,11 @@
 use crate::errors::Error;
+use monmouse_macros::InputFields;
 use serde::{Deserialize, Serialize};
 use std::io;
 use std::path::PathBuf;
+use validator::Validate;
+
+pub mod validation;
 
 pub const CONFIG_FILE_NAME: &str = "monmouse.yml";
 
@@ -39,20 +43,24 @@ pub fn config_string(settings: &Settings) -> Result<String, Error> {
     }
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, Validate, InputFields)]
 pub struct Settings {
     #[serde(default)]
+    #[validate(nested)]
     pub ui: UISettings,
+
     #[serde(default)]
+    #[validate(nested)]
     pub processor: ProcessorSettings,
+
+    // Unknown configuration sections remain opaque.
+    #[serde(flatten)]
+    pub extra: std::collections::BTreeMap<String, serde_yaml::Value>,
 }
 
 impl Settings {
     pub fn example() -> Self {
-        let mut c = Self {
-            ui: UISettings::default(),
-            processor: ProcessorSettings::default(),
-        };
+        let mut c = Self::default();
         c.processor.shortcuts.cur_mouse_lock = "Ctrl+Alt+A".to_owned();
         c.processor.shortcuts.cur_mouse_switch = "".to_owned();
         c.processor.shortcuts.cur_mouse_jump_next = "Ctrl+Alt+Q".to_owned();
@@ -68,7 +76,7 @@ impl Settings {
 }
 
 // Settings for single device
-#[derive(Clone, Copy, Default, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Default, Debug, Serialize, Deserialize, Validate, InputFields)]
 pub struct DeviceSetting {
     #[serde(default = "bool_const::<false>")]
     pub locked_in_monitor: bool,
@@ -76,10 +84,11 @@ pub struct DeviceSetting {
     pub switch: bool,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Validate, InputFields)]
 pub struct DeviceSettingItem {
     pub id: String,
     #[serde(flatten)]
+    #[validate(nested)]
     pub content: DeviceSetting,
 }
 
@@ -90,10 +99,11 @@ impl DeviceSetting {
 }
 
 // Settings for processor
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Validate, InputFields)]
 pub struct ProcessorSettings {
     #[serde(default = "ProcessorSettings::default_merge_unassociated_events_ms")]
-    pub merge_unassociated_events_ms: i64,
+    #[validate(range(min = -1, max = 1000))]
+    pub merge_unassociated_events_ms: i64, // -1 means disabling merging
 
     #[serde(default = "ProcessorSettings::default_show_inactive_cursors")]
     pub show_inactive_cursors: bool,
@@ -103,9 +113,11 @@ pub struct ProcessorSettings {
 
     #[serde(default = "ProcessorSettings::default_devices")]
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[validate(nested)]
     pub devices: Vec<DeviceSettingItem>,
 
     #[serde(default = "ShortcutSettings::default")]
+    #[validate(nested)]
     pub shortcuts: ShortcutSettings,
 }
 
@@ -161,7 +173,7 @@ impl ProcessorSettings {
     }
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, Validate, InputFields)]
 pub struct ShortcutSettings {
     #[serde(default = "empty_string")]
     pub cur_mouse_lock: String,
@@ -174,7 +186,7 @@ pub struct ShortcutSettings {
 }
 
 // Settings for UI
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Validate, InputFields)]
 pub struct UISettings {
     #[serde(skip_serializing)]
     #[serde(skip_deserializing)]
@@ -185,6 +197,7 @@ pub struct UISettings {
     pub language: String,
 
     #[serde(default = "UISettings::default_inspect_device_interval_ms")]
+    #[validate(range(min = 20, max = 1000))]
     pub inspect_device_interval_ms: u64,
 
     #[serde(default = "UISettings::default_hide_ui_on_launch")]

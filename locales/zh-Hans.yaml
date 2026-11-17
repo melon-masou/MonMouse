@@ -1,5 +1,7 @@
 lang: "Simplified Chinese"
 btn:
+  Discard: "丢弃"
+  Cancel: "取消"
   Close: 关闭
   Copy: 复制
   Clear: 清空
@@ -33,7 +35,6 @@ config:
     Shortcuts: 快捷键
     Advanced: 高级
   btn:
-    Restore: 恢复
     Default: 默认
     Locate: 打开位置
     Save: 保存
@@ -61,13 +62,13 @@ config:
   validate:
     invalid_value: 无效的值
     value_should_among: 值应在范围内
+    length_should_among: 长度应在范围内
 about:
   Version: 版本
   License: 许可证
   Source: 源码
 msg:
-  settings_changed_cont: 配置已更改， 请保存或恢复后继续
-  settings_restored: 配置已恢复
+  discard_changes: "丢弃修改？"
   settings_default_restored: 已恢复为默认配置
   settings_apply_fail: 应用新配置失败
   settings_applied: 新配置已应用

@@ -50,9 +50,43 @@ pub fn device_status_color(ui: &egui::Ui, s: &DeviceStatus) -> Color32 {
     }
 }
 
-pub fn manage_button(text: &'_ str) -> egui::Button<'_> {
-    let text = egui::RichText::new(text).strong();
-    egui::Button::new(text).min_size(egui::vec2(70.0, 25.0))
+pub const BUTTON_WIDTH: f32 = 70.0;
+pub const MANAGE_BUTTON_HEIGHT: f32 = 25.0;
+const SECTION_TITLE_SIZE: f32 = 17.0;
+pub const FIELD_WIDTH: f32 = 140.0;
+pub const NUMBER_WIDTH: f32 = 80.0;
+pub const SECTION_SPACING: f32 = 10.0;
+pub const FORM_SPACING: [f32; 2] = [40.0, 8.0];
+
+pub fn manage_button<'a>(text: impl Into<egui::WidgetText>) -> egui::Button<'a> {
+    egui::Button::new(text.into().strong()).min_size(egui::vec2(BUTTON_WIDTH, MANAGE_BUTTON_HEIGHT))
+}
+
+pub fn icon_button<'a>(ui: &egui::Ui, text: impl Into<egui::WidgetText>) -> egui::Button<'a> {
+    let side = ui.spacing().interact_size.y;
+    egui::Button::new(text).min_size(egui::vec2(side, side))
+}
+
+pub fn text_input(text: &mut dyn egui::TextBuffer, char_limit: usize) -> egui::TextEdit<'_> {
+    egui::TextEdit::singleline(text)
+        .char_limit(char_limit)
+        .desired_width(FIELD_WIDTH)
+}
+
+pub fn number_input(text: &mut dyn egui::TextBuffer) -> egui::TextEdit<'_> {
+    text_input(text, 8).desired_width(NUMBER_WIDTH)
+}
+
+pub fn form_combo(id: impl std::hash::Hash) -> egui::ComboBox {
+    egui::ComboBox::from_id_salt(id).width(FIELD_WIDTH)
+}
+
+pub fn section_title(ui: &mut egui::Ui, text: impl Into<egui::RichText>) -> egui::Response {
+    ui.label(
+        text.into()
+            .strong()
+            .font(egui::FontId::proportional(SECTION_TITLE_SIZE)),
+    )
 }
 
 pub fn indicator_ui(ui: &mut egui::Ui, color: impl Into<Color32>) -> egui::Response {
@@ -206,6 +240,22 @@ impl NotificationPopup {
         title: impl Into<egui::WidgetText>,
         popup_ui: impl FnOnce(&mut egui::Ui, &mut PopupAction) -> R,
     ) -> PopupResponse<R> {
+        self.show_with_actions(ctx, title, |ui, action| {
+            let response = popup_ui(ui, action);
+            ui.add_space(self.content_space);
+            if ui.add(manage_button(t!("btn.Close"))).clicked() {
+                action.mark_close();
+            }
+            response
+        })
+    }
+
+    pub fn show_with_actions<R>(
+        &self,
+        ctx: &egui::Context,
+        title: impl Into<egui::WidgetText>,
+        popup_ui: impl FnOnce(&mut egui::Ui, &mut PopupAction) -> R,
+    ) -> PopupResponse<R> {
         let center = ctx.content_rect().center();
         let area = egui::Area::new(self.id)
             .order(egui::Order::Foreground)
@@ -230,12 +280,7 @@ impl NotificationPopup {
                     ui.vertical_centered(|ui| {
                         ui.label(title.into());
                         ui.add_space(self.content_space);
-                        let resp = popup_ui(ui, &mut action);
-                        ui.add_space(self.content_space);
-                        if ui.button(t!("btn.Close")).clicked() {
-                            action.mark_close();
-                        }
-                        resp
+                        popup_ui(ui, &mut action)
                     })
                     .inner
                 })
@@ -440,6 +485,12 @@ pub struct ShortcutInputResponse {
     pub changed: bool,
 }
 
+impl ShortcutInputResponse {
+    pub fn changed(&self) -> bool {
+        self.changed
+    }
+}
+
 pub fn shortcut_input_ui(
     ui: &mut egui::Ui,
     state: &mut ShortcutChooseState,
@@ -448,7 +499,7 @@ pub fn shortcut_input_ui(
     textinput_style: impl FnOnce(egui::TextEdit) -> egui::TextEdit,
 ) -> ShortcutInputResponse {
     let mut b = EatInputBuffer::from(&state.key_input);
-    let textinput = textinput_style(egui::TextEdit::singleline(&mut b).desired_width(140.0));
+    let textinput = textinput_style(text_input(&mut b, usize::MAX));
 
     let inner = textinput.ui(ui);
     if gain_focus {
@@ -525,7 +576,10 @@ impl ShortcutChoosePopup {
         action: &mut CommonPopupHeaderAction,
         text: &str,
     ) -> egui::Response {
-        let resp = ui.add(egui::Button::new(text).min_size(egui::vec2(140.0, 10.0)));
+        let resp = ui.add(
+            manage_button(if text.is_empty() { "—" } else { text })
+                .min_size(egui::vec2(FIELD_WIDTH, MANAGE_BUTTON_HEIGHT)),
+        );
         if resp.clicked() {
             action.open_state = Some(true);
         }
@@ -550,16 +604,16 @@ impl ShortcutChoosePopup {
 
         ui.horizontal(|ui| {
             changed |= shortcut_input_ui(ui, &mut state, false, action.just_open, |textinput| {
-                textinput.desired_width(50.0)
+                textinput.desired_width(NUMBER_WIDTH)
             })
             .changed;
 
-            if ui.button(t!("btn.Clear")).clicked() {
+            if ui.add(manage_button(t!("btn.Clear"))).clicked() {
                 changed = true;
                 state.key_input = "".to_string();
                 action.mark_close();
             }
-            if ui.button(t!("btn.Confirm")).clicked() {
+            if ui.add(manage_button(t!("btn.Confirm"))).clicked() {
                 action.mark_close();
             }
         });
@@ -591,11 +645,13 @@ impl ShortcutChoosePopup {
     }
 
     pub fn ui(mut self, ui: &mut egui::Ui, buf: &mut String) -> ShortcutInputResponse {
-        let resp = CommonPopup::new(self.id_source).width(180.0).ui(
-            ui,
-            |ui, action| Self::button_ui(ui, action, buf.as_str()),
-            |ui, action| self.popup_ui(ui, action),
-        );
+        let resp = CommonPopup::new(self.id_source)
+            .width(NUMBER_WIDTH + 2.0 * BUTTON_WIDTH + 2.0 * FORM_SPACING[1])
+            .ui(
+                ui,
+                |ui, action| Self::button_ui(ui, action, buf.as_str()),
+                |ui, action| self.popup_ui(ui, action),
+            );
         let mut r = ShortcutInputResponse {
             focus: false,
             changed: false,

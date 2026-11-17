@@ -3,6 +3,7 @@ pub mod config_panel;
 pub mod devices_panel;
 pub mod layout;
 pub mod status_bar;
+pub mod validatable_input;
 pub mod widget;
 
 #[cfg(debug_assertions)]

@@ -1,5 +1,7 @@
 lang: English
 btn:
+  Discard: "Discard"
+  Cancel: "Cancel"
   Close: Close
   Copy: Copy
   Clear: Clear
@@ -33,7 +35,6 @@ config:
     Shortcuts: Shortcuts
     Advanced: Advanced
   btn:
-    Restore: Restore
     Default: Default
     Locate: Locate
     Save: Save
@@ -61,13 +62,13 @@ config:
   validate:
     invalid_value: Not a valid value
     value_should_among: Value must be between
+    length_should_among: Length must be between
 about:
   Version: Version
   License: License
   Source: Source
 msg:
-  settings_changed_cont: Settings changed. Save or restore to continue
-  settings_restored: Settings restored
+  discard_changes: "Discard changes?"
   settings_default_restored: Default settings restored
   settings_apply_fail: Failed to apply settings
   settings_applied: Settings applied

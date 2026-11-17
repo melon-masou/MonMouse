@@ -111,7 +111,7 @@ fn egui_eventloop(
 ) -> Result<(), eframe::Error> {
     let mut app = App::new(ui_reactor).load_config(config, config_path);
     app.trigger_scan_devices();
-    app.trigger_system_apply_settings();
+    app.apply_startup_settings();
 
     let app = Rc::new(RefCell::new(app));
     if app.borrow_mut().on_launch_wait_start_ui() {

@@ -82,10 +82,10 @@ impl DevicesPanel {
             details_popup.collapsed(ui, d.product_name.clone(), |ui, action| {
                 let details_text = Self::device_details_text(&device.generic);
                 ui.horizontal(|ui| {
-                    if ui.button(t!("btn.Close")).clicked() {
+                    if ui.add(manage_button(t!("btn.Close"))).clicked() {
                         action.mark_close();
                     }
-                    if ui.button(t!("btn.Copy")).clicked() {
+                    if ui.add(manage_button(t!("btn.Copy"))).clicked() {
                         ui.ctx().copy_text(details_text.clone());
                     }
                 });
