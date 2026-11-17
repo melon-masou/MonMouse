@@ -18,14 +18,6 @@ path = "src/cli/main.rs"
 name = "monmouse"
 path = "src/gui/main.rs"
 
-[[example]]
-name = "dep-only"
-path = "dep-only/main.rs"
-required-features = ["dep-only"]
-
-[features]
-dep-only = []
-
 [dependencies]
 monmouse-macros = { path = "crates/monmouse-macros" }
 thiserror = "1.0"

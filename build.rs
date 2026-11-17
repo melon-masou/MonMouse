@@ -21,9 +21,9 @@ fn run_command(tag: &str, command: &mut process::Command) -> process::Output {
 }
 
 fn generate_rc(add_icon: bool) -> String {
-    #[cfg(not(any(debug_assertions, feature = "dep-only")))]
+    #[cfg(not(debug_assertions))]
     let rc_template = include_bytes!("assets\\monmouse.rc");
-    #[cfg(any(debug_assertions, feature = "dep-only"))]
+    #[cfg(debug_assertions)]
     let rc_template = [];
 
     let version = env::var("CARGO_PKG_VERSION").unwrap();
@@ -76,11 +76,7 @@ fn main() {
         if sha.len() <= 7 { &sha[..] } else { &sha[..7] }
     );
 
-    if cfg!(feature = "dep-only") {
-        println!("cargo::rerun-if-changed=dep-only")
-    }
-
-    if cfg!(target_os = "windows") && cfg!(not(any(debug_assertions, feature = "dep-only"))) {
+    if cfg!(target_os = "windows") && cfg!(not(debug_assertions)) {
         // let mut res = winres::WindowsResource::new();
         // res.compile().unwrap();
         let _manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
