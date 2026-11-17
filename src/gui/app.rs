@@ -6,9 +6,8 @@ use crate::{components::validatable_input::InputsCache, styles::Theme, EguiNotif
 use monmouse::{
     errors::Error,
     message::{
-        timer_spawn, ApplyProcessorSettingsCtx, ApplyProcessorSettingsData, DeviceStatus,
-        GenericDevice, Message, RoundtripData, SendData, TimerDueKind, TimerOperator, UINotify,
-        UIReactor,
+        timer_spawn, ApplyProcessorSettingsData, DeviceStatus, GenericDevice, Message,
+        RoundtripData, SendData, TimerDueKind, TimerOperator, UINotify, UIReactor,
     },
     setting::{write_config, DeviceSetting, DeviceSettingItem, ProcessorSettings, Settings},
 };
@@ -70,7 +69,7 @@ impl App {
             .send(Message::ApplyProcessorSetting(RoundtripData::new(
                 ApplyProcessorSettingsData {
                     proc_settings: self.collect_processor_settings(),
-                    ctx: ApplyProcessorSettingsCtx { user_requested },
+                    user_requested,
                 },
             )));
     }
@@ -350,11 +349,12 @@ impl App {
                 }
             },
             Message::ApplyProcessorSetting(data) => {
-                if data.req().ctx.user_requested {
+                let user_requested = data.req().user_requested;
+                if user_requested {
                     self.state.saving = false;
                 }
                 match data.take_rsp() {
-                    Ok(ctx) if ctx.user_requested => {
+                    Ok(()) if user_requested => {
                         let mut settings = self.state.saved_settings.clone();
                         settings.ui = self.state.settings.ui.clone();
                         let devices = std::mem::take(&mut settings.processor.devices);

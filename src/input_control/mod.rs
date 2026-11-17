@@ -1,8 +1,12 @@
 pub mod arbiter;
+pub(crate) mod mouse_event_device_matcher;
 pub mod relocator;
 
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
+
+// Runtime input-source identity, separate from the persistent device ID in settings.
+pub type DeviceId = u64;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Positioning {
@@ -16,21 +20,6 @@ pub struct Key {
     pub scan: u16,
     pub virtual_key: u16,
     pub extended: bool,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct SysMouseEvent {
-    pub pos_x: i32,
-    pub pos_y: i32,
-    pub time: u32,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct SysKeyboardEvent {
-    pub time: u32,
-    pub key: Key,
-    pub down: bool,
-    pub injected: bool,
 }
 
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]

@@ -1,4 +1,7 @@
-use super::{MonitorArea, MonitorAreasList, MousePos, Positioning};
+use super::{
+    mouse_event_device_matcher::MatchedMouseEvent, DeviceId, MonitorArea, MonitorAreasList,
+    MousePos, Positioning,
+};
 use crate::{setting::DeviceSetting, utils::vec_ensure_get_mut};
 
 const MOUSE_SWITCHING_MS: u64 = 100;
@@ -6,7 +9,7 @@ const MOUSE_SWITCHING_JUMP_RESET_PX: i32 = 200;
 
 #[derive(Debug)]
 pub struct MouseDeviceTracker {
-    pub id: u64,
+    pub id: DeviceId,
     pub setting: DeviceSetting,
 
     last_active_tick: u64, // in ms
@@ -17,7 +20,7 @@ pub struct MouseDeviceTracker {
 }
 
 impl MouseDeviceTracker {
-    pub fn new(id: u64, setting: DeviceSetting) -> MouseDeviceTracker {
+    pub fn new(id: DeviceId, setting: DeviceSetting) -> MouseDeviceTracker {
         MouseDeviceTracker {
             id,
             setting,
@@ -31,10 +34,6 @@ impl MouseDeviceTracker {
     pub fn update_settings(&mut self, new_setting: &DeviceSetting) {
         self.locked_area = None;
         self.setting = *new_setting;
-    }
-
-    pub fn update_positioning(&mut self, p: Positioning) {
-        self.positioning = p;
     }
 
     pub fn reset(&mut self) {
@@ -71,7 +70,7 @@ impl RelocatePos {
 pub struct MouseRelocator {
     monitors: MonitorAreasList,
 
-    cur_mouse: u64,
+    cur_mouse: DeviceId,
     cur_pos: MousePos,
     relocate_pos: Option<RelocatePos>,
     to_update_monitors: bool,
@@ -173,81 +172,64 @@ impl MouseRelocator {
         self.relocate_pos = RelocatePos::from(new_pos);
     }
 
-    pub fn on_pos_update(
+    pub(crate) fn on_mouse_event(
         &mut self,
-        optc: Option<&mut MouseDeviceTracker>,
-        pos: MousePos,
-        tick: u64,
-    ) {
-        if self.is_switching(tick) && self.is_big_switching_jump(&pos) {
-            self.relocate_pos = RelocatePos::from(self.cur_pos);
-            log::trace!(
-                "Reset cursor during mouse switching: event_pos={}, cur_pos={}, tick={}, switching_until={}",
-                pos,
-                self.cur_pos,
-                tick,
-                self.switching_until
-            );
-            return;
-        }
-
-        if let Some(ctrl) = optc {
-            if ctrl.setting.locked_in_monitor {
-                // Has been locked into one area
-                if let Some(area) = &ctrl.locked_area {
-                    // If leaving area
-                    let new_pos = area.capture_pos(&pos);
-                    if new_pos != pos {
-                        self.cur_pos = new_pos;
-                        self.relocate_pos = RelocatePos::from(new_pos);
-                        return;
-                    }
-                } else {
-                    // Find area to be locked
-                    if let Some(area) = self.monitors.locate(&pos) {
-                        ctrl.locked_area = Some(*area);
-                    } else {
-                        self.to_update_monitors = true;
-                        return;
-                    }
-                }
+        event: &MatchedMouseEvent,
+        ctrl: &mut MouseDeviceTracker,
+    ) -> bool {
+        ctrl.positioning = event.positioning;
+        if self.is_switching(event.tick) {
+            if self.is_big_switching_jump(&event.position) {
+                self.relocate_pos = RelocatePos::from(self.cur_pos);
+                log::trace!(
+                    "Reset cursor during mouse switching: event_pos={}, cur_pos={}, tick={}, switching_until={}",
+                    event.position,
+                    self.cur_pos,
+                    event.tick,
+                    self.switching_until
+                );
+            } else {
+                self.update_position(ctrl, event.position);
             }
-        }
-        self.cur_pos = pos;
-    }
-
-    pub fn on_mouse_update(&mut self, c: &mut MouseDeviceTracker, tick: u64) -> bool {
-        if self.is_switching(tick) {
-            // ignore other mouse events when switching
             return false;
         }
 
-        let switched = self.cur_mouse != c.id;
-        if switched {
-            self.cur_mouse = c.id;
-
-            if c.setting.switch {
-                // Has rememberd position
-                if let Some((_, old_pos, _)) = c.get_last_pos() {
-                    self.cur_pos = old_pos;
-                    self.relocate_pos = RelocatePos::from(old_pos);
-                    // Find area to go
-                    // if let Some(area) = self.monitors.locate(&old_pos) {
-                    //     self.cur_pos = old_pos;
-                    //     self.relocate_pos = RelocatePos::from(old_pos, area);
-                    //     return;
-                    // } else {
-                    //     self.to_update_monitors = true;
-                    //     return;
-                    // }
-                }
-            }
+        let switched = self.cur_mouse != event.device;
+        self.cur_mouse = event.device;
+        if let Some((_, saved_pos, _)) = ctrl
+            .get_last_pos()
+            .filter(|_| switched && ctrl.setting.switch)
+        {
+            // The incoming position still belongs to the stream before relocation.
+            self.cur_pos = saved_pos;
+            self.relocate_pos = RelocatePos::from(saved_pos);
+        } else {
+            self.update_position(ctrl, event.position);
         }
-        c.update_pos(&self.cur_pos, tick);
+        ctrl.update_pos(&self.cur_pos, event.tick);
         if switched {
-            self.start_switching(tick);
+            self.start_switching(event.tick);
         }
         switched
+    }
+
+    fn update_position(&mut self, ctrl: &mut MouseDeviceTracker, pos: MousePos) {
+        if ctrl.setting.locked_in_monitor {
+            if let Some(area) = &ctrl.locked_area {
+                let new_pos = area.capture_pos(&pos);
+                if new_pos != pos {
+                    self.cur_pos = new_pos;
+                    self.relocate_pos = RelocatePos::from(new_pos);
+                    return;
+                }
+            } else if let Some(area) = self.monitors.locate(&pos) {
+                ctrl.locked_area = Some(*area);
+            } else {
+                self.to_update_monitors = true;
+                return;
+            }
+        }
+        self.cur_pos = pos;
     }
 
     pub fn pop_relocate_pos(&mut self) -> Option<RelocatePos> {

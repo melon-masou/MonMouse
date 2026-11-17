@@ -10,7 +10,7 @@ use std::{
 use crate::{
     device_type::DeviceType,
     errors::Error,
-    input_control::{Positioning, SysMouseEvent},
+    input_control::{MousePos, Positioning},
     setting::{DeviceSettingItem, ProcessorSettings},
 };
 
@@ -61,7 +61,7 @@ impl<T> SendData<T> {
 
 #[derive(Debug)]
 pub struct RoundtripData<TReq, TRsp> {
-    inner: Box<(Option<TReq>, Result<TRsp>)>,
+    inner: Box<(TReq, Result<TRsp>)>,
 }
 
 impl<TReq, TRsp> Default for RoundtripData<TReq, TRsp>
@@ -77,12 +77,12 @@ where
 impl<TReq, TRsp> RoundtripData<TReq, TRsp> {
     pub fn new(req: TReq) -> Self {
         Self {
-            inner: Box::new((Some(req), Err(Error::MessageInited))),
+            inner: Box::new((req, Err(Error::MessageInited))),
         }
     }
 
     pub fn req(&self) -> &TReq {
-        self.inner.0.as_ref().unwrap()
+        &self.inner.0
     }
     pub fn result(&self) -> std::result::Result<&TRsp, &Error> {
         self.inner.1.as_ref()
@@ -98,9 +98,6 @@ impl<TReq, TRsp> RoundtripData<TReq, TRsp> {
         self.inner.1 = Err(result);
     }
 
-    pub fn take_req(&mut self) -> TReq {
-        self.inner.0.take().unwrap()
-    }
     pub fn take_rsp(self) -> Result<TRsp> {
         self.inner.1
     }
@@ -121,20 +118,15 @@ pub enum Message {
     SwitchCurMouse(String),
     ScanDevices(RoundtripData<(), Vec<GenericDevice>>),
     InspectDevicesStatus(RoundtripData<(), Vec<(String, DeviceStatus)>>),
-    ApplyProcessorSetting(RoundtripData<ApplyProcessorSettingsData, ApplyProcessorSettingsCtx>),
+    ApplyProcessorSetting(RoundtripData<ApplyProcessorSettingsData, ()>),
     ApplyOneDeviceSetting(SendData<DeviceSettingItem>),
-    SysMouseEvent(SysMouseEvent),
+    MousePosition { position: MousePos, tick: u64 },
 }
 
 #[derive(Debug)]
 pub struct ApplyProcessorSettingsData {
-    pub ctx: ApplyProcessorSettingsCtx,
-    pub proc_settings: ProcessorSettings,
-}
-
-#[derive(Debug)]
-pub struct ApplyProcessorSettingsCtx {
     pub user_requested: bool,
+    pub proc_settings: ProcessorSettings,
 }
 
 #[repr(i32)]

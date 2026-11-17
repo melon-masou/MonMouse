@@ -1,6 +1,6 @@
+use super::core_error;
 use crate::ce;
 use crate::errors::Result;
-use crate::windows::wintypes::*;
 
 use windows::core::w;
 use windows::Win32::Foundation::{COLORREF, POINT};
