@@ -175,9 +175,6 @@ impl App {
     pub fn get_theme(&self) -> Theme {
         Theme::from_string(self.state.settings.ui.theme.as_str())
     }
-    pub fn get_locale(&self) -> String {
-        self.state.settings.ui.language.clone()
-    }
 
     fn init_managed_devices(&mut self, settings: &ProcessorSettings) {
         for dev in &settings.devices {

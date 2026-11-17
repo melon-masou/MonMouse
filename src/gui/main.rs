@@ -34,7 +34,7 @@ use tray::Tray;
 
 use crate::components::layout::layout_ui;
 use crate::config::get_config_dir;
-use crate::font::setup_fonts_for_lang_defs;
+use crate::font::setup_fonts;
 
 pub fn load_icon() -> egui::IconData {
     let icon_data = include_bytes!("..\\..\\assets\\monmouse.ico");
@@ -124,7 +124,7 @@ fn egui_eventloop(
             "MonMouse",
             ui_options_main_window(),
             Box::new(move |c| {
-                AppWrap::init_ctx(&c.egui_ctx, app_ref.borrow().get_locale().as_str());
+                AppWrap::init_ctx(&c.egui_ctx);
                 app_ref.borrow_mut().on_start_app_ui(&egui_notify1);
                 egui_notify1.update_ctx(Some(c.egui_ctx.clone()));
                 Ok(Box::new(AppWrap::new(app_ref, egui_notify1)))
@@ -198,7 +198,7 @@ impl AppWrap {
 }
 
 impl AppWrap {
-    fn init_ctx(ctx: &egui::Context, locale: &str) {
+    fn init_ctx(ctx: &egui::Context) {
         // TODO:
         //  The value currently should be 1.0, before egui ctx.set_zoom_factor() is normal working.
         //  In case it was fixed, the value can be configurable.
@@ -220,7 +220,7 @@ impl AppWrap {
             font_data.insert(k.to_string(), Arc::new(font));
         });
         fonts.font_data = font_data;
-        setup_fonts_for_lang_defs(&mut fonts, locale);
+        setup_fonts(&mut fonts);
         ctx.set_fonts(fonts);
     }
 

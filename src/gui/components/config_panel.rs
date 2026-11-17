@@ -1,7 +1,7 @@
 use eframe::egui::{self, TextBuffer};
 use monmouse::setting::Settings;
 
-use crate::{app::App, font::setup_fonts_for_lang};
+use crate::app::App;
 
 use super::{
     validatable_input::{InputItem, InputsCache},
@@ -25,13 +25,9 @@ impl ConfigPanel {
                 .selected_text(t!("lang", locale = language.as_str()))
                 .show_ui(ui, |ui| {
                     for loc in rust_i18n::available_locales!() {
-                        let new_lang = ui
+                        changed |= ui
                             .selectable_value(language, loc.to_string(), t!("lang", locale = loc))
                             .changed();
-                        if new_lang {
-                            setup_fonts_for_lang(ui.ctx(), &loc);
-                        }
-                        changed |= new_lang;
                     }
                 });
             changed
