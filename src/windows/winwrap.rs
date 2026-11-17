@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::fmt::{self, Display};
-use std::mem::size_of;
+use std::mem::{size_of, size_of_val};
 
 use crate::ce;
 use crate::errors::{Error, Result};
@@ -9,7 +9,7 @@ use crate::windows::wintypes::*;
 use super::constants::*;
 use windows::Win32::Foundation::{ERROR_ALREADY_EXISTS, WAIT_OBJECT_0};
 
-use windows::core::w;
+use windows::core::{w, HSTRING, PCWSTR};
 use windows::Win32::System::Threading::{CreateMutexW, ReleaseMutex, WaitForSingleObject};
 use windows::Win32::UI::HiDpi::{
     SetProcessDpiAwareness, SetProcessDpiAwarenessContext,
@@ -41,7 +41,7 @@ use windows::{
             Properties::{
                 DEVPKEY_Device_Class, DEVPKEY_Device_InstanceId, DEVPKEY_Device_Manufacturer,
                 DEVPKEY_Device_Parent, DEVPKEY_Device_Service, DEVPKEY_NAME, DEVPROPKEY,
-                DEVPROPTYPE, DEVPROP_TYPE_STRING,
+                DEVPROP_TYPE_STRING,
             },
         },
         Foundation::{
@@ -61,9 +61,9 @@ use windows::{
             Input::{
                 GetRawInputData, GetRawInputDeviceInfoW, GetRawInputDeviceList,
                 RegisterRawInputDevices, HRAWINPUT, RAWINPUTDEVICE, RAWINPUTDEVICELIST,
-                RAWINPUTHEADER, RAW_INPUT_DEVICE_INFO_COMMAND, RIDI_DEVICEINFO, RIDI_DEVICENAME,
-                RID_DEVICE_INFO, RID_DEVICE_INFO_HID, RID_DEVICE_INFO_MOUSE, RID_DEVICE_INFO_TYPE,
-                RID_INPUT, RIM_TYPEHID, RIM_TYPEKEYBOARD, RIM_TYPEMOUSE,
+                RAWINPUTHEADER, RIDI_DEVICEINFO, RIDI_DEVICENAME, RID_DEVICE_INFO,
+                RID_DEVICE_INFO_HID, RID_DEVICE_INFO_MOUSE, RID_DEVICE_INFO_TYPE, RID_INPUT,
+                RIM_TYPEHID, RIM_TYPEKEYBOARD, RIM_TYPEMOUSE,
             },
             Shell::{DefSubclassProc, SetWindowSubclass},
             WindowsAndMessaging::{
@@ -103,7 +103,7 @@ impl fmt::Display for RawDeviceType {
 
 pub struct RawinputInfo {
     pub rid_info: RID_DEVICE_INFO,
-    pub iface: WString,
+    pub iface: HSTRING,
 }
 
 impl RawinputInfo {
@@ -124,7 +124,7 @@ impl RawinputInfo {
 }
 
 pub enum WStringOption {
-    Some(WString),
+    Some(HSTRING),
     NoValue,
     GetErr(Error),
 }
@@ -132,7 +132,7 @@ pub enum WStringOption {
 impl Display for WStringOption {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            WStringOption::Some(s) => write!(f, "{}", s),
+            WStringOption::Some(s) => write!(f, "{}", wide_to_string(s)),
             WStringOption::NoValue => write!(f, "NoValue"),
             WStringOption::GetErr(e) => write!(f, "GetPropErr({})", e),
         }
@@ -146,7 +146,7 @@ pub struct HidDeviceInfo {
 }
 
 pub struct DeviceIfaceInfo {
-    pub instance_id: WString,
+    pub instance_id: HSTRING,
     pub name: WStringOption,
     pub service: WStringOption,
     pub class: WStringOption,
@@ -170,7 +170,9 @@ impl HookWrap {
         if ncode < 0 {
             return unsafe { CallNextHookEx(None, ncode, wparam, lparam) };
         }
-        let call_next = T::on_mouse_ll(wparam.0 as u32, lparam_ref::<MSLLHOOKSTRUCT>(&lparam));
+        let call_next = T::on_mouse_ll(wparam.0 as u32, unsafe {
+            &mut *(lparam.0 as *mut MSLLHOOKSTRUCT)
+        });
         if call_next {
             unsafe { CallNextHookEx(None, ncode, wparam, lparam) }
         } else {
@@ -202,10 +204,11 @@ pub fn unset_windows_hook(hook: HHOOK) -> Result<()> {
 }
 
 pub fn device_list_all() -> Result<Vec<RAWINPUTDEVICELIST>> {
-    let mut cnt: WSize = 0;
+    let mut cnt: u32 = 0;
     let mut dev_list: Vec<RAWINPUTDEVICELIST> = Vec::new();
 
-    let res = unsafe { GetRawInputDeviceList(None, &mut cnt, wsize_of::<RAWINPUTDEVICELIST>()) };
+    let res =
+        unsafe { GetRawInputDeviceList(None, &mut cnt, size_of::<RAWINPUTDEVICELIST>() as u32) };
     if res == u32::MAX {
         return Err(get_last_error("GetRawInputDeviceList"));
     }
@@ -217,7 +220,7 @@ pub fn device_list_all() -> Result<Vec<RAWINPUTDEVICELIST>> {
             GetRawInputDeviceList(
                 Some(dev_list.as_mut_ptr()),
                 &mut cnt,
-                wsize_of::<RAWINPUTDEVICELIST>(),
+                size_of::<RAWINPUTDEVICELIST>() as u32,
             )
         };
         if res != u32::MAX {
@@ -239,64 +242,70 @@ pub fn get_last_error(call: &'static str) -> Error {
 
 pub fn device_get_rawinput_rid_info(handle: HANDLE) -> Result<RID_DEVICE_INFO> {
     let mut dst = RID_DEVICE_INFO::default();
-    let mut size = wsize_of_val(&dst);
+    let buffer_size = size_of_val(&dst) as u32;
+    let mut size = buffer_size;
     let r = unsafe {
-        GetRawInputDeviceInfoW(handle, RIDI_DEVICEINFO, Some(as_cvoid(&mut dst)), &mut size)
+        GetRawInputDeviceInfoW(
+            handle,
+            RIDI_DEVICEINFO,
+            Some((&mut dst as *mut RID_DEVICE_INFO).cast()),
+            &mut size,
+        )
     };
     if r == u32::MAX {
-        if size <= wsize_of_val(&dst) {
+        if size <= buffer_size {
             return Err(get_last_error("GetRawInputDeviceInfoW"));
         }
-        return Err(Error::WinPredefineBufSmall(wsize_of_val(&dst), size));
+        return Err(Error::WinPredefineBufSmall(buffer_size, size));
     }
     Ok(dst)
 }
 
-pub fn device_get_rawinput_info<T: IBuffer>(
-    handle: HANDLE,
-    cmd: RAW_INPUT_DEVICE_INFO_COMMAND,
-) -> Result<T> {
-    let mut size: WSize = 0;
-    let r = unsafe { GetRawInputDeviceInfoW(handle, cmd, None, &mut size) };
+fn device_get_rawinput_info(handle: HANDLE) -> Result<HSTRING> {
+    // RIDI_DEVICENAME reports UTF-16 element counts, unlike the byte-based property APIs.
+    let mut size: u32 = 0;
+    let r = unsafe { GetRawInputDeviceInfoW(handle, RIDI_DEVICENAME, None, &mut size) };
     if r != 0 {
         return Err(get_last_error("GetRawInputDeviceInfoW"));
     }
 
-    let mut buf = T::new(size);
+    let mut buf = vec![0u16; size as usize];
     loop {
-        let r = unsafe { GetRawInputDeviceInfoW(handle, cmd, Some(buf.as_mut_data()), &mut size) };
+        let r = unsafe {
+            GetRawInputDeviceInfoW(
+                handle,
+                RIDI_DEVICENAME,
+                Some(buf.as_mut_ptr().cast()),
+                &mut size,
+            )
+        };
         if r == u32::MAX {
-            if size <= buf.capacity() {
+            if size as usize <= buf.len() {
                 return Err(get_last_error("GetRawInputDeviceInfoW"));
             }
-            buf.resize(size);
+            buf.resize(size as usize, 0);
             continue;
         }
-        return Ok(buf);
+        return hstring_from_buffer(&buf[..size as usize]);
     }
 }
 
 pub fn device_collect_rawinput_infos(dev_handle: HANDLE) -> Result<RawinputInfo> {
     Ok(RawinputInfo {
         rid_info: device_get_rawinput_rid_info(dev_handle)?,
-        iface: device_get_rawinput_info::<WString>(dev_handle, RIDI_DEVICENAME)?,
+        iface: device_get_rawinput_info(dev_handle)?,
     })
 }
 
-pub fn device_get_iface_prop(
-    iface: &WString,
-    key: DEVPROPKEY,
-    typ: DEVPROPTYPE,
-) -> Result<Option<WBuffer>> {
-    let mut size: WSize = 0;
-    let mut mtyp = typ;
+fn device_get_iface_prop(iface: &HSTRING, key: DEVPROPKEY) -> Result<Option<HSTRING>> {
+    let mut size: u32 = 0;
+    let mut mtyp = DEVPROP_TYPE_STRING;
 
-    let cr = unsafe {
-        CM_Get_Device_Interface_PropertyW(iface.as_pcwstr(), &key, &mut mtyp, None, &mut size, 0)
-    };
+    let cr =
+        unsafe { CM_Get_Device_Interface_PropertyW(iface, &key, &mut mtyp, None, &mut size, 0) };
     match cr {
         CR_BUFFER_SMALL | CR_SUCCESS => {
-            if mtyp != typ {
+            if mtyp != DEVPROP_TYPE_STRING {
                 return Err(cr_error(cr));
             }
         }
@@ -304,40 +313,36 @@ pub fn device_get_iface_prop(
         _ => return Err(cr_error(cr)),
     }
 
-    let mut buf = WBuffer::new(size);
+    let mut buf = vec![0u16; (size as usize).div_ceil(size_of::<u16>())];
     let cr = unsafe {
         CM_Get_Device_Interface_PropertyW(
-            iface.as_pcwstr(),
+            iface,
             &key,
             &mut mtyp,
-            Some(buf.as_mut_ptr()),
+            Some(buf.as_mut_ptr().cast()),
             &mut size,
             0,
         )
     };
     match cr {
         CR_SUCCESS => {
-            if mtyp != typ {
+            if mtyp != DEVPROP_TYPE_STRING {
                 return Err(cr_error(cr));
             }
-            Ok(Some(buf))
+            hstring_from_buffer(&buf[..size as usize / size_of::<u16>()]).map(Some)
         }
         _ => Err(cr_error(cr)),
     }
 }
 
-pub fn device_get_node_prop(
-    devinst: u32,
-    key: DEVPROPKEY,
-    typ: DEVPROPTYPE,
-) -> Result<Option<WBuffer>> {
-    let mut size: WSize = 0;
-    let mut mtyp = typ;
+fn device_get_node_prop(devinst: u32, key: DEVPROPKEY) -> Result<Option<HSTRING>> {
+    let mut size: u32 = 0;
+    let mut mtyp = DEVPROP_TYPE_STRING;
 
     let cr = unsafe { CM_Get_DevNode_PropertyW(devinst, &key, &mut mtyp, None, &mut size, 0) };
     match cr {
         CR_BUFFER_SMALL | CR_SUCCESS => {
-            if mtyp != typ {
+            if mtyp != DEVPROP_TYPE_STRING {
                 return Err(cr_error(cr));
             }
         }
@@ -345,56 +350,48 @@ pub fn device_get_node_prop(
         _ => return Err(cr_error(cr)),
     }
 
-    let mut buf = WBuffer::new(size);
+    let mut buf = vec![0u16; (size as usize).div_ceil(size_of::<u16>())];
     let cr = unsafe {
         CM_Get_DevNode_PropertyW(
             devinst,
             &key,
             &mut mtyp,
-            Some(buf.as_mut_ptr()),
+            Some(buf.as_mut_ptr().cast()),
             &mut size,
             0,
         )
     };
     match cr {
         CR_SUCCESS => {
-            if mtyp != typ {
+            if mtyp != DEVPROP_TYPE_STRING {
                 return Err(cr_error(cr));
             }
-            Ok(Some(buf))
+            hstring_from_buffer(&buf[..size as usize / size_of::<u16>()]).map(Some)
         }
         _ => Err(cr_error(cr)),
     }
 }
 
-pub fn locate_devnode_handle(instance_id: &WString) -> Result<u32> {
+pub fn locate_devnode_handle(instance_id: &HSTRING) -> Result<u32> {
     let mut handle: u32 = 0;
-    let cr = unsafe {
-        CM_Locate_DevNodeW(
-            &mut handle,
-            instance_id.as_pcwstr(),
-            CM_LOCATE_DEVNODE_NORMAL,
-        )
-    };
+    let cr = unsafe { CM_Locate_DevNodeW(&mut handle, instance_id, CM_LOCATE_DEVNODE_NORMAL) };
     match cr {
         CR_SUCCESS => Ok(handle),
         _ => Err(cr_error(cr)),
     }
 }
 
-pub fn device_get_iface_infos(iface: &WString) -> Result<DeviceIfaceInfo> {
-    let instance_id =
-        match device_get_iface_prop(iface, DEVPKEY_Device_InstanceId, DEVPROP_TYPE_STRING)? {
-            Some(v) => v,
-            None => return Err(Error::WinDeviceNoInstanceID(iface.to_string())),
-        }
-        .to_wstring();
+pub fn device_get_iface_infos(iface: &HSTRING) -> Result<DeviceIfaceInfo> {
+    let instance_id = match device_get_iface_prop(iface, DEVPKEY_Device_InstanceId)? {
+        Some(v) => v,
+        None => return Err(Error::WinDeviceNoInstanceID(wide_to_string(iface))),
+    };
     let devinst = locate_devnode_handle(&instance_id)?;
 
     let getf = |key| -> WStringOption {
-        match device_get_node_prop(devinst, key, DEVPROP_TYPE_STRING) {
+        match device_get_node_prop(devinst, key) {
             Ok(opt) => match opt {
-                Some(v) => WStringOption::Some(v.to_wstring()),
+                Some(v) => WStringOption::Some(v),
                 None => WStringOption::NoValue,
             },
             Err(e) => WStringOption::GetErr(e),
@@ -411,17 +408,17 @@ pub fn device_get_iface_infos(iface: &WString) -> Result<DeviceIfaceInfo> {
 }
 
 pub fn device_get_ifaces_list(
-    instance_id: &WString,
+    instance_id: &HSTRING,
     class_guid: &GUID,
     present: bool,
-) -> Result<Vec<WString>> {
+) -> Result<Vec<HSTRING>> {
     loop {
-        let mut size: WSize = 0;
+        let mut size: u32 = 0;
         let cr = unsafe {
             CM_Get_Device_Interface_List_SizeW(
                 &mut size,
                 class_guid,
-                instance_id.as_pcwstr(),
+                instance_id,
                 CM_GET_DEVICE_INTERFACE_LIST_PRESENT,
             )
         };
@@ -430,22 +427,17 @@ pub fn device_get_ifaces_list(
             _ => return Err(cr_error(cr)),
         }
 
-        let mut buf = WString::new(size);
+        let mut buf = vec![0u16; size as usize];
         let pre_flag = if present {
             CM_GET_DEVICE_INTERFACE_LIST_PRESENT
         } else {
             CM_GET_DEVICE_INTERFACE_LIST_ALL_DEVICES
         };
         let cr = unsafe {
-            CM_Get_Device_Interface_ListW(
-                class_guid,
-                instance_id.as_pcwstr(),
-                buf.as_mut_slice(),
-                pre_flag,
-            )
+            CM_Get_Device_Interface_ListW(class_guid, instance_id, buf.as_mut_slice(), pre_flag)
         };
         match cr {
-            CR_SUCCESS => return Ok(buf.split_by_eos()),
+            CR_SUCCESS => return split_wide_strings(&buf),
             CR_BUFFER_SMALL => {
                 continue;
             }
@@ -454,14 +446,13 @@ pub fn device_get_ifaces_list(
     }
 }
 
-pub fn device_get_parents(instance_id: &WString, dep_limit: Option<usize>) -> Result<Vec<WString>> {
-    let get_parent = |inst_id: &WString| -> Result<Option<WString>> {
+pub fn device_get_parents(instance_id: &HSTRING, dep_limit: Option<usize>) -> Result<Vec<HSTRING>> {
+    let get_parent = |inst_id: &HSTRING| -> Result<Option<HSTRING>> {
         let handle = locate_devnode_handle(inst_id)?;
-        let ret = device_get_node_prop(handle, DEVPKEY_Device_Parent, DEVPROP_TYPE_STRING)?;
-        Ok(ret.map(|v| v.to_wstring()))
+        device_get_node_prop(handle, DEVPKEY_Device_Parent)
     };
 
-    let mut ret = Vec::<WString>::new();
+    let mut ret = Vec::<HSTRING>::new();
     let mut inst = instance_id;
     loop {
         if dep_limit.is_some() && ret.len() >= dep_limit.unwrap() {
@@ -499,7 +490,7 @@ pub fn close_handle(handle: HANDLE) -> Result<()> {
     unsafe { ce!(CloseHandle(handle)) }
 }
 
-pub fn device_open_iface(iface: &WString, metaonly: bool) -> Result<ScopeHandle> {
+pub fn device_open_iface(iface: &HSTRING, metaonly: bool) -> Result<ScopeHandle> {
     let desire_access = if metaonly {
         0
     } else {
@@ -509,7 +500,7 @@ pub fn device_open_iface(iface: &WString, metaonly: bool) -> Result<ScopeHandle>
 
     let result = unsafe {
         CreateFileW(
-            iface.as_pcwstr(),
+            iface,
             desire_access,
             share_mode,
             None,
@@ -531,20 +522,28 @@ pub fn device_open_iface(iface: &WString, metaonly: bool) -> Result<ScopeHandle>
     }
 }
 
-pub fn device_get_hid_info(instance_id: &WString, present: bool) -> Result<HidDeviceInfo> {
+pub fn device_get_hid_info(instance_id: &HSTRING, present: bool) -> Result<HidDeviceInfo> {
     let hid_class = unsafe { HidD_GetHidGuid() };
     let ifaces = device_get_ifaces_list(instance_id, &hid_class, present)?;
     let iface = match ifaces.last() {
         Some(v) => v,
-        None => return Err(Error::WinDeviceInterfaceListEmpty(instance_id.to_string())),
+        None => {
+            return Err(Error::WinDeviceInterfaceListEmpty(wide_to_string(
+                instance_id,
+            )))
+        }
     };
 
     let iface_hdl = device_open_iface(iface, true)?;
 
-    let mut data = WString::new(256);
-    let result_as_str = |ok: BOOLEAN, buf: &WString| -> WStringOption {
+    let mut data = [0u16; 128];
+    let buffer_size = size_of_val(&data) as u32;
+    let result_as_str = |ok: BOOLEAN, buf: &[u16]| -> WStringOption {
         if ok.as_bool() {
-            WStringOption::Some(buf.str_before_null())
+            match hstring_from_buffer(buf) {
+                Ok(value) => WStringOption::Some(value),
+                Err(error) => WStringOption::GetErr(error),
+            }
         } else {
             WStringOption::NoValue
         }
@@ -553,29 +552,23 @@ pub fn device_get_hid_info(instance_id: &WString, present: bool) -> Result<HidDe
     let r = HidDeviceInfo {
         serial_number: result_as_str(
             unsafe {
-                HidD_GetSerialNumberString(*iface_hdl.get(), data.as_mut_data(), data.capacity())
+                HidD_GetSerialNumberString(*iface_hdl.get(), data.as_mut_ptr().cast(), buffer_size)
             },
             &data,
         ),
         manufacturer: result_as_str(
             unsafe {
-                HidD_GetManufacturerString(*iface_hdl.get(), data.as_mut_data(), data.capacity())
+                HidD_GetManufacturerString(*iface_hdl.get(), data.as_mut_ptr().cast(), buffer_size)
             },
             &data,
         ),
         product: result_as_str(
-            unsafe { HidD_GetProductString(*iface_hdl.get(), data.as_mut_data(), data.capacity()) },
+            unsafe {
+                HidD_GetProductString(*iface_hdl.get(), data.as_mut_ptr().cast(), buffer_size)
+            },
             &data,
         ),
     };
-
-    // No need get caps, use us_usage instead
-    // let mut prepared_data = device_get_rawinput_info::<WBuffer>(dev_hdl, RIDI_PREPARSEDDATA)?;
-    // let pd = PHIDP_PREPARSED_DATA(prepared_data.as_mut_data() as isize);
-    // match unsafe { HidP_GetCaps(pd, wmut_ptr(&mut result.caps)) } {
-    //     HIDP_STATUS_SUCCESS => (),
-    //     v => return Err(ERR_WINDOWS_HIDP_ERROR.with_info(v.0)),
-    // }
 
     Ok(r)
 }
@@ -611,7 +604,7 @@ pub fn create_message_only_window(module: Option<HMODULE>) -> Result<(HMODULE, H
         Some(m) => m,
         None => unsafe { ce!(GetModuleHandleW(None))? },
     };
-    let class = WString::encode_from_str("Message").as_pcwstr();
+    let class = w!("Message");
 
     // create message-only window
     let hwnd = unsafe {
@@ -686,23 +679,24 @@ pub fn register_rawinput_devices(devs: &[RAWINPUTDEVICE]) -> Result<()> {
     unsafe { ce!(RegisterRawInputDevices(devs, cbsize)) }
 }
 
-pub fn get_rawinput_data(handle: HRAWINPUT, data_buf: &mut WBuffer) -> Result<()> {
+pub fn get_rawinput_data(handle: HRAWINPUT, data_buf: &mut Vec<RAWINPUT>) -> Result<()> {
     let mut size: u32 = 0;
-    let header_size = wsize_of::<RAWINPUTHEADER>();
+    let header_size = size_of::<RAWINPUTHEADER>() as u32;
     let res = unsafe { GetRawInputData(handle, RID_INPUT, None, &mut size, header_size) };
     if res != 0 {
         return Err(get_last_error("GetRawInputData"));
     }
 
-    if data_buf.capacity() < size {
-        data_buf.resize(size);
+    // RAWINPUT storage preserves alignment and can hold variable-length HID data.
+    let count = (size as usize).div_ceil(size_of::<RAWINPUT>());
+    if data_buf.len() < count {
+        data_buf.resize(count, RAWINPUT::default());
     }
-
     let res = unsafe {
         GetRawInputData(
             handle,
             RID_INPUT,
-            Some(data_buf.as_mut_data()),
+            Some(data_buf.as_mut_ptr().cast()),
             &mut size,
             header_size,
         )
@@ -874,7 +868,7 @@ pub fn get_all_monitors_info() -> Result<Vec<MonitorInfo>> {
         rect: *mut RECT,
         lparam: LPARAM,
     ) -> BOOL {
-        let hms = lparam_ref::<Vec<MonitorInfo>>(&lparam);
+        let hms = unsafe { &mut *(lparam.0 as *mut Vec<MonitorInfo>) };
         hms.push(MonitorInfo {
             handle: hm,
             rect: *rect,
@@ -884,8 +878,15 @@ pub fn get_all_monitors_info() -> Result<Vec<MonitorInfo>> {
     }
 
     let mut hms: Vec<MonitorInfo> = Vec::new();
-    match unsafe { EnumDisplayMonitors(None, None, Some(enum_fn), lparam_from(&mut hms)).as_bool() }
-    {
+    match unsafe {
+        EnumDisplayMonitors(
+            None,
+            None,
+            Some(enum_fn),
+            LPARAM(&mut hms as *mut Vec<MonitorInfo> as isize),
+        )
+        .as_bool()
+    } {
         true => (),
         false => return Err(Error::WinUnknown("EnumDisplayMonitors")),
     }
@@ -936,8 +937,8 @@ pub fn check_mouse_event_is_absolute(ri: &RAWINPUT) -> Option<bool> {
     }
 }
 
-pub fn popup_message_box(caption: WString, text: WString) -> Result<MESSAGEBOX_RESULT> {
-    let ret = unsafe { MessageBoxExW(None, text.as_pcwstr(), caption.as_pcwstr(), MB_TOPMOST, 0) };
+pub fn popup_message_box(caption: PCWSTR, text: &HSTRING) -> Result<MESSAGEBOX_RESULT> {
+    let ret = unsafe { MessageBoxExW(None, text, caption, MB_TOPMOST, 0) };
     if ret.0 == 0 {
         Err(get_last_error("MessageBoxExW"))
     } else {
@@ -1018,8 +1019,8 @@ impl<T> HotKeyManager<T> {
     }
 }
 
-pub fn create_mutex(name: WString) -> Result<Option<HANDLE>> {
-    match unsafe { CreateMutexW(None, false, name.as_pcwstr()) } {
+pub fn create_mutex(name: &HSTRING) -> Result<Option<HANDLE>> {
+    match unsafe { CreateMutexW(None, false, name) } {
         Ok(v) => Ok(Some(v)),
         Err(e) => {
             if e.code() == ERROR_ALREADY_EXISTS.to_hresult() {

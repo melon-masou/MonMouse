@@ -5,12 +5,10 @@ pub mod wintypes;
 pub mod winwrap;
 
 use crate::errors::Error;
+use windows::core::HSTRING;
 use windows::Win32::Foundation::HANDLE;
 
-use self::{
-    wintypes::WString,
-    winwrap::{close_handle, create_mutex, release_mutex, try_lock_mutex},
-};
+use self::winwrap::{close_handle, create_mutex, release_mutex, try_lock_mutex};
 
 pub fn locate_file(path: &std::path::Path) -> Result<(), Error> {
     use std::os::windows::process::CommandExt;
@@ -36,7 +34,7 @@ impl SingleProcess {
     }
 
     fn new(mutex_name: &str) -> Result<Self, Error> {
-        let handle = match create_mutex(WString::encode_from_str(mutex_name)) {
+        let handle = match create_mutex(&HSTRING::from(mutex_name)) {
             Ok(Some(handle)) => handle,
             Ok(None) => return Err(Error::AlreadyLaunched),
             Err(e) => return Err(e),

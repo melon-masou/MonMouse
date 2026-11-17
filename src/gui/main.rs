@@ -257,22 +257,20 @@ impl eframe::App for AppWrap {
 
 #[cfg(target_os = "windows")]
 fn exit_with_message(text: String) {
-    use monmouse::windows::wintypes::WString;
     use monmouse::windows::winwrap::popup_message_box;
+    use windows::core::{w, HSTRING};
 
-    let caption = WString::encode_from_str("MonMouse");
-    let _ = popup_message_box(caption, WString::encode_from_str(&text));
+    let _ = popup_message_box(w!("MonMouse"), &HSTRING::from(text));
     process::exit(1);
 }
 
 #[cfg(target_os = "windows")]
 fn windows_panic_hook(panic_info: &PanicHookInfo) {
-    use monmouse::windows::wintypes::WString;
     use monmouse::windows::winwrap::popup_message_box;
+    use windows::core::{w, HSTRING};
 
-    let caption = WString::encode_from_str("MonMouse");
-    let text = WString::encode_from_str(format!("Program panic: {}", panic_info).as_str());
-    let _ = popup_message_box(caption, text);
+    let text = HSTRING::from(format!("Program panic: {}", panic_info));
+    let _ = popup_message_box(w!("MonMouse"), &text);
 }
 
 fn set_thread_panic_process() {

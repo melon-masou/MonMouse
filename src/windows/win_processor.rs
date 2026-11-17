@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::mem::size_of;
 use std::sync::OnceLock;
 use std::time::Duration;
 
@@ -28,8 +29,9 @@ use crate::setting::Settings;
 use crate::utils::SimpleRatelimit;
 
 use log::{debug, error, trace, warn};
-use windows::Win32::UI::Input::RAWINPUTDEVICE;
+use windows::core::HSTRING;
 use windows::Win32::UI::Input::RIDEV_PAGEONLY;
+use windows::Win32::UI::Input::{HRAWINPUT, RAWINPUTDEVICE};
 use windows::Win32::UI::WindowsAndMessaging::MsgWaitForMultipleObjects;
 use windows::Win32::UI::WindowsAndMessaging::PeekMessageW;
 use windows::Win32::UI::WindowsAndMessaging::PBT_APMRESUMEAUTOMATIC;
@@ -62,7 +64,7 @@ pub struct WinDevice {
     pub id: Option<String>,
     pub rawinput: Option<RawinputInfo>,
     pub iface: Option<DeviceIfaceInfo>,
-    pub parents: Vec<WString>,
+    pub parents: Vec<HSTRING>,
     pub hid: Option<HidDeviceInfo>,
     pub ctrl: MouseDeviceTracker,
 }
@@ -82,11 +84,11 @@ impl std::fmt::Display for WinDevice {
             None => return writeln!(f, "Is a dummy device"),
         };
 
-        writeln!(f, "iface: {}", rawinput.iface)?;
+        writeln!(f, "iface: {}", wide_to_string(&rawinput.iface))?;
         writeln!(f, "dwType: {}", rawinput.typ())?;
         write!(f, "parents: [ ")?;
         for p in &self.parents {
-            write!(f, "{} ", p)?;
+            write!(f, "{} ", wide_to_string(p))?;
         }
         writeln!(f, "]")?;
 
@@ -111,7 +113,7 @@ impl std::fmt::Display for WinDevice {
         }
         if let Some(infos) = &self.iface {
             writeln!(f, "iface info::")?;
-            writeln!(f, "instance_id: {}", infos.instance_id)?;
+            writeln!(f, "instance_id: {}", wide_to_string(&infos.instance_id))?;
             writeln!(f, "name: {}", infos.name)?;
             writeln!(f, "service: {}", infos.service)?;
             writeln!(f, "class: {}", infos.class)?;
@@ -184,13 +186,15 @@ fn collect_device_infos(
     let handlev = handle.0;
     let (iface, id) = match device_get_iface_infos(&rawinput.iface) {
         Ok(v) => {
-            let id = v.instance_id.to_string();
+            let id = wide_to_string(&v.instance_id);
             (Some(v), Some(id))
         }
         Err(e) => {
             error!(
                 "Get iface info failed({:?}): {}. interface={}",
-                handlev, e, rawinput.iface,
+                handlev,
+                e,
+                wide_to_string(&rawinput.iface),
             );
             (None, None)
         }
@@ -201,7 +205,9 @@ fn collect_device_infos(
             Err(e) => {
                 error!(
                     "Get device parents failed({:?}): {}. interface={}",
-                    handlev, e, rawinput.iface,
+                    handlev,
+                    e,
+                    wide_to_string(&rawinput.iface),
                 );
                 Vec::new()
             }
@@ -214,7 +220,9 @@ fn collect_device_infos(
             Err(e) => {
                 error!(
                     "Get hid info failed({:?}): {:?}. interface={}",
-                    handlev, e, rawinput.iface
+                    handlev,
+                    e,
+                    wide_to_string(&rawinput.iface)
                 );
                 None
             }
@@ -383,7 +391,7 @@ struct WinDeviceProcessor {
     hwnd: HWND,
     devices: WinDeviceSet,
 
-    raw_input_buf: WBuffer,
+    raw_input_buf: Vec<RAWINPUT>,
     tick_widen: TickWiden,
     relocator: MouseRelocator,
     settings: ProcessorSettings,
@@ -401,7 +409,11 @@ impl WinDeviceProcessor {
             hwnd: HWND::default(),
             devices: WinDeviceSet::new(),
 
-            raw_input_buf: WBuffer::new(RAWINPUT_MSG_INIT_BUF_SIZE),
+            raw_input_buf: vec![
+                RAWINPUT::default();
+                (RAWINPUT_MSG_INIT_BUF_SIZE as usize)
+                    .div_ceil(size_of::<RAWINPUT>())
+            ],
             tick_widen: TickWiden::new(),
             relocator: MouseRelocator::new(),
             settings: ProcessorSettings::default(),
@@ -638,7 +650,7 @@ impl WinDeviceProcessor {
     fn on_raw_input(&mut self, _wparam: WPARAM, lparam: LPARAM, tick: u32) {
         let wtick = self.tick_widen.widen(tick);
 
-        match get_rawinput_data(lparam_as_rawinput(lparam), &mut self.raw_input_buf) {
+        match get_rawinput_data(HRAWINPUT(lparam.0 as *mut _), &mut self.raw_input_buf) {
             Ok(_) => (),
             Err(e) => {
                 error!("Get rawinput data failed: {}", e);
@@ -646,7 +658,7 @@ impl WinDeviceProcessor {
             }
         }
 
-        let ri = self.raw_input_buf.get_ref::<RAWINPUT>();
+        let ri = &self.raw_input_buf[0];
         let positioning = match check_mouse_event_is_absolute(ri) {
             Some(true) => Positioning::Absolute,
             Some(false) => Positioning::Relative,
@@ -1096,11 +1108,11 @@ impl WinEventLoop {
         if let Some(hid) = &d.hid {
             let mut name = String::new();
             if let WStringOption::Some(s) = &hid.manufacturer {
-                name.push_str(s.to_string().as_str());
+                name.push_str(wide_to_string(s).as_str());
                 name.push(' ');
             }
             if let WStringOption::Some(s) = &hid.product {
-                name.push_str(s.to_string().as_str());
+                name.push_str(wide_to_string(s).as_str());
                 name.push(' ');
             }
             if !name.is_empty() {
@@ -1109,7 +1121,7 @@ impl WinEventLoop {
         };
         if let Some(iface) = &d.iface {
             let mut name = if let WStringOption::Some(s) = &iface.manufacurer {
-                let mut s = s.to_string();
+                let mut s = wide_to_string(s);
                 s.push(' ');
                 s
             } else {
@@ -1130,33 +1142,33 @@ impl WinEventLoop {
         };
 
         let mut vs = vec![
-            (tag("interface"), rawinput.iface.to_string()),
+            (tag("interface"), wide_to_string(&rawinput.iface)),
             (tag("dwType"), rawinput.rid_info.dwType.0.to_string()),
         ];
         if let Some(hm) = &d.hid {
             if let WStringOption::Some(s) = &hm.manufacturer {
-                vs.push((tag("hidManufacurer"), s.to_string()));
+                vs.push((tag("hidManufacurer"), wide_to_string(s)));
             }
             if let WStringOption::Some(s) = &hm.product {
-                vs.push((tag("hidProduct"), s.to_string()));
+                vs.push((tag("hidProduct"), wide_to_string(s)));
             }
             if let WStringOption::Some(s) = &hm.serial_number {
-                vs.push((tag("hidSerialNumber"), s.to_string()));
+                vs.push((tag("hidSerialNumber"), wide_to_string(s)));
             }
         }
 
         if let Some(im) = &d.iface {
             if let WStringOption::Some(s) = &im.manufacurer {
-                vs.push((tag("manufacurer"), s.to_string()));
+                vs.push((tag("manufacurer"), wide_to_string(s)));
             }
             if let WStringOption::Some(s) = &im.name {
-                vs.push((tag("name"), s.to_string()));
+                vs.push((tag("name"), wide_to_string(s)));
             }
             if let WStringOption::Some(s) = &im.service {
-                vs.push((tag("service"), s.to_string()));
+                vs.push((tag("service"), wide_to_string(s)));
             }
             if let WStringOption::Some(s) = &im.class {
-                vs.push((tag("class"), s.to_string()));
+                vs.push((tag("class"), wide_to_string(s)));
             }
         }
 
