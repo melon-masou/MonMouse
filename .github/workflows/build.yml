@@ -5,9 +5,6 @@ on:
       version_anno:
         type: string
         default: ""
-      upload_name:
-        type: string
-        default: ""
       release_name:
         type: string
         default: ""
@@ -19,39 +16,27 @@ env:
   VERSION_ANNO: ${{ inputs.version_anno }}
   VERSION_SHA: ${{ github.sha }}
 jobs:
-  dep-cache:
-    if: inputs.use_dep_cache
-    uses: ./.github/workflows/build-dep.yml
   build-and-upload:
     runs-on: windows-latest
-    needs: [dep-cache]
-    if: |
-      always() &&
-      (needs.dep-cache.result == 'success' || needs.dep-cache.result == 'skipped')
     steps:
     - name: Checkout source
       uses: actions/checkout@v4
-    - name: Restore dep cache
+    - name: Rust cache
       if: inputs.use_dep_cache
-      uses: actions/cache/restore@v4
+      uses: Swatinem/rust-cache@v2
       with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: dep-cache-${{ hashFiles('Cargo.lock') }}-${{ runner.os }}
-        fail-on-cache-miss: true
+        cache-on-failure: true
     - name: Build
       shell: cmd
-      run: |      
+      run: |
         for /f "delims=" %%i in ('powershell.exe "scripts\get_rc_path.ps1"') do set RC_EXEC=%%i
         echo RC_EXEC set to %RC_EXEC%
         cargo build --release
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
-      if: inputs.upload_name != ''
+      if: inputs.release_name == ''
       with:
-        name: monmouse-${{ inputs.upload_name }}-windows
+        name: monmouse-${{ github.sha }}-windows
         path: |
           target/release/monmouse.exe
           target/release/monmouse-cli.exe
