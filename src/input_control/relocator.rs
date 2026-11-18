@@ -59,12 +59,11 @@ impl MouseDeviceTracker {
     }
 }
 
-pub struct RelocatePos(pub MousePos);
-
-impl RelocatePos {
-    pub fn from(pos: MousePos) -> Option<Self> {
-        Some(Self(pos))
-    }
+#[derive(Default, Clone, Copy)]
+pub struct RelocatorEffect {
+    pub switch: bool,
+    pub refresh_monitors: bool,
+    pub relocate_pos: Option<MousePos>,
 }
 
 pub struct MouseRelocator {
@@ -72,8 +71,6 @@ pub struct MouseRelocator {
 
     cur_mouse: DeviceId,
     cur_pos: MousePos,
-    relocate_pos: Option<RelocatePos>,
-    to_update_monitors: bool,
     last_jump_pos: Vec<Option<MousePos>>,
     switching_until: u64,
 }
@@ -90,8 +87,6 @@ impl MouseRelocator {
             monitors: MonitorAreasList::from(Vec::new()),
             cur_mouse: 0,
             cur_pos: MousePos::default(),
-            relocate_pos: None,
-            to_update_monitors: false,
             last_jump_pos: Vec::new(),
             switching_until: 0,
         }
@@ -101,7 +96,6 @@ impl MouseRelocator {
         self.monitors = monitors;
         // clear previous state
         self.last_jump_pos.fill(None);
-        self.relocate_pos = None
     }
 
     pub fn monitors(&self) -> &MonitorAreasList {
@@ -141,9 +135,15 @@ impl MouseRelocator {
         dx * dx + dy * dy > threshold * threshold
     }
 
-    pub fn jump_to_next_monitor(&mut self, ctrl: Option<&mut MouseDeviceTracker>) {
+    pub fn jump_to_next_monitor(
+        &mut self,
+        ctrl: Option<&mut MouseDeviceTracker>,
+    ) -> RelocatorEffect {
         if self.monitors.is_empty() {
-            return;
+            return RelocatorEffect {
+                refresh_monitors: true,
+                ..Default::default()
+            };
         }
         let next_id = if let Some((cur_id, cur_mon)) = self.monitors.locate_id(&self.cur_pos) {
             let saved_cur_pos = cur_mon.capture_pos_no_edge(&self.cur_pos);
@@ -154,7 +154,10 @@ impl MouseRelocator {
         };
 
         let Some(area) = self.monitors.get_area(next_id) else {
-            return;
+            return RelocatorEffect {
+                refresh_monitors: true,
+                ..Default::default()
+            };
         };
         let mut new_pos = area.center();
         if let Some(ctrl) = ctrl {
@@ -169,18 +172,23 @@ impl MouseRelocator {
             }
         }
         self.cur_pos = new_pos;
-        self.relocate_pos = RelocatePos::from(new_pos);
+        RelocatorEffect {
+            relocate_pos: Some(new_pos),
+            ..Default::default()
+        }
     }
 
-    pub(crate) fn on_mouse_event(
+    pub fn on_mouse_event(
         &mut self,
         event: &MatchedMouseEvent,
         ctrl: &mut MouseDeviceTracker,
-    ) -> bool {
+    ) -> RelocatorEffect {
+        let mut effect = RelocatorEffect::default();
+
         ctrl.positioning = event.positioning;
         if self.is_switching(event.tick) {
             if self.is_big_switching_jump(&event.position) {
-                self.relocate_pos = RelocatePos::from(self.cur_pos);
+                effect.relocate_pos = Some(self.cur_pos);
                 log::trace!(
                     "Reset cursor during mouse switching: event_pos={}, cur_pos={}, tick={}, switching_until={}",
                     event.position,
@@ -189,9 +197,9 @@ impl MouseRelocator {
                     self.switching_until
                 );
             } else {
-                self.update_position(ctrl, event.position);
+                self.update_position(ctrl, &mut effect, event.position);
             }
-            return false;
+            return effect;
         }
 
         let switched = self.cur_mouse != event.device;
@@ -202,42 +210,39 @@ impl MouseRelocator {
         {
             // The incoming position still belongs to the stream before relocation.
             self.cur_pos = saved_pos;
-            self.relocate_pos = RelocatePos::from(saved_pos);
+            effect.relocate_pos = Some(saved_pos);
         } else {
-            self.update_position(ctrl, event.position);
+            self.update_position(ctrl, &mut effect, event.position);
         }
         ctrl.update_pos(&self.cur_pos, event.tick);
         if switched {
             self.start_switching(event.tick);
         }
-        switched
+        effect.switch = switched;
+        effect
     }
 
-    fn update_position(&mut self, ctrl: &mut MouseDeviceTracker, pos: MousePos) {
+    fn update_position(
+        &mut self,
+        ctrl: &mut MouseDeviceTracker,
+        effect: &mut RelocatorEffect,
+        pos: MousePos,
+    ) {
         if ctrl.setting.locked_in_monitor {
             if let Some(area) = &ctrl.locked_area {
                 let new_pos = area.capture_pos(&pos);
                 if new_pos != pos {
                     self.cur_pos = new_pos;
-                    self.relocate_pos = RelocatePos::from(new_pos);
+                    effect.relocate_pos = Some(new_pos);
                     return;
                 }
             } else if let Some(area) = self.monitors.locate(&pos) {
                 ctrl.locked_area = Some(*area);
             } else {
-                self.to_update_monitors = true;
+                effect.refresh_monitors = true;
                 return;
             }
         }
         self.cur_pos = pos;
-    }
-
-    pub fn pop_relocate_pos(&mut self) -> Option<RelocatePos> {
-        self.relocate_pos.take()
-    }
-    pub fn pop_need_update_monitors(&mut self) -> bool {
-        let v = self.to_update_monitors;
-        self.to_update_monitors = false;
-        v
     }
 }

@@ -7,7 +7,7 @@ use windows::{
 use super::winwrap::{devices::*, wide_to_string};
 use crate::{device_type::DeviceType, errors::Result, message::GenericDevice};
 
-pub(super) struct WinDevice {
+pub struct WinDevice {
     pub handle: HANDLE,
     pub device_type: DeviceType,
     pub id: Option<String>,
@@ -166,7 +166,7 @@ fn filter_rawinput_devices(device_type: DeviceType) -> bool {
     device_type.is_pointer()
 }
 
-pub(super) fn collect_all_raw_devices() -> Result<Vec<WinDevice>> {
+pub fn collect_all_raw_devices() -> Result<Vec<WinDevice>> {
     let all_devs = device_list_all()?;
     Ok(all_devs
         .into_iter()
@@ -193,11 +193,11 @@ pub(super) fn collect_all_raw_devices() -> Result<Vec<WinDevice>> {
         .collect())
 }
 
-pub(super) fn is_valid_win_device(d: &WinDevice) -> bool {
+pub fn is_valid_win_device(d: &WinDevice) -> bool {
     d.id.is_some()
 }
 
-pub(super) fn win_device_to_generic(d: &WinDevice) -> GenericDevice {
+pub fn win_device_to_generic(d: &WinDevice) -> GenericDevice {
     GenericDevice {
         id: d.id.as_ref().unwrap().to_string(),
         device_type: d.device_type,

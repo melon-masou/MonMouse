@@ -1,7 +1,7 @@
 use super::{DeviceId, MousePos, Positioning};
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct MatchedMouseEvent {
+pub struct MatchedMouseEvent {
     pub device: DeviceId,
     pub position: MousePos,
     pub positioning: Positioning,
@@ -17,7 +17,7 @@ struct DeviceActivity {
 
 // On Windows, Cursor position events may lack a device identity.
 // MouseEventDeviceMatcher try to infer their source from recent device activity.
-pub(crate) struct MouseEventDeviceMatcher {
+pub struct MouseEventDeviceMatcher {
     last_activity: Option<DeviceActivity>,
     // Merge unidentified device activity into the last source within this many ms; -1 disables merging.
     merge_unassociated_ms: i64,

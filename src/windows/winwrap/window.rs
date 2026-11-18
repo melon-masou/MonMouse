@@ -6,7 +6,7 @@ use windows::{
         Foundation::{HMODULE, HWND, LPARAM, LRESULT, WPARAM},
         System::{LibraryLoader::GetModuleHandleW, SystemInformation::GetTickCount64},
         UI::{
-            Shell::{DefSubclassProc, SetWindowSubclass},
+            Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass},
             WindowsAndMessaging::{
                 CreateWindowExW, DispatchMessageW, MessageBoxExW, MsgWaitForMultipleObjects,
                 PeekMessageW, SetTimer, TranslateMessage, HWND_DESKTOP, HWND_MESSAGE, MB_TOPMOST,
@@ -74,7 +74,15 @@ pub fn create_message_only_window(module: Option<HMODULE>) -> Result<(HMODULE, H
 }
 
 pub trait SubclassHandler {
-    fn subclass_callback(&mut self, umsg: u32, wp: WPARAM, lp: LPARAM, uidsubclass: usize) -> bool;
+    type Context;
+
+    fn subclass_callback(
+        context: &mut Self::Context,
+        umsg: u32,
+        wp: WPARAM,
+        lp: LPARAM,
+        uidsubclass: usize,
+    ) -> bool;
 }
 
 unsafe extern "system" fn subclass_proc<T: SubclassHandler>(
@@ -85,10 +93,8 @@ unsafe extern "system" fn subclass_proc<T: SubclassHandler>(
     uidsubclass: usize,
     dwrefdata: usize,
 ) -> LRESULT {
-    let dp_ptr = dwrefdata as *mut T;
-    let dp = dp_ptr.as_mut().unwrap();
-
-    let call_next = dp.subclass_callback(umsg, wparam, lparam, uidsubclass);
+    let context = unsafe { &mut *(dwrefdata as *mut T::Context) };
+    let call_next = T::subclass_callback(context, umsg, wparam, lparam, uidsubclass);
     if call_next {
         DefSubclassProc(hwnd, umsg, wparam, lparam)
     } else {
@@ -96,28 +102,41 @@ unsafe extern "system" fn subclass_proc<T: SubclassHandler>(
     }
 }
 
-pub fn set_subclass<T: SubclassHandler>(
+/// # Safety
+/// Register and remove on the window's thread. A supplied context must stay valid
+/// and at a fixed address until removal succeeds. No conflicting references may
+/// be live when a callback borrows it.
+pub unsafe fn set_subclass<T: SubclassHandler>(
     hwnd: HWND,
     uidsubclass: usize,
-    handler: Option<&mut T>,
+    context: Option<*mut T::Context>,
 ) -> Result<()> {
-    let ok = match handler {
-        Some(h) => unsafe {
-            SetWindowSubclass(
-                hwnd,
-                Some(subclass_proc::<T>),
-                uidsubclass,
-                h as *mut T as usize,
-            )
-        },
-        None => unsafe { SetWindowSubclass(hwnd, None, uidsubclass, 0) },
-    }
-    .as_bool();
-
-    if ok {
-        Ok(())
-    } else {
-        Err(get_last_error("SetWindowSubclass"))
+    match context {
+        Some(context) => {
+            if unsafe {
+                SetWindowSubclass(
+                    hwnd,
+                    Some(subclass_proc::<T>),
+                    uidsubclass,
+                    context as usize,
+                )
+            }
+            .as_bool()
+            {
+                Ok(())
+            } else {
+                Err(get_last_error("SetWindowSubclass"))
+            }
+        }
+        None => {
+            if unsafe { RemoveWindowSubclass(hwnd, Some(subclass_proc::<T>), uidsubclass) }
+                .as_bool()
+            {
+                Ok(())
+            } else {
+                Err(get_last_error("RemoveWindowSubclass"))
+            }
+        }
     }
 }
 
@@ -170,7 +189,7 @@ thread_local! {
     static INPUT_TICKS: RefCell<TickWiden> = RefCell::new(TickWiden::new());
 }
 
-pub(in crate::windows) fn widen_tick(tick: u32) -> u64 {
+pub fn widen_tick(tick: u32) -> u64 {
     INPUT_TICKS.with_borrow_mut(|ticks| ticks.widen(tick))
 }
 

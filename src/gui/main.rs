@@ -24,11 +24,11 @@ use eframe::egui::{self, FontData};
 use log::info;
 use monmouse::message::UINotify;
 use monmouse::setting::{read_config, Settings, CONFIG_FILE_NAME};
+use monmouse::SingleProcess;
 use monmouse::{
     errors::Error,
     message::{setup_reactors, UIReactor},
 };
-use monmouse::{SingleProcess, POLL_MSGS, POLL_TIMEOUT};
 use styles::{gscale, Theme};
 use tray::Tray;
 
@@ -70,9 +70,9 @@ fn main() {
         setup_reactors(Box::new(egui_notify.clone()), Box::new(egui_notify.clone()));
 
     let mouse_control_thread = thread::spawn(move || {
-        let eventloop = monmouse::Eventloop::new(false, mouse_control_reactor);
+        let poller = monmouse::Eventloop::new(false, mouse_control_reactor);
         let tray = Tray::new(tray_reactor);
-        match mouse_control_spawn(eventloop, tray) {
+        match mouse_control_spawn(poller, tray) {
             Ok(_) => info!("mouse control eventloop exited normally"),
             Err(e) => panic!("mouse control eventloop exited for error: {}", e),
         }
@@ -88,18 +88,15 @@ fn main() {
     drop(single_process);
 }
 
-fn mouse_control_spawn(mut eventloop: monmouse::Eventloop, tray: Tray) -> Result<(), Error> {
-    eventloop.initialize()?;
+fn mouse_control_spawn(mut poller: monmouse::Eventloop, tray: Tray) -> Result<(), Error> {
+    poller.initialize()?;
     loop {
         tray.poll_events();
-        if !eventloop.poll_wm_messages(POLL_MSGS, POLL_TIMEOUT)? {
-            break;
-        }
-        if eventloop.poll_messages() {
+        if !poller.poll() {
             break;
         };
     }
-    eventloop.terminate()?;
+    poller.terminate()?;
     Ok(())
 }
 

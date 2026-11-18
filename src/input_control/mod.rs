@@ -1,5 +1,5 @@
 pub mod arbiter;
-pub(crate) mod mouse_event_device_matcher;
+pub mod mouse_event_device_matcher;
 pub mod relocator;
 
 use serde::{Deserialize, Serialize};

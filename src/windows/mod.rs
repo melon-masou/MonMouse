@@ -1,9 +1,9 @@
 pub mod constants;
 mod devices;
-pub mod eventloop;
-mod poller;
+pub mod poller;
 mod service;
 pub mod winwrap;
+mod wm_dispatch;
 
 use crate::errors::Error;
 use windows::core::HSTRING;

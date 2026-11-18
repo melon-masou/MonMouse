@@ -7,7 +7,7 @@ use monmouse::{
     errors::Error,
     message::{setup_reactors, GenericDevice, UINotifyNoop},
     setting::{config_string, read_config, Settings, CONFIG_FILE_NAME},
-    SingleProcess, POLL_MSGS, POLL_TIMEOUT,
+    SingleProcess,
 };
 
 #[cfg(not(debug_assertions))]
@@ -62,10 +62,10 @@ fn main() -> Result<(), Error> {
         Box::<UINotifyNoop>::default(),
         Box::<UINotifyNoop>::default(),
     ); // useless, but still setup
-    let mut eventloop = monmouse::Eventloop::new(true, mouse_control_reactor);
+    let mut poller = monmouse::Eventloop::new(true, mouse_control_reactor);
 
     if args.print_devices {
-        let devices = eventloop.scan_devices()?;
+        let devices = poller.scan_devices()?;
         print_devices(devices);
         return Ok(());
     }
@@ -76,9 +76,10 @@ fn main() -> Result<(), Error> {
     let config = read_config(&PathBuf::from(args.config_file))?;
     debug!("Config loaded: {:?}", config);
 
-    eventloop.load_config(config)?;
+    poller.initialize_settings(&config.processor)?;
+
     info!("monmouse-cli started");
-    let result = mouse_control_spawn(eventloop);
+    let result = mouse_control_spawn(poller);
     match &result {
         Ok(_) => info!("monmouse-cli ended normally"),
         Err(e) => error!("monmouse-cli ended with error: {}", e),
@@ -88,17 +89,14 @@ fn main() -> Result<(), Error> {
     result
 }
 
-fn mouse_control_spawn(mut eventloop: monmouse::Eventloop) -> Result<(), Error> {
-    eventloop.initialize()?;
+fn mouse_control_spawn(mut poller: monmouse::Eventloop) -> Result<(), Error> {
+    poller.initialize()?;
     loop {
-        if !eventloop.poll_wm_messages(POLL_MSGS, POLL_TIMEOUT)? {
-            break;
-        }
-        if eventloop.poll_messages() {
+        if !poller.poll() {
             break;
         }
     }
-    eventloop.terminate()?;
+    poller.terminate()?;
     Ok(())
 }
 

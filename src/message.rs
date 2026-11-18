@@ -10,7 +10,7 @@ use std::{
 use crate::{
     device_type::DeviceType,
     errors::Error,
-    input_control::{MousePos, Positioning},
+    input_control::Positioning,
     setting::{DeviceSettingItem, ProcessorSettings},
 };
 
@@ -120,7 +120,6 @@ pub enum Message {
     InspectDevicesStatus(RoundtripData<(), Vec<(String, DeviceStatus)>>),
     ApplyProcessorSetting(RoundtripData<ApplyProcessorSettingsData, ()>),
     ApplyOneDeviceSetting(SendData<DeviceSettingItem>),
-    MousePosition { position: MousePos, tick: u64 },
 }
 
 #[derive(Debug)]

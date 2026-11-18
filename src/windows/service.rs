@@ -1,17 +1,16 @@
 use log::{debug, error, warn};
 use windows::Win32::{
-    Foundation::{HWND, LPARAM, WPARAM},
+    Foundation::HWND,
     UI::Input::{RAWINPUTDEVICE, RIDEV_DEVNOTIFY, RIDEV_INPUTSINK, RIDEV_PAGEONLY},
 };
 
 use super::{
-    constants::SUBCLASS_UID,
     devices::{collect_all_raw_devices, is_valid_win_device, win_device_to_generic},
     winwrap::{
         display::{get_all_monitors_info, process_set_dpi_aware, set_cursor_pos, MonitorInfo},
         input::{register_rawinput_devices, HotKeyManager},
         overlay::{create_overlay_window, refresh_overlay_window, trigger_draw_cursors, CursorPos},
-        window::{get_cur_tick, set_subclass, SubclassHandler},
+        window::get_cur_tick,
     },
 };
 use crate::{
@@ -20,40 +19,25 @@ use crate::{
     input_control::{DeviceId, MonitorArea, MonitorAreasList, MousePos},
     keyboard::key_windows::shortcut_str_to_win,
     message::ShortcutID,
-    processor::{DeviceInfo, PlatformService},
+    processor::platform::{DeviceInfo, PlatformService},
+    setting::ShortcutSettings,
 };
 
 // Native resources and capabilities; control policy belongs to Processor.
-pub(super) struct WinPlatformService {
-    hwnd: HWND,
-    pub(super) hotkey_mgr: HotKeyManager<ShortcutID>,
-    pub(super) monitors_changed: bool,
-}
-
-impl SubclassHandler for WinPlatformService {
-    fn subclass_callback(&mut self, message: u32, _wp: WPARAM, _lp: LPARAM, _class: usize) -> bool {
-        use windows::Win32::UI::WindowsAndMessaging::{WM_DISPLAYCHANGE, WM_DPICHANGED};
-        match message {
-            WM_DISPLAYCHANGE | WM_DPICHANGED => {
-                debug!("Trigger updating monitors by WM {}", message);
-                self.monitors_changed = true;
-            }
-            _ => (),
-        }
-        true
-    }
+pub struct WinPlatformService {
+    pub hwnd: HWND,
+    pub hotkey_mgr: HotKeyManager<ShortcutID>,
 }
 
 impl WinPlatformService {
-    pub(super) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             hwnd: HWND::default(),
             hotkey_mgr: HotKeyManager::new(),
-            monitors_changed: false,
         }
     }
 
-    pub(super) fn setup_window(&mut self) -> Result<()> {
+    pub fn setup_window(&mut self) -> Result<()> {
         // thread_set_dpi_aware();
         if !process_set_dpi_aware() {
             warn!("Failed to set process as dpi aware");
@@ -62,13 +46,6 @@ impl WinPlatformService {
             Ok((_, v)) => v,
             Err(e) => {
                 error!("Create overlay window failed: {}", e);
-                return Err(e);
-            }
-        };
-        match set_subclass(hwnd, SUBCLASS_UID, Some(self)) {
-            Ok(v) => v,
-            Err(e) => {
-                error!("Set subclass failed: {}", e);
                 return Err(e);
             }
         };
@@ -156,7 +133,6 @@ impl PlatformService for WinPlatformService {
 
     fn get_monitors(&mut self) -> Result<MonitorAreasList> {
         let monitors = get_all_monitors_info()?;
-        self.monitors_changed = false;
         Ok(MonitorAreasList::from(
             monitors
                 .iter()
@@ -166,8 +142,33 @@ impl PlatformService for WinPlatformService {
         ))
     }
 
-    fn register_shortcut(&mut self, shortcut: &str, id: ShortcutID) -> Result<()> {
-        Self::apply_one_shortcut(&mut self.hotkey_mgr, self.hwnd, shortcut, id)
+    fn register_shortcuts(&mut self, shortcuts: &ShortcutSettings) -> Result<()> {
+        let mut last_error = Ok(());
+        for (name, shortcut, id) in [
+            (
+                "cur_mouse_lock",
+                &shortcuts.cur_mouse_lock,
+                ShortcutID::CurMouseLock,
+            ),
+            (
+                "cur_mouse_switch",
+                &shortcuts.cur_mouse_switch,
+                ShortcutID::CurMouseSwitch,
+            ),
+            (
+                "cur_mouse_jump_next",
+                &shortcuts.cur_mouse_jump_next,
+                ShortcutID::CurMouseJumpNext,
+            ),
+        ] {
+            if let Err(error) =
+                Self::apply_one_shortcut(&mut self.hotkey_mgr, self.hwnd, shortcut, id)
+            {
+                error!("register shortcut {} error: {}", name, error);
+                last_error = Err(error);
+            }
+        }
+        last_error
     }
 
     fn refresh_overlay_window(&mut self) -> Result<()> {

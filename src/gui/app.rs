@@ -433,6 +433,8 @@ impl App {
     }
 }
 
+type DiscardAction = Box<dyn FnOnce(&mut App)>;
+
 #[derive(Default)]
 pub struct AppState {
     pub settings: Settings,
@@ -441,7 +443,7 @@ pub struct AppState {
     pub config_cache: InputsCache<Settings>,
     pub saving: bool,
     pub cur_panel: PanelTag,
-    pub discard_action: Option<Box<dyn FnOnce(&mut App)>>,
+    pub discard_action: Option<DiscardAction>,
 }
 
 pub struct DeviceUIState {

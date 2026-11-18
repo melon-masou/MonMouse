@@ -1,195 +1,290 @@
-use std::{mem::size_of, sync::OnceLock};
+use std::{cell::Cell, mem::size_of, ptr};
 
 use log::{debug, error, trace};
 use windows::Win32::{
-    Foundation::LPARAM,
+    Foundation::{LPARAM, WPARAM},
     UI::{
-        Input::{HRAWINPUT, RAWINPUT},
-        WindowsAndMessaging::{
-            HHOOK, MSG, MSLLHOOKSTRUCT, PBT_APMRESUMEAUTOMATIC, PBT_APMRESUMESUSPEND, WM_HOTKEY,
-            WM_INPUT, WM_INPUT_DEVICE_CHANGE, WM_POWERBROADCAST,
-        },
+        Input::RAWINPUT,
+        WindowsAndMessaging::{HHOOK, MSG, MSLLHOOKSTRUCT},
     },
 };
 
 use super::{
-    constants::RAWINPUT_MSG_INIT_BUF_SIZE,
+    constants::{RAWINPUT_MSG_INIT_BUF_SIZE, SUBCLASS_UID},
     service::WinPlatformService,
     winwrap::{
-        input::{
-            check_mouse_event_is_absolute, get_rawinput_data, rawinput_to_string, set_windows_hook,
-            unset_windows_hook, HookWrap, MouseLowLevelHook,
+        input::{set_windows_hook, unset_windows_hook, HookWrap, MouseLowLevelHook},
+        window::{
+            get_cur_tick, poll_window_messages, set_subclass, wait_window_messages, widen_tick,
+            SubclassHandler,
         },
-        window::{poll_window_messages, widen_tick},
     },
+    wm_dispatch::WMDispatch,
 };
 use crate::{
     errors::Result,
-    input_control::{DeviceId, MousePos, Positioning},
-    message::{Message, MessageSender},
-    processor::Processor,
+    input_control::MousePos,
+    message::{GenericDevice, MouseControlReactor},
+    processor::{
+        effects::EffectsIntent,
+        message_dispatch::{DispatchResult, MessageDispatch},
+        platform::PlatformService,
+        Processor,
+    },
+    setting::ProcessorSettings,
 };
 
-struct WinHook {
+const POLL_MSGS: u32 = 20;
+const POLL_TIMEOUT: u32 = 20;
+const STALE_MOUSE_EVENT_MS: u64 = POLL_TIMEOUT as u64 * 3;
+
+thread_local! {
+    static HOOK_INPUT: Cell<*mut HookInput> = const { Cell::new(ptr::null_mut()) };
+}
+
+// Callback effects stay separate from MessageDispatch and are merged only
+// before resolution. The fixed allocation also holds the callback's Processor.
+struct HookInput {
+    processor: Processor,
+    effects: EffectsIntent,
+}
+
+pub struct Poller {
+    hook_input: Box<HookInput>,
+    platform: WinPlatformService,
+    reactor: MouseControlReactor,
+    message_dispatch: MessageDispatch,
+
     mouse_ll_hook: Option<HHOOK>,
-}
-
-impl WinHook {
-    fn new() -> Self {
-        WinHook {
-            mouse_ll_hook: None,
-        }
-    }
-
-    fn register(&mut self) -> Result<()> {
-        self.mouse_ll_hook = Some(set_windows_hook(HookWrap::mouse_ll::<WinHook>())?);
-        Ok(())
-    }
-
-    fn unregister(&mut self) -> Result<()> {
-        if let Some(hook) = self.mouse_ll_hook.take() {
-            unset_windows_hook(hook)?;
-        }
-        Ok(())
-    }
-
-    fn set_ev_sender(sender: MessageSender) {
-        G_HOOK_EV_SENDER.set(sender).unwrap();
-    }
-}
-
-static G_HOOK_EV_SENDER: OnceLock<MessageSender> = OnceLock::new();
-impl MouseLowLevelHook for WinHook {
-    fn on_mouse_ll(action: u32, e: &mut MSLLHOOKSTRUCT) -> bool {
-        let hook_ev_sender = G_HOOK_EV_SENDER.get().unwrap();
-
-        trace!(
-            "mousell hook: action={}, pt=({},{})",
-            action,
-            e.pt.x,
-            e.pt.y
-        );
-
-        hook_ev_sender.send(Message::MousePosition {
-            position: MousePos::from(e.pt.x, e.pt.y),
-            tick: widen_tick(e.time),
-        });
-        true
-    }
-}
-
-pub(super) struct WinPoller {
-    hook: WinHook,
     raw_input_buf: Vec<RAWINPUT>,
-    ui_tx: MessageSender,
 }
 
-impl WinPoller {
-    pub(super) fn new(ui_tx: MessageSender, input_tx: MessageSender) -> Self {
-        WinHook::set_ev_sender(input_tx);
+impl Poller {
+    pub fn new(headless: bool, reactor: MouseControlReactor) -> Self {
         Self {
-            hook: WinHook::new(),
+            hook_input: Box::new(HookInput {
+                processor: Processor::new(headless),
+                effects: EffectsIntent::default(),
+            }),
+            platform: WinPlatformService::new(),
+            reactor,
+            message_dispatch: MessageDispatch::default(),
+            mouse_ll_hook: None,
             raw_input_buf: vec![
                 RAWINPUT::default();
                 (RAWINPUT_MSG_INIT_BUF_SIZE as usize)
                     .div_ceil(size_of::<RAWINPUT>())
             ],
-            ui_tx,
         }
     }
 
-    pub(super) fn initialize(&mut self) -> Result<()> {
-        self.hook.register()
+    pub fn scan_devices(&mut self) -> Result<Vec<GenericDevice>> {
+        self.message_dispatch.scan_devices(
+            Self::processor_mut(&mut self.hook_input),
+            &mut self.platform,
+        )
     }
 
-    pub(super) fn terminate(&mut self) -> Result<()> {
-        self.hook.unregister()
+    pub fn initialize_settings(&mut self, settings: &ProcessorSettings) -> Result<()> {
+        self.message_dispatch.apply_settings(
+            Self::processor_mut(&mut self.hook_input),
+            &mut self.platform,
+            settings,
+        )
     }
 
-    fn on_raw_input(
-        &mut self,
-        lparam: LPARAM,
-        tick: u32,
-        processor: &mut Processor,
-        platform: &mut WinPlatformService,
-    ) {
-        let tick = widen_tick(tick);
-        if let Err(error) =
-            get_rawinput_data(HRAWINPUT(lparam.0 as *mut _), &mut self.raw_input_buf)
-        {
-            error!("Get rawinput data failed: {}", error);
-            return;
-        }
-        let input = &self.raw_input_buf[0];
-        let positioning = match check_mouse_event_is_absolute(input) {
-            Some(true) => Positioning::Absolute,
-            Some(false) => Positioning::Relative,
-            None => Positioning::Unknown,
+    fn processor_mut(hook_input: &mut Box<HookInput>) -> &mut Processor {
+        // Preserve the registered callback pointer when borrowing its fixed allocation.
+        let pointer = &raw mut **hook_input;
+        unsafe { &mut (*pointer).processor }
+    }
+    fn merge_hook_callback_effects(&mut self) {
+        let pointer = &raw mut *self.hook_input;
+        let effects = unsafe { &mut (*pointer).effects };
+        self.message_dispatch.effects.merge(*effects);
+        effects.clear();
+    }
+
+    fn register_callbacks(&mut self) -> Result<()> {
+        HOOK_INPUT.with(|current| {
+            assert!(
+                current.get().is_null(),
+                "A mouse hook is already registered on this thread"
+            )
+        });
+        // Both callbacks use only their own fixed resources, never dispatcher state.
+        // No resource borrow spans native dispatch or output calls.
+        let pointer = &raw mut *self.hook_input;
+        unsafe {
+            set_subclass::<Self>(
+                self.platform.hwnd,
+                SUBCLASS_UID,
+                Some(&raw mut (*pointer).effects),
+            )?
         };
-        trace!(
-            "rawinput msg: tick={} msg {}",
-            tick,
-            rawinput_to_string(input)
-        );
-        processor.on_device_activity(
-            (!input.header.hDevice.is_invalid()).then_some(input.header.hDevice.0 as DeviceId),
-            positioning,
-            tick,
-            platform,
-        );
+        HOOK_INPUT.with(|current| current.set(&raw mut *self.hook_input));
+        match set_windows_hook(HookWrap::mouse_ll::<Self>()) {
+            Ok(hook) => {
+                self.mouse_ll_hook = Some(hook);
+                Ok(())
+            }
+            Err(error) => {
+                self.unregister_callbacks()?;
+                Err(error)
+            }
+        }
+    }
+    fn unregister_callbacks(&mut self) -> Result<()> {
+        if let Some(hook) = self.mouse_ll_hook {
+            unset_windows_hook(hook)?;
+            self.mouse_ll_hook = None;
+        }
+        unsafe { set_subclass::<Self>(self.platform.hwnd, SUBCLASS_UID, None)? };
+        HOOK_INPUT.with(|current| current.set(ptr::null_mut()));
+        Ok(())
     }
 
-    fn handle_wm_message(
-        &mut self,
-        message: &MSG,
-        processor: &mut Processor,
-        platform: &mut WinPlatformService,
-    ) {
-        match message.message {
-            WM_INPUT => self.on_raw_input(message.lParam, message.time, processor, platform),
-            WM_INPUT_DEVICE_CHANGE => {
-                debug!("Trigger updating devices by WM_INPUT_DEVICE_CHANGE");
-                processor.on_devices_changed();
+    fn resolve_effects(&mut self) {
+        self.merge_hook_callback_effects();
+
+        self.message_dispatch.resolve_effects(
+            Self::processor_mut(&mut self.hook_input),
+            &mut self.platform,
+        );
+        let effects = &mut self.message_dispatch.effects;
+        let inactive_cursors_redraw = {
+            if effects.redraw_inactive_cursors {
+                effects.redraw_inactive_cursors = false;
+                let processor = Self::processor_mut(&mut self.hook_input);
+                Some(processor.inactive_cursor_drawing())
+            } else {
+                None
             }
-            WM_POWERBROADCAST => match message.wParam.0 as u32 {
-                PBT_APMRESUMEAUTOMATIC | PBT_APMRESUMESUSPEND => {
-                    debug!("Reinitialize after system resume");
-                    processor.reinitialize(platform);
+        };
+
+        let platform = &mut self.platform;
+        if let Some(relocation) = effects.relocation.take() {
+            let position = relocation.position;
+            let _ = platform.set_cursor_pos(position);
+            debug!("Reset cursor to ({},{})", position.x, position.y);
+        }
+        if effects.refresh_overlay {
+            if let Err(error) = platform.refresh_overlay_window() {
+                error!("refresh overlay window failed: {}", error);
+            }
+            effects.refresh_overlay = false;
+        }
+        if let Some(drawing) = inactive_cursors_redraw {
+            platform.draw_cursors(drawing.positions, drawing.show_markers);
+        }
+    }
+
+    pub fn initialize(&mut self) -> Result<()> {
+        self.platform.setup_window()?;
+        if let Err(error) = self.platform.register_raw_devices() {
+            error!("Register raw devices failed: {}", error);
+            return Err(error);
+        }
+
+        if let Err(error) = self.message_dispatch.refresh_monitors(
+            Self::processor_mut(&mut self.hook_input),
+            &mut self.platform,
+        ) {
+            error!("Init monitors info failed: {}", error);
+            return Err(error);
+        }
+
+        self.register_callbacks()?;
+        Ok(())
+    }
+
+    pub fn terminate(&mut self) -> Result<()> {
+        self.unregister_callbacks()?;
+        Ok(())
+    }
+
+    fn window_event(&mut self, message: &MSG) {
+        let processor = Self::processor_mut(&mut self.hook_input);
+        let reply = WMDispatch::dispatch(
+            processor,
+            &mut self.platform,
+            &mut self.message_dispatch.effects,
+            &mut self.raw_input_buf,
+            message,
+        );
+        if let Some(message) = reply {
+            self.reactor.ui_tx.send(message);
+        }
+    }
+
+    pub fn poll(&mut self) -> bool {
+        // poll windows message
+        wait_window_messages(POLL_TIMEOUT);
+        if !poll_window_messages(POLL_MSGS, |message| self.window_event(message)) {
+            return false;
+        }
+
+        self.resolve_effects();
+
+        // pool messages
+        let mut running = true;
+        while let Some(message) = self.reactor.mouse_control_rx.try_recv() {
+            let result = self.message_dispatch.dispatch(
+                Self::processor_mut(&mut self.hook_input),
+                &mut self.platform,
+                message,
+            );
+            match result {
+                DispatchResult::Continue => (),
+                DispatchResult::Exit => {
+                    running = false;
+                    break;
                 }
-                _ => (),
-            },
-            WM_HOTKEY => {
-                let shortcut = platform
-                    .hotkey_mgr
-                    .get_callback(message.lParam.0 as u32)
-                    .copied();
-                processor.on_shortcut(shortcut, platform, &self.ui_tx);
+                DispatchResult::Reply(message) => self.reactor.return_msg(message),
             }
-            _ => (),
         }
-    }
 
-    fn forward_window_events(processor: &mut Processor, platform: &mut WinPlatformService) {
-        if std::mem::take(&mut platform.monitors_changed) {
-            processor.on_monitors_changed();
-        }
-    }
+        self.resolve_effects();
 
-    pub(super) fn poll(
-        &mut self,
-        max_events: u32,
-        processor: &mut Processor,
-        platform: &mut WinPlatformService,
-    ) -> Result<bool> {
-        if !poll_window_messages(max_events, |message| {
-            // Dispatch of the previous message can report display changes.
-            Self::forward_window_events(processor, platform);
-            self.handle_wm_message(message, processor, platform);
-        }) {
-            return Ok(false);
+        running
+    }
+}
+
+impl MouseLowLevelHook for Poller {
+    fn on_mouse_ll(action: u32, event: &mut MSLLHOOKSTRUCT) -> bool {
+        trace!(
+            "mousell hook: action={}, pt=({},{})",
+            action,
+            event.pt.x,
+            event.pt.y
+        );
+        let tick = widen_tick(event.time);
+        if get_cur_tick().saturating_sub(tick) > STALE_MOUSE_EVENT_MS {
+            return true;
         }
-        Self::forward_window_events(processor, platform);
-        processor.resolve_pending_updating_task(platform);
-        Ok(true)
+        let position = MousePos::from(event.pt.x, event.pt.y);
+        // WH_MOUSE_LL runs synchronously on its installing thread. Input processing
+        // here does not pump messages or call the platform.
+        HOOK_INPUT.with(|current| unsafe {
+            let hook_input = &mut *current.get();
+            hook_input
+                .processor
+                .on_mouse_position(position, tick, &mut hook_input.effects);
+        });
+        true
+    }
+}
+
+impl SubclassHandler for Poller {
+    type Context = EffectsIntent;
+
+    fn subclass_callback(
+        context: &mut Self::Context,
+        message: u32,
+        _wp: WPARAM,
+        _lp: LPARAM,
+        _class: usize,
+    ) -> bool {
+        WMDispatch::dispatch_overlay_window_wm(context, message)
     }
 }

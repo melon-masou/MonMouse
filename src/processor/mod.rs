@@ -1,32 +1,28 @@
-use std::{collections::HashMap, time::Duration};
+pub mod effects;
+pub mod message_dispatch;
+pub mod platform;
 
-use log::{debug, error};
+use self::{
+    effects::{CursorDrawing, EffectsIntent},
+    platform::DeviceInfo,
+};
 
-pub(crate) mod message_poller;
-mod platform;
-pub(crate) use platform::{DeviceInfo, PlatformService};
+use std::collections::HashMap;
+
+use log::debug;
 
 use crate::input_control::{
     mouse_event_device_matcher::{MatchedMouseEvent, MouseEventDeviceMatcher},
-    relocator::{MouseDeviceTracker, MouseRelocator, RelocatePos},
+    relocator::{MouseDeviceTracker, MouseRelocator, RelocatorEffect},
     DeviceId, MonitorAreasList, MousePos, Positioning,
 };
 use crate::{
     device_type::DeviceType,
-    errors::Result,
-    message::{
-        DeviceStatus, GenericDevice, Message, MessageSender, MouseControlReactor, ShortcutID,
-    },
+    message::{DeviceStatus, GenericDevice, Message, ShortcutID},
     setting::{DeviceSetting, DeviceSettingItem, ProcessorSettings},
-    utils::SimpleRatelimit,
 };
 
-pub(crate) const POLL_MAX_MESSAGES: u32 = 20;
-pub(crate) const POLL_WAIT_TIMEOUT_MS: u32 = 20;
-const STALE_MOUSE_EVENT_MS: u64 = POLL_WAIT_TIMEOUT_MS as u64 * 3;
 const MOUSE_EVENT_ACTIVE_LAST_FOR_MS: u64 = 100;
-const RATELIMIT_UPDATE_MONITOR_ONCE_MS: u64 = 1000;
-const RATELIMIT_UPDATE_DEVICE_ONCE_MS: u64 = 1000;
 
 struct Device {
     info: DeviceInfo,
@@ -46,9 +42,9 @@ impl Device {
     }
 }
 
-// Coordinates application messages and input decisions through platform capabilities.
-// Pollers supply events; this type owns control state, refresh scheduling and effects.
-pub(crate) struct Processor {
+// Business state and input decisions. Pending native work is recorded in the
+// caller's EffectsIntent and executed after state borrows have ended.
+pub struct Processor {
     devices: Vec<Device>,
     indexs: HashMap<DeviceId, usize>,
     active_id: Option<usize>,
@@ -56,14 +52,10 @@ pub(crate) struct Processor {
     mouse_event_device_matcher: MouseEventDeviceMatcher,
     settings: ProcessorSettings,
     headless: bool,
-    to_update_devices: bool,
-    to_update_monitors: bool,
-    rl_update_mon: SimpleRatelimit,
-    rl_update_dev: SimpleRatelimit,
 }
 
 impl Processor {
-    pub(crate) fn new(headless: bool) -> Self {
+    pub fn new(headless: bool) -> Self {
         let settings = ProcessorSettings::default();
         Self {
             devices: Vec::new(),
@@ -75,16 +67,6 @@ impl Processor {
             ),
             settings,
             headless,
-            to_update_devices: false,
-            to_update_monitors: false,
-            rl_update_mon: SimpleRatelimit::new(
-                Duration::from_millis(RATELIMIT_UPDATE_MONITOR_ONCE_MS),
-                None,
-            ),
-            rl_update_dev: SimpleRatelimit::new(
-                Duration::from_millis(RATELIMIT_UPDATE_DEVICE_ONCE_MS),
-                None,
-            ),
         }
     }
 
@@ -93,23 +75,14 @@ impl Processor {
             .and_then(|i| self.devices[i].info.id.as_ref())
     }
 
-    fn rebuild(&mut self, devices: Vec<Device>) {
-        self.devices = devices;
-        self.indexs = self
-            .devices
-            .iter()
-            .enumerate()
-            .map(|(i, device)| (device.ctrl.id, i))
-            .collect();
-        self.active_id = None;
-        self.mouse_event_device_matcher.reset();
-    }
-
-    fn update_monitors(&mut self, monitors: MonitorAreasList) {
+    pub fn update_monitors(&mut self, monitors: MonitorAreasList, effects: &mut EffectsIntent) {
         self.relocator.update_monitors(monitors);
         self.devices
             .iter_mut()
             .for_each(|device| device.ctrl.reset());
+        // The pending target was calculated against the previous monitor layout.
+        effects.relocation = None;
+        effects.redraw_inactive_cursors = true;
     }
 
     fn inactive_positions(&self) -> Vec<(MousePos, usize)> {
@@ -158,7 +131,7 @@ impl Processor {
         device.ctrl.update_settings(&content);
     }
 
-    fn apply_one_device_setting(&mut self, item: DeviceSettingItem) {
+    pub fn apply_one_device_setting(&mut self, item: DeviceSettingItem) {
         self.settings
             .ensure_mut_device(&item.id, |d| *d = item.content);
         if let Some(device) = self
@@ -196,48 +169,69 @@ impl Processor {
         );
     }
 
-    fn jump_to_next_monitor(&mut self) {
+    fn jump_to_next_monitor(&mut self, tick: u64, effects: &mut EffectsIntent) {
         let ctrl = self
             .active_id
             .and_then(|i| self.devices.get_mut(i))
             .map(|d| &mut d.ctrl);
-        self.relocator.jump_to_next_monitor(ctrl);
+        let effect = self.relocator.jump_to_next_monitor(ctrl);
+        Self::collect_relocator_effects(effects, effect, tick);
     }
 
-    fn on_mouse_event(&mut self, event: MatchedMouseEvent, platform: &mut impl PlatformService) {
+    fn on_mouse_event(&mut self, event: MatchedMouseEvent, effects: &mut EffectsIntent) {
         self.active_id = self.indexs.get(&event.device).copied();
         let Some(device) = self.active_id.and_then(|i| self.devices.get_mut(i)) else {
-            self.to_update_devices = true;
+            effects.refresh_devices = true;
             return;
         };
-        if self.relocator.on_mouse_event(&event, &mut device.ctrl) {
-            self.draw_inactive_mouses(platform);
-        }
-        self.resolve_relocation(platform);
+        let effect = self.relocator.on_mouse_event(&event, &mut device.ctrl);
+        Self::collect_relocator_effects(effects, effect, event.tick);
     }
 
-    pub(crate) fn on_device_activity(
+    fn collect_relocator_effects(effects: &mut EffectsIntent, effect: RelocatorEffect, tick: u64) {
+        effects.redraw_inactive_cursors |= effect.switch;
+        effects.refresh_monitors |= effect.refresh_monitors;
+        if let Some(position) = effect.relocate_pos {
+            effects.relocate(position, tick);
+        }
+    }
+
+    // Input consumption updates state and pending work without calling the platform.
+    pub fn on_mouse_position(
+        &mut self,
+        position: MousePos,
+        tick: u64,
+        effects: &mut EffectsIntent,
+    ) {
+        if let Some(event) = self
+            .mouse_event_device_matcher
+            .match_position(position, tick)
+        {
+            self.on_mouse_event(event, effects);
+        }
+    }
+
+    pub fn on_device_activity(
         &mut self,
         source: Option<DeviceId>,
         positioning: Positioning,
         tick: u64,
-        platform: &mut impl PlatformService,
+        effects: &mut EffectsIntent,
     ) {
         let source = self
             .mouse_event_device_matcher
             .observe_device(source, positioning, tick);
         if !self.indexs.contains_key(&source) {
-            self.to_update_devices = true;
+            effects.refresh_devices = true;
         }
-        self.resolve_pending_updating_task(platform);
     }
 
-    fn inspect_devices_status(&self, now: u64, active_for_ms: u64) -> Vec<(String, DeviceStatus)> {
+    pub fn inspect_devices_status(&self, now: u64) -> Vec<(String, DeviceStatus)> {
         self.devices
             .iter()
             .filter_map(|device| {
                 let id = device.info.id.as_ref()?;
-                let status = Self::build_device_status(device, now, active_for_ms);
+                let status = Self::build_device_status(device, now, MOUSE_EVENT_ACTIVE_LAST_FOR_MS);
                 Some((id.clone(), status))
             })
             .collect()
@@ -255,38 +249,8 @@ impl Processor {
         }
     }
 
-    pub(crate) fn initialize(&mut self, platform: &mut impl PlatformService) -> Result<()> {
-        if let Err(error) = platform.register_raw_devices() {
-            error!("Register raw devices failed: {}", error);
-            return Err(error);
-        }
-        // Raw-device registration supplies the initial device-change notifications.
-        if let Err(error) = self.try_update_monitors(platform, true) {
-            error!("Init monitors info failed: {}", error);
-            return Err(error);
-        }
-        Ok(())
-    }
-
-    pub(crate) fn terminate(&mut self, platform: &mut impl PlatformService) -> Result<()> {
-        self.clear_draw_inactive_mouses(platform);
-        Ok(())
-    }
-
-    pub(crate) fn reinitialize(&mut self, platform: &mut impl PlatformService) {
-        // A newly opened UI can replace the raw-input registration.
-        if let Err(error) = platform.register_raw_devices() {
-            error!("Reinit register raw devices failed: {}", error);
-        }
-    }
-
-    pub(crate) fn scan_devices(
-        &mut self,
-        platform: &mut impl PlatformService,
-    ) -> Result<Vec<GenericDevice>> {
-        self.try_update_devices(platform, true)?;
-        Ok(self
-            .devices
+    pub fn devices(&self) -> Vec<GenericDevice> {
+        self.devices
             .iter()
             .filter_map(|device| {
                 let info = &device.info;
@@ -297,24 +261,22 @@ impl Processor {
                     platform_specific_infos: info.platform_specific_infos.clone(),
                 })
             })
-            .collect())
+            .collect()
     }
 
-    fn try_update_devices(
-        &mut self,
-        platform: &mut impl PlatformService,
-        must: bool,
-    ) -> Result<()> {
-        if !must && !self.rl_update_dev.allow(None).0 {
-            return Ok(());
-        }
-        let mut devices = match platform.scan_devices() {
-            Ok(devices) => devices,
-            Err(error) => {
-                error!("Collect all raw devices failed: {}", error);
-                return Err(error);
-            }
-        };
+    fn rebuild_devices_list(&mut self, devices: Vec<Device>) {
+        self.devices = devices;
+        self.indexs = self
+            .devices
+            .iter()
+            .enumerate()
+            .map(|(i, device)| (device.ctrl.id, i))
+            .collect();
+        self.active_id = None;
+        self.mouse_event_device_matcher.reset();
+    }
+
+    pub fn update_devices(&mut self, mut devices: Vec<DeviceInfo>) {
         // Unidentified events need their own control state when they cannot be merged.
         devices.push(DeviceInfo {
             source: 0,
@@ -324,171 +286,39 @@ impl Processor {
             platform_specific_infos: Vec::new(),
         });
         debug!("Updated rawdevices list: num={}", devices.len());
-        self.rebuild(devices.into_iter().map(Device::new).collect());
+        self.rebuild_devices_list(devices.into_iter().map(Device::new).collect());
         self.apply_processor_settings(None);
-        self.draw_inactive_mouses(platform);
-        self.to_update_devices = false;
-        Ok(())
     }
 
-    fn try_update_monitors(
-        &mut self,
-        platform: &mut impl PlatformService,
-        must: bool,
-    ) -> Result<()> {
-        if let Err(error) = platform.refresh_overlay_window() {
-            error!("refresh overlay window failed: {}", error);
-        }
-        if !must && !self.rl_update_mon.allow(None).0 {
-            return Ok(());
-        }
-        let monitors = match platform.get_monitors() {
-            Ok(monitors) => monitors,
-            Err(error) => {
-                error!("Update monitors info failed: {}", error);
-                return Err(error);
-            }
-        };
-        debug!("Updated monitors: {}", monitors);
-        self.update_monitors(monitors);
-        self.clear_draw_inactive_mouses(platform);
-        self.to_update_monitors = false;
-        Ok(())
-    }
-
-    pub(crate) fn apply_new_settings(
-        &mut self,
-        settings: ProcessorSettings,
-        platform: &mut impl PlatformService,
-    ) -> Result<()> {
+    pub fn apply_new_settings(&mut self, settings: ProcessorSettings) {
         self.apply_processor_settings(Some(settings));
-        self.draw_inactive_mouses(platform);
-        self.register_shortcuts(platform)
     }
 
-    fn register_shortcuts(&mut self, platform: &mut impl PlatformService) -> Result<()> {
-        let shortcuts = &self.settings.shortcuts;
-        let mut last_error: Result<()> = Ok(());
-
-        if let Err(e) =
-            platform.register_shortcut(&shortcuts.cur_mouse_lock, ShortcutID::CurMouseLock)
-        {
-            error!("register shortcut cur_mouse_lock error: {}", e);
-            last_error = Err(e);
-        }
-
-        if let Err(e) =
-            platform.register_shortcut(&shortcuts.cur_mouse_switch, ShortcutID::CurMouseSwitch)
-        {
-            error!("register shortcut cur_mouse_switch error: {}", e);
-            last_error = Err(e);
-        }
-
-        if let Err(e) =
-            platform.register_shortcut(&shortcuts.cur_mouse_jump_next, ShortcutID::CurMouseJumpNext)
-        {
-            error!("register shortcut cur_mouse_jump_next error: {}", e);
-            last_error = Err(e);
-        }
-
-        last_error
-    }
-
-    pub(crate) fn on_message(
-        &mut self,
-        mut message: Message,
-        platform: &mut impl PlatformService,
-        reactor: &MouseControlReactor,
-    ) -> bool {
-        match &mut message {
-            Message::Exit => return true,
-            Message::Reinitilization => self.reinitialize(platform),
-            Message::MousePosition { position, tick } => {
-                if platform.get_cur_tick().saturating_sub(*tick) > STALE_MOUSE_EVENT_MS {
-                    return false;
-                }
-                if let Some(event) = self
-                    .mouse_event_device_matcher
-                    .match_position(*position, *tick)
-                {
-                    self.on_mouse_event(event, platform);
-                }
-            }
-            Message::ScanDevices(data) => {
-                data.set_result(self.scan_devices(platform));
-                reactor.return_msg(message);
-            }
-            Message::InspectDevicesStatus(data) => {
-                data.set_ok(self.inspect_devices_status(
-                    platform.get_cur_tick(),
-                    MOUSE_EVENT_ACTIVE_LAST_FOR_MS,
-                ));
-                reactor.return_msg(message);
-            }
-            Message::ApplyProcessorSetting(data) => {
-                let result = self.apply_new_settings(data.req().proc_settings.clone(), platform);
-                data.set_result(result);
-                reactor.return_msg(message);
-            }
-            Message::ApplyOneDeviceSetting(data) => self.apply_one_device_setting(data.take()),
-            _ => panic!("recv unexpected ui msg: {:?}", message),
-        }
-        false
-    }
-
-    pub(crate) fn on_devices_changed(&mut self) {
-        self.to_update_devices = true;
-    }
-
-    pub(crate) fn on_monitors_changed(&mut self) {
-        self.to_update_monitors = true;
-    }
-
-    pub(crate) fn resolve_pending_updating_task(&mut self, platform: &mut impl PlatformService) {
-        if self.relocator.pop_need_update_monitors() {
-            self.to_update_monitors = true;
-        }
-        if self.to_update_devices {
-            let _ = self.try_update_devices(platform, false);
-        }
-        if self.to_update_monitors {
-            let _ = self.try_update_monitors(platform, false);
+    pub fn inactive_cursor_drawing(&self) -> CursorDrawing {
+        CursorDrawing {
+            positions: if self.settings.show_inactive_cursors {
+                self.inactive_positions()
+            } else {
+                Vec::new()
+            },
+            show_markers: self.settings.show_inactive_cursor_markers,
         }
     }
 
-    fn draw_inactive_mouses(&mut self, platform: &mut impl PlatformService) {
-        let positions = if self.settings.show_inactive_cursors {
-            self.inactive_positions()
-        } else {
-            Vec::new()
-        };
-        platform.draw_cursors(positions, self.settings.show_inactive_cursor_markers);
-    }
-
-    fn clear_draw_inactive_mouses(&mut self, platform: &mut impl PlatformService) {
-        platform.draw_cursors(Vec::new(), self.settings.show_inactive_cursor_markers);
-    }
-
-    fn resolve_relocation(&mut self, platform: &mut impl PlatformService) {
-        if let Some(RelocatePos(position)) = self.relocator.pop_relocate_pos() {
-            let _ = platform.set_cursor_pos(position);
-            debug!("Reset cursor to ({},{})", position.x, position.y);
-        }
-    }
-
-    pub(crate) fn on_shortcut(
+    pub fn on_shortcut(
         &mut self,
         id: Option<ShortcutID>,
-        platform: &mut impl PlatformService,
-        ui_tx: &MessageSender,
-    ) {
+        tick: u64,
+        effects: &mut EffectsIntent,
+    ) -> Option<Message> {
         match id {
             Some(ShortcutID::CurMouseLock) => {
                 debug!("Shortcut cur_mouse_lock pressed");
                 if self.headless {
                     self.cur_mouse_lock_toogle();
                 } else if let Some(id) = self.active_id() {
-                    ui_tx.send(Message::LockCurMouse(id.clone()));
+                    // Initialize from UI side, which should also modify its settings instance
+                    return Some(Message::LockCurMouse(id.clone()));
                 }
             }
             Some(ShortcutID::CurMouseSwitch) => {
@@ -496,15 +326,16 @@ impl Processor {
                 if self.headless {
                     self.cur_mouse_switch_toogle();
                 } else if let Some(id) = self.active_id() {
-                    ui_tx.send(Message::SwitchCurMouse(id.clone()));
+                    // Initialize from UI side, which should also modify its settings instance
+                    return Some(Message::SwitchCurMouse(id.clone()));
                 }
             }
             Some(ShortcutID::CurMouseJumpNext) => {
                 debug!("Shortcut cut_mouse_jump pressed");
-                self.jump_to_next_monitor();
+                self.jump_to_next_monitor(tick, effects);
             }
             None => (),
         }
-        self.resolve_relocation(platform);
+        None
     }
 }

@@ -41,7 +41,7 @@ impl InputArbiter {
         self.idle_ms = idle_ms;
     }
 
-    pub(crate) fn owner(&self) -> Option<u64> {
+    pub fn owner(&self) -> Option<u64> {
         self.owner.as_ref().map(|owner| owner.input.peer)
     }
 
