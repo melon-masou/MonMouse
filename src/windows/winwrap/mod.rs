@@ -1,5 +1,6 @@
 pub mod devices;
 pub mod display;
+pub mod inject;
 pub mod input;
 pub mod overlay;
 pub mod startup;
