@@ -13,8 +13,11 @@ use windows::{
                 RAWINPUTHEADER, RID_DEVICE_INFO_TYPE, RID_INPUT, RIM_TYPEHID, RIM_TYPEMOUSE,
             },
             WindowsAndMessaging::{
-                CallNextHookEx, SetWindowsHookExA, UnhookWindowsHookEx, HHOOK, MSLLHOOKSTRUCT,
-                WH_MOUSE_LL, WINDOWS_HOOK_ID,
+                CallNextHookEx, SetWindowsHookExA, UnhookWindowsHookEx, HHOOK, KBDLLHOOKSTRUCT,
+                LLKHF_EXTENDED, LLKHF_INJECTED, LLKHF_UP, LLMHF_INJECTED, MSLLHOOKSTRUCT,
+                WH_KEYBOARD_LL, WH_MOUSE_LL, WINDOWS_HOOK_ID, WM_LBUTTONDOWN, WM_LBUTTONUP,
+                WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL,
+                WM_RBUTTONDOWN, WM_RBUTTONUP, WM_XBUTTONDOWN, WM_XBUTTONUP,
             },
         },
     },
@@ -24,13 +27,62 @@ use super::{core_error, get_last_error};
 use crate::{
     ce,
     errors::{Error, Result},
+    input_control::{Button, Key, MouseAction, MousePos, SysKeyboardEvent, SysMouseEvent},
 };
 
 const RAWINPUT_MOUSE_FLAGS_ABSOLUTE: u16 = 1;
 const HRESULT_SHORTCUT_CONFLICT: HRESULT = HRESULT(0x80070581u32 as i32);
 
+pub fn decode_mouse_event(action: u32, event: &MSLLHOOKSTRUCT) -> SysMouseEvent {
+    let button = |button, down| Some(MouseAction::Button { button, down });
+    let action = match action {
+        WM_MOUSEMOVE => Some(MouseAction::Move),
+        WM_LBUTTONDOWN => button(Button::Left, true),
+        WM_LBUTTONUP => button(Button::Left, false),
+        WM_RBUTTONDOWN => button(Button::Right, true),
+        WM_RBUTTONUP => button(Button::Right, false),
+        WM_MBUTTONDOWN => button(Button::Middle, true),
+        WM_MBUTTONUP => button(Button::Middle, false),
+        WM_XBUTTONDOWN | WM_XBUTTONUP => match event.mouseData >> 16 {
+            1 => button(Button::X1, action == WM_XBUTTONDOWN),
+            2 => button(Button::X2, action == WM_XBUTTONDOWN),
+            _ => None,
+        },
+        WM_MOUSEWHEEL | WM_MOUSEHWHEEL => Some(MouseAction::Wheel {
+            delta: (event.mouseData >> 16) as i16,
+            horizontal: action == WM_MOUSEHWHEEL,
+        }),
+        _ => None,
+    };
+    SysMouseEvent {
+        position: MousePos::from(event.pt.x, event.pt.y),
+        time: event.time,
+        action,
+        injected: event.flags & LLMHF_INJECTED != 0,
+        extra_info: event.dwExtraInfo,
+    }
+}
+
+pub fn decode_keyboard_event(event: &KBDLLHOOKSTRUCT) -> SysKeyboardEvent {
+    SysKeyboardEvent {
+        time: event.time,
+        key: Key {
+            scan: event.scanCode as u16,
+            virtual_key: event.vkCode as u16,
+            extended: event.flags.contains(LLKHF_EXTENDED),
+        },
+        down: !event.flags.contains(LLKHF_UP),
+        injected: event.flags.contains(LLKHF_INJECTED),
+        extra_info: event.dwExtraInfo,
+    }
+}
+
 pub trait MouseLowLevelHook {
     fn on_mouse_ll(action: u32, e: &mut MSLLHOOKSTRUCT) -> bool;
+}
+
+pub trait KeyboardLowLevelHook {
+    fn on_keyboard_ll(event: SysKeyboardEvent) -> bool;
 }
 
 pub struct HookWrap {
@@ -55,11 +107,34 @@ impl HookWrap {
             LRESULT(1)
         }
     }
-
     pub fn mouse_ll<T: MouseLowLevelHook>() -> HookWrap {
         HookWrap {
             id: WH_MOUSE_LL,
             f: HookWrap::mouse_ll_hook::<T>,
+        }
+    }
+
+    extern "system" fn keyboard_ll_hook<T: KeyboardLowLevelHook>(
+        ncode: i32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+    ) -> LRESULT {
+        if ncode < 0 {
+            return unsafe { CallNextHookEx(None, ncode, wparam, lparam) };
+        }
+        let call_next = T::on_keyboard_ll(decode_keyboard_event(unsafe {
+            &*(lparam.0 as *const KBDLLHOOKSTRUCT)
+        }));
+        if call_next {
+            unsafe { CallNextHookEx(None, ncode, wparam, lparam) }
+        } else {
+            LRESULT(1)
+        }
+    }
+    pub fn keyboard_ll<T: KeyboardLowLevelHook>() -> HookWrap {
+        HookWrap {
+            id: WH_KEYBOARD_LL,
+            f: HookWrap::keyboard_ll_hook::<T>,
         }
     }
 }

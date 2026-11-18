@@ -22,6 +22,24 @@ pub struct Key {
     pub extended: bool,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct SysMouseEvent {
+    pub position: MousePos,
+    pub time: u32,
+    pub action: Option<MouseAction>, // None for not decoded mouse messages
+    pub injected: bool,
+    pub extra_info: usize,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct SysKeyboardEvent {
+    pub time: u32,
+    pub key: Key,
+    pub down: bool,
+    pub injected: bool,
+    pub extra_info: usize,
+}
+
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MousePos {
     pub x: i32,

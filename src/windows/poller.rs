@@ -13,7 +13,9 @@ use super::{
     constants::{RAWINPUT_MSG_INIT_BUF_SIZE, SUBCLASS_UID},
     service::WinPlatformService,
     winwrap::{
-        input::{set_windows_hook, unset_windows_hook, HookWrap, MouseLowLevelHook},
+        input::{
+            decode_mouse_event, set_windows_hook, unset_windows_hook, HookWrap, MouseLowLevelHook,
+        },
         window::{
             get_cur_tick, poll_window_messages, set_subclass, wait_window_messages, widen_tick,
             SubclassHandler,
@@ -23,7 +25,6 @@ use super::{
 };
 use crate::{
     errors::Result,
-    input_control::MousePos,
     message::{GenericDevice, Reactor},
     processor::{
         effects::EffectsIntent,
@@ -252,24 +253,19 @@ impl Poller {
 
 impl MouseLowLevelHook for Poller {
     fn on_mouse_ll(action: u32, event: &mut MSLLHOOKSTRUCT) -> bool {
-        trace!(
-            "mousell hook: action={}, pt=({},{})",
-            action,
-            event.pt.x,
-            event.pt.y
-        );
+        let event = decode_mouse_event(action, event);
+        trace!("mousell hook: {:?}", event);
         let tick = widen_tick(event.time);
         if get_cur_tick().saturating_sub(tick) > STALE_MOUSE_EVENT_MS {
             return true;
         }
-        let position = MousePos::from(event.pt.x, event.pt.y);
         // WH_MOUSE_LL runs synchronously on its installing thread. Input processing
         // here does not pump messages or call the platform.
         HOOK_INPUT.with(|current| unsafe {
             let hook_input = &mut *current.get();
             hook_input
                 .processor
-                .on_mouse_position(position, tick, &mut hook_input.effects);
+                .on_mouse_position(event.position, tick, &mut hook_input.effects);
         });
         true
     }
