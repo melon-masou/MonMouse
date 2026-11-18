@@ -1,6 +1,9 @@
+use std::collections::BTreeSet;
+
 use log::{debug, error, warn};
 use windows::Win32::{
     Foundation::HWND,
+    UI::Input::KeyboardAndMouse::{HOT_KEY_MODIFIERS, VIRTUAL_KEY},
     UI::Input::{RAWINPUTDEVICE, RIDEV_DEVNOTIFY, RIDEV_INPUTSINK, RIDEV_PAGEONLY},
 };
 
@@ -23,10 +26,18 @@ use crate::{
     setting::ShortcutSettings,
 };
 
+struct ShortcutBinding {
+    action: ShortcutID,
+    modifiers: HOT_KEY_MODIFIERS,
+    key: VIRTUAL_KEY,
+    text: String,
+}
+
 // Native resources and capabilities; control policy belongs to Processor.
 pub struct WinPlatformService {
     pub hwnd: HWND,
     pub hotkey_mgr: HotKeyManager<ShortcutID>,
+    shortcuts: Vec<ShortcutBinding>,
 }
 
 impl WinPlatformService {
@@ -34,6 +45,7 @@ impl WinPlatformService {
         Self {
             hwnd: HWND::default(),
             hotkey_mgr: HotKeyManager::new(),
+            shortcuts: Vec::new(),
         }
     }
 
@@ -53,28 +65,30 @@ impl WinPlatformService {
         Ok(())
     }
 
-    fn apply_one_shortcut(
-        mgr: &mut HotKeyManager<ShortcutID>,
+    fn set_bindings(
+        manager: &mut HotKeyManager<ShortcutID>,
         hwnd: HWND,
-        shortcut_str: &str,
-        id: ShortcutID,
+        bindings: &[ShortcutBinding],
     ) -> Result<()> {
-        if shortcut_str.is_empty() {
-            let _ = mgr.unregister(hwnd, id as i32);
-            return Ok(());
-        }
-        let _ = mgr.unregister(hwnd, id as i32);
-        match shortcut_str_to_win(shortcut_str) {
-            Some((modifier, key)) => {
-                match mgr.register(hwnd, id as i32, modifier, key, false, id) {
-                    Err(Error::ShortcutConflict(_)) => {
-                        Err(Error::ShortcutConflict(shortcut_str.into()))
+        manager.unregister_all(hwnd)?;
+        for binding in bindings {
+            manager
+                .register(
+                    hwnd,
+                    binding.action as i32,
+                    binding.modifiers,
+                    binding.key,
+                    false,
+                    binding.action,
+                )
+                .map_err(|error| match error {
+                    Error::ShortcutConflict(_) => {
+                        Error::ShortcutConflict(binding.text.as_str().into())
                     }
-                    res => res,
-                }
-            }
-            None => Err(Error::InvalidShortcut(shortcut_str.to_owned())),
+                    other => other,
+                })?;
         }
+        Ok(())
     }
 
     fn filter_monitor(mon: &MonitorInfo) -> bool {
@@ -143,32 +157,34 @@ impl PlatformService for WinPlatformService {
     }
 
     fn register_shortcuts(&mut self, shortcuts: &ShortcutSettings) -> Result<()> {
-        let mut last_error = Ok(());
-        for (name, shortcut, id) in [
-            (
-                "cur_mouse_lock",
-                &shortcuts.cur_mouse_lock,
-                ShortcutID::CurMouseLock,
-            ),
-            (
-                "cur_mouse_switch",
-                &shortcuts.cur_mouse_switch,
-                ShortcutID::CurMouseSwitch,
-            ),
-            (
-                "cur_mouse_jump_next",
-                &shortcuts.cur_mouse_jump_next,
-                ShortcutID::CurMouseJumpNext,
-            ),
+        let mut bindings = Vec::new();
+        let mut chords = BTreeSet::new();
+        for (action, text) in [
+            (ShortcutID::CurMouseLock, &shortcuts.cur_mouse_lock),
+            (ShortcutID::CurMouseSwitch, &shortcuts.cur_mouse_switch),
+            (ShortcutID::CurMouseJumpNext, &shortcuts.cur_mouse_jump_next),
         ] {
-            if let Err(error) =
-                Self::apply_one_shortcut(&mut self.hotkey_mgr, self.hwnd, shortcut, id)
-            {
-                error!("register shortcut {} error: {}", name, error);
-                last_error = Err(error);
+            if text.is_empty() {
+                continue;
             }
+            let (modifiers, key) =
+                shortcut_str_to_win(text).ok_or_else(|| Error::InvalidShortcut(text.clone()))?;
+            if !chords.insert((modifiers.0, key.0)) {
+                return Err(Error::ShortcutConflict(text.as_str().into()));
+            }
+            bindings.push(ShortcutBinding {
+                action,
+                modifiers,
+                key,
+                text: text.clone(),
+            });
         }
-        last_error
+        if let Err(error) = Self::set_bindings(&mut self.hotkey_mgr, self.hwnd, &bindings) {
+            Self::set_bindings(&mut self.hotkey_mgr, self.hwnd, &self.shortcuts)?;
+            return Err(error);
+        }
+        self.shortcuts = bindings;
+        Ok(())
     }
 
     fn refresh_overlay_window(&mut self) -> Result<()> {

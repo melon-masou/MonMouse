@@ -114,10 +114,10 @@ impl MessageDispatch {
         platform: &mut impl PlatformService,
         settings: &ProcessorSettings,
     ) -> Result<()> {
-        self.effects.redraw_inactive_cursors = true; // May enable/disable cursors drawing
-
+        platform.register_shortcuts(&settings.shortcuts)?;
         processor.apply_new_settings(settings.clone());
-        platform.register_shortcuts(&settings.shortcuts)
+        self.effects.redraw_inactive_cursors = true;
+        Ok(())
     }
 
     pub fn dispatch(

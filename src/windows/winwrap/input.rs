@@ -273,12 +273,7 @@ impl<T> HotKeyManager<T> {
         repeat: bool,
         cb: T,
     ) -> Result<()> {
-        if let Some(h) = self.id_to_lparam.get(&id) {
-            self.lparam_to_cb.remove(h);
-            self.id_to_lparam.remove(&id);
-        }
-        let _ = unregister_hot_key(hwnd, id);
-
+        self.unregister(hwnd, id)?;
         let h = register_hot_key(hwnd, id, modifiers, key, repeat)?;
         self.id_to_lparam.insert(id, h);
         self.lparam_to_cb.insert(h, cb);
@@ -287,9 +282,16 @@ impl<T> HotKeyManager<T> {
 
     pub fn unregister(&mut self, hwnd: HWND, id: i32) -> Result<()> {
         if let Some(h) = self.id_to_lparam.get(&id) {
+            unregister_hot_key(hwnd, id)?;
             self.lparam_to_cb.remove(h);
             self.id_to_lparam.remove(&id);
-            return unregister_hot_key(hwnd, id);
+        }
+        Ok(())
+    }
+
+    pub fn unregister_all(&mut self, hwnd: HWND) -> Result<()> {
+        while let Some(&id) = self.id_to_lparam.keys().next() {
+            self.unregister(hwnd, id)?;
         }
         Ok(())
     }
