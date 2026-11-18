@@ -27,7 +27,7 @@ use monmouse::setting::{read_config, Settings, CONFIG_FILE_NAME};
 use monmouse::SingleProcess;
 use monmouse::{
     errors::Error,
-    message::{setup_reactors, UIReactor},
+    message::{setup_reactors, Reactor},
 };
 use styles::{gscale, Theme};
 use tray::Tray;
@@ -66,12 +66,12 @@ fn main() {
     let config = config_file.and_then(|v| read_config(&v));
 
     let egui_notify = EguiNotify::default();
-    let (tray_reactor, mouse_control_reactor, ui_reactor) =
-        setup_reactors(Box::new(egui_notify.clone()), Box::new(egui_notify.clone()));
+    let reactors = setup_reactors(Some(Arc::new(egui_notify.clone())));
+    let tray_notify = egui_notify.clone();
 
     let mouse_control_thread = thread::spawn(move || {
-        let poller = monmouse::Eventloop::new(false, mouse_control_reactor);
-        let tray = Tray::new(tray_reactor);
+        let poller = monmouse::Eventloop::new(false, reactors.mouse_control);
+        let tray = Tray::new(reactors.bus, tray_notify);
         match mouse_control_spawn(poller, tray) {
             Ok(_) => info!("mouse control eventloop exited normally"),
             Err(e) => panic!("mouse control eventloop exited for error: {}", e),
@@ -79,7 +79,7 @@ fn main() {
     });
 
     // winit wrapped by eframe, requires UI eventloop running inside main thread
-    let result = egui_eventloop(ui_reactor, config, config_path, egui_notify);
+    let result = egui_eventloop(reactors.ui, config, config_path, egui_notify);
     if let Err(e) = result {
         panic!("egui eventloop exited for: {}", e);
     }
@@ -101,7 +101,7 @@ fn mouse_control_spawn(mut poller: monmouse::Eventloop, tray: Tray) -> Result<()
 }
 
 fn egui_eventloop(
-    ui_reactor: UIReactor,
+    ui_reactor: Reactor,
     config: Result<Settings, Error>,
     config_path: Option<PathBuf>,
     egui_notify: EguiNotify,
@@ -122,7 +122,7 @@ fn egui_eventloop(
             ui_options_main_window(),
             Box::new(move |c| {
                 AppWrap::init_ctx(&c.egui_ctx);
-                app_ref.borrow_mut().on_start_app_ui(&egui_notify1);
+                app_ref.borrow_mut().on_start_app_ui();
                 egui_notify1.update_ctx(Some(c.egui_ctx.clone()));
                 Ok(Box::new(AppWrap::new(app_ref, egui_notify1)))
             }),
@@ -143,18 +143,18 @@ impl EguiNotify {
     pub fn update_ctx(&self, c: Option<egui::Context>) {
         *self.egui_ctx.lock().unwrap() = c;
     }
+
+    fn notify_close(&self) {
+        if let Some(c) = self.egui_ctx.lock().unwrap().clone() {
+            c.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+    }
 }
 
 impl UINotify for EguiNotify {
     fn notify(&self) {
         if let Some(c) = self.egui_ctx.lock().unwrap().clone() {
             c.request_repaint()
-        }
-    }
-
-    fn notify_close(&self) {
-        if let Some(c) = self.egui_ctx.lock().unwrap().clone() {
-            c.send_viewport_cmd(egui::ViewportCommand::Close);
         }
     }
 }

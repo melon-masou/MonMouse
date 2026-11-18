@@ -1,9 +1,9 @@
+mod routing;
+pub use routing::*;
+
 use std::{
     fmt::Debug,
-    sync::mpsc::{
-        channel, sync_channel, Receiver, RecvError, RecvTimeoutError, Sender, SyncSender,
-        TryRecvError,
-    },
+    sync::mpsc::{channel, sync_channel, Receiver, Sender, SyncSender, TryRecvError},
     time::Duration,
 };
 
@@ -161,144 +161,8 @@ pub fn signal() -> (SignalSender, SignalReceiver) {
     (SignalSender(tx), SignalReceiver(rx))
 }
 
-pub fn setup_reactors(
-    ui_notify1: Box<dyn UINotify>,
-    ui_notify2: Box<dyn UINotify>,
-) -> (TrayReactor, MouseControlReactor, UIReactor) {
-    let (ui_tx, ui_rx) = channel::<Message>();
-    let (mouse_control_tx, mouse_control_rx) = channel::<Message>();
-
-    let tray = TrayReactor {
-        ui_tx: MessageSender::from(&ui_tx),
-        mouse_control_tx: MessageSender::from(&mouse_control_tx),
-        ui_notify: ui_notify1,
-    };
-    let mouse_ctrl = MouseControlReactor {
-        ui_tx: MessageSender::from(&ui_tx),
-        mouse_control_tx: MessageSender::from(&mouse_control_tx.clone()),
-        mouse_control_rx: MessageReceiver::from(mouse_control_rx),
-        ui_notify: ui_notify2,
-    };
-    let ui = UIReactor {
-        ui_rx: MessageReceiver::from(ui_rx),
-        ui_tx: MessageSender::from(&ui_tx),
-        mouse_control_tx: MessageSender::from(&mouse_control_tx),
-    };
-
-    (tray, mouse_ctrl, ui)
-}
-
-pub struct TrayReactor {
-    ui_tx: MessageSender,
-    mouse_control_tx: MessageSender,
-    ui_notify: Box<dyn UINotify>,
-}
-
-impl TrayReactor {
-    pub fn exit(&self) {
-        self.ui_notify.notify_close();
-        self.ui_tx.send(Message::Exit);
-        self.mouse_control_tx.send(Message::Exit);
-    }
-    pub fn restart_ui(&self) {
-        self.ui_tx.send(Message::RestartUI);
-    }
-}
-
-pub struct UIReactor {
-    pub ui_rx: MessageReceiver,
-    pub ui_tx: MessageSender,
-    pub mouse_control_tx: MessageSender,
-}
-
-pub struct MouseControlReactor {
-    pub ui_tx: MessageSender,
-    pub mouse_control_tx: MessageSender,
-    pub mouse_control_rx: MessageReceiver,
-    ui_notify: Box<dyn UINotify>,
-}
-
-impl MouseControlReactor {
-    #[inline]
-    pub fn return_msg(&self, msg: Message) {
-        match msg {
-            Message::ScanDevices(_) => {
-                self.ui_tx.send(msg);
-                self.ui_notify.notify();
-            }
-            Message::InspectDevicesStatus(_) => {
-                self.ui_tx.send(msg);
-                self.ui_notify.notify();
-            }
-            Message::ApplyProcessorSetting(_) => {
-                self.ui_tx.send(msg);
-                self.ui_notify.notify();
-            }
-            _ => panic!("MouseControl should not return msg: {:?}", msg),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct MessageReceiver(Receiver<Message>);
-
-impl MessageReceiver {
-    fn from(r: Receiver<Message>) -> Self {
-        Self(r)
-    }
-
-    #[inline]
-    pub fn try_recv(&self) -> Option<Message> {
-        match self.0.try_recv() {
-            Ok(v) => Some(v),
-            Err(TryRecvError::Empty) => None,
-            Err(TryRecvError::Disconnected) => Some(Message::Exit),
-        }
-    }
-
-    #[inline]
-    pub fn recv(&self) -> Message {
-        match self.0.recv() {
-            Ok(v) => v,
-            Err(RecvError) => Message::Exit,
-        }
-    }
-
-    #[inline]
-    pub fn recv_timeout(&self, dur: Duration) -> Option<Message> {
-        match self.0.recv_timeout(dur) {
-            Ok(v) => Some(v),
-            Err(RecvTimeoutError::Timeout) => None,
-            Err(RecvTimeoutError::Disconnected) => Some(Message::Exit),
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct MessageSender(Sender<Message>);
-
-impl MessageSender {
-    fn from(s: &Sender<Message>) -> Self {
-        Self(s.clone())
-    }
-
-    #[inline]
-    pub fn send(&self, msg: Message) {
-        let _ = self.0.send(msg);
-    }
-}
-
-pub trait UINotify: Send {
+pub trait UINotify: Send + Sync {
     fn notify(&self);
-    fn notify_close(&self);
-}
-
-#[derive(Clone, Default)]
-pub struct UINotifyNoop {}
-
-impl UINotify for UINotifyNoop {
-    fn notify(&self) {}
-    fn notify_close(&self) {}
 }
 
 pub enum TimerOperation {
@@ -322,9 +186,8 @@ impl TimerOperator {
 
 pub fn timer_spawn(
     mut interval: Duration,
-    tx: MessageSender,
+    sender: MessageSender,
     kind: TimerDueKind,
-    callback: Option<Box<dyn Fn() + Send>>,
 ) -> TimerOperator {
     let (op_tx, op_rx) = channel::<TimerOperation>();
 
@@ -339,10 +202,7 @@ pub fn timer_spawn(
             }
         }
         std::thread::sleep(interval);
-        tx.send(Message::TimerDue(kind));
-        if let Some(cb) = &callback {
-            cb()
-        }
+        sender.send(Message::TimerDue(kind));
     });
 
     TimerOperator { op_tx, handle }

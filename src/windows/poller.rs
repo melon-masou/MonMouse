@@ -24,7 +24,7 @@ use super::{
 use crate::{
     errors::Result,
     input_control::MousePos,
-    message::{GenericDevice, MouseControlReactor},
+    message::{GenericDevice, Reactor},
     processor::{
         effects::EffectsIntent,
         message_dispatch::{DispatchResult, MessageDispatch},
@@ -52,7 +52,7 @@ struct HookInput {
 pub struct Poller {
     hook_input: Box<HookInput>,
     platform: WinPlatformService,
-    reactor: MouseControlReactor,
+    reactor: Reactor,
     message_dispatch: MessageDispatch,
 
     mouse_ll_hook: Option<HHOOK>,
@@ -60,7 +60,7 @@ pub struct Poller {
 }
 
 impl Poller {
-    pub fn new(headless: bool, reactor: MouseControlReactor) -> Self {
+    pub fn new(headless: bool, reactor: Reactor) -> Self {
         Self {
             hook_input: Box::new(HookInput {
                 processor: Processor::new(headless),
@@ -207,16 +207,14 @@ impl Poller {
 
     fn window_event(&mut self, message: &MSG) {
         let processor = Self::processor_mut(&mut self.hook_input);
-        let reply = WMDispatch::dispatch(
+        WMDispatch::dispatch(
             processor,
             &mut self.platform,
             &mut self.message_dispatch.effects,
             &mut self.raw_input_buf,
             message,
+            &self.reactor.bus,
         );
-        if let Some(message) = reply {
-            self.reactor.ui_tx.send(message);
-        }
     }
 
     pub fn poll(&mut self) -> bool {
@@ -230,11 +228,12 @@ impl Poller {
 
         // pool messages
         let mut running = true;
-        while let Some(message) = self.reactor.mouse_control_rx.try_recv() {
+        while let Some(message) = self.reactor.try_recv() {
             let result = self.message_dispatch.dispatch(
                 Self::processor_mut(&mut self.hook_input),
                 &mut self.platform,
                 message,
+                &self.reactor.bus,
             );
             match result {
                 DispatchResult::Continue => (),
@@ -242,7 +241,6 @@ impl Poller {
                     running = false;
                     break;
                 }
-                DispatchResult::Reply(message) => self.reactor.return_msg(message),
             }
         }
 

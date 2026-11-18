@@ -19,7 +19,7 @@ use super::{
 };
 use crate::{
     input_control::{DeviceId, Positioning},
-    message::Message,
+    message::MessageBus,
     processor::{effects::EffectsIntent, platform::PlatformService, Processor},
 };
 
@@ -32,7 +32,8 @@ impl WMDispatch {
         effects: &mut EffectsIntent,
         raw_input_buf: &mut Vec<RAWINPUT>,
         message: &MSG,
-    ) -> Option<Message> {
+        bus: &MessageBus,
+    ) {
         match message.message {
             WM_INPUT => Self::on_raw_input(
                 processor,
@@ -59,11 +60,14 @@ impl WMDispatch {
                     .hotkey_mgr
                     .get_callback(message.lParam.0 as u32)
                     .copied();
-                return processor.on_shortcut(shortcut, widen_tick(message.time), effects);
+                if let Some(ui_message) =
+                    processor.on_shortcut(shortcut, widen_tick(message.time), effects)
+                {
+                    bus.ui.send(ui_message);
+                }
             }
             _ => (),
         }
-        None
     }
 
     pub fn dispatch_overlay_window_wm(effects: &mut EffectsIntent, message: u32) -> bool {

@@ -1,4 +1,4 @@
-use monmouse::message::TrayReactor;
+use monmouse::message::{Message, MessageBus};
 use tray_icon::menu::Menu;
 use tray_icon::menu::MenuEvent;
 use tray_icon::menu::MenuItem;
@@ -8,18 +8,19 @@ use tray_icon::TrayIcon;
 use tray_icon::TrayIconBuilder;
 use tray_icon::TrayIconEvent;
 
-use crate::load_icon;
+use crate::{load_icon, EguiNotify};
 
 #[allow(dead_code)]
 pub struct Tray {
     open: MenuItem,
     quit: MenuItem,
     trayicon: TrayIcon,
-    tray_reactor: TrayReactor,
+    bus: MessageBus,
+    ui: EguiNotify,
 }
 
 impl Tray {
-    pub fn new(tray_reactor: TrayReactor) -> Self {
+    pub fn new(bus: MessageBus, ui: EguiNotify) -> Self {
         let icon = load_icon();
         let tray_menu = Menu::new();
 
@@ -44,7 +45,8 @@ impl Tray {
             open,
             quit,
             trayicon,
-            tray_reactor,
+            bus,
+            ui,
         }
     }
 
@@ -60,16 +62,18 @@ impl Tray {
                     ..
                 }
             ) {
-                self.tray_reactor.restart_ui();
+                self.bus.ui.send(Message::RestartUI);
             }
         }
 
         if let Ok(event) = MenuEvent::receiver().try_recv() {
             if event.id == self.quit.id() {
-                self.tray_reactor.exit();
+                self.ui.notify_close();
+                self.bus.ui.send(Message::Exit);
+                self.bus.mouse_control.send(Message::Exit);
             }
             if event.id == self.open.id() {
-                self.tray_reactor.restart_ui();
+                self.bus.ui.send(Message::RestartUI);
             }
         }
     }

@@ -5,7 +5,7 @@ use log::{debug, error};
 use super::{effects::EffectsIntent, platform::PlatformService, Processor};
 use crate::{
     errors::Result,
-    message::{GenericDevice, Message},
+    message::{GenericDevice, Message, MessageBus},
     setting::ProcessorSettings,
     utils::SimpleRatelimit,
 };
@@ -13,7 +13,6 @@ use crate::{
 pub enum DispatchResult {
     Continue,
     Exit,
-    Reply(Message),
 }
 
 const RATELIMIT_UPDATE_MONITOR_ONCE_MS: u64 = 1000;
@@ -126,6 +125,7 @@ impl MessageDispatch {
         processor: &mut Processor,
         platform: &mut impl PlatformService,
         mut message: Message,
+        bus: &MessageBus,
     ) -> DispatchResult {
         match &mut message {
             Message::Exit => return DispatchResult::Exit,
@@ -137,23 +137,20 @@ impl MessageDispatch {
             }
             Message::ScanDevices(data) => {
                 data.set_result(self.scan_devices(processor, platform));
-                return DispatchResult::Reply(message);
+                bus.ui.send(message);
             }
             Message::InspectDevicesStatus(data) => {
                 data.set_ok(processor.inspect_devices_status(platform.get_cur_tick()));
-                return DispatchResult::Reply(message);
+                bus.ui.send(message);
             }
             Message::ApplyProcessorSetting(data) => {
                 // Native registration errors still prevent a successful save acknowledgement.
-                data.set_result(self.apply_settings(
-                    processor,
-                    platform,
-                    &data.req().proc_settings,
-                ));
-                return DispatchResult::Reply(message);
+                let result = self.apply_settings(processor, platform, &data.req().proc_settings);
+                data.set_result(result);
+                bus.ui.send(message);
             }
             Message::ApplyOneDeviceSetting(data) => processor.apply_one_device_setting(data.take()),
-            _ => panic!("recv unexpected ui msg: {:?}", message),
+            other => unreachable!("unexpected message routed to mouse control: {other:?}"),
         }
         DispatchResult::Continue
     }

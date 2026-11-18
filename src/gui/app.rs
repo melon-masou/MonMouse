@@ -2,12 +2,12 @@ use std::{path::PathBuf, time::Duration};
 
 #[cfg(debug_assertions)]
 use crate::components::debug::DebugInfo;
-use crate::{components::validatable_input::InputsCache, styles::Theme, EguiNotify, PanelTag};
+use crate::{components::validatable_input::InputsCache, styles::Theme, PanelTag};
 use monmouse::{
     errors::Error,
     message::{
-        timer_spawn, ApplyProcessorSettingsData, DeviceStatus, GenericDevice, Message,
-        RoundtripData, SendData, TimerDueKind, TimerOperator, UINotify, UIReactor,
+        timer_spawn, ApplyProcessorSettingsData, DeviceStatus, GenericDevice, Message, Reactor,
+        RoundtripData, SendData, TimerDueKind, TimerOperator,
     },
     setting::{write_config, DeviceSetting, DeviceSettingItem, ProcessorSettings, Settings},
 };
@@ -19,7 +19,7 @@ pub struct App {
     config_path: Option<PathBuf>,
     should_exit: bool,
     first_launch: bool,
-    ui_reactor: UIReactor,
+    ui_reactor: Reactor,
     inspect_timer: Option<TimerOperator>,
     #[cfg(debug_assertions)]
     pub debug_info: DebugInfo,
@@ -29,26 +29,30 @@ impl App {
     pub fn trigger_scan_devices(&mut self) {
         self.result_clear();
         self.ui_reactor
-            .mouse_control_tx
+            .bus
+            .mouse_control
             .send(Message::ScanDevices(RoundtripData::default()));
     }
 
     pub fn trigger_reload_devices(&mut self) {
         self.result_clear();
         self.ui_reactor
-            .mouse_control_tx
+            .bus
+            .mouse_control
             .send(Message::Reinitilization);
     }
 
     pub fn trigger_inspect_devices_status(&mut self) {
         self.ui_reactor
-            .mouse_control_tx
+            .bus
+            .mouse_control
             .send(Message::InspectDevicesStatus(RoundtripData::default()));
     }
 
     pub fn trigger_one_device_setting_changed(&mut self, item: DeviceSettingItem) {
         self.ui_reactor
-            .mouse_control_tx
+            .bus
+            .mouse_control
             .send(Message::ApplyOneDeviceSetting(SendData::new(item)));
     }
 
@@ -65,7 +69,8 @@ impl App {
         self.result_clear();
         self.trigger_settings_changed_ui();
         self.ui_reactor
-            .mouse_control_tx
+            .bus
+            .mouse_control
             .send(Message::ApplyProcessorSetting(RoundtripData::new(
                 ApplyProcessorSettingsData {
                     proc_settings: self.collect_processor_settings(),
@@ -91,13 +96,11 @@ impl App {
         }
     }
 
-    pub fn setup_inspect_timer(&mut self, egui_notify: &EguiNotify) {
-        let egui_notify = egui_notify.clone();
+    pub fn setup_inspect_timer(&mut self) {
         let timer = timer_spawn(
             Duration::from_millis(self.state.settings.ui.inspect_device_interval_ms),
-            self.ui_reactor.ui_tx.clone(),
+            self.ui_reactor.bus.ui.clone(),
             TimerDueKind::InspectDevice,
-            Some(Box::new(move || egui_notify.notify())),
         );
         self.inspect_timer = Some(timer);
     }
@@ -122,11 +125,12 @@ impl App {
         self.result_ok(t!("msg.settings_default_restored").to_string());
     }
 
-    pub fn on_start_app_ui(&mut self, egui_notify: &EguiNotify) {
-        self.setup_inspect_timer(egui_notify);
+    pub fn on_start_app_ui(&mut self) {
+        self.setup_inspect_timer();
         if !self.first_launch {
             self.ui_reactor
-                .mouse_control_tx
+                .bus
+                .mouse_control
                 .send(Message::Reinitilization);
             self.first_launch = true;
         }
@@ -143,7 +147,7 @@ impl App {
 }
 
 impl App {
-    pub fn new(ui_reactor: UIReactor) -> Self {
+    pub fn new(ui_reactor: Reactor) -> Self {
         App {
             state: AppState::default(),
             last_result: StatusBarResult::None,
@@ -269,7 +273,7 @@ impl App {
         }
         // Once clearing residual pending msg
         loop {
-            match self.ui_reactor.ui_rx.try_recv() {
+            match self.ui_reactor.try_recv() {
                 Some(Message::Exit) => return true,
                 Some(msg) => {
                     // Handle others msg normally
@@ -280,7 +284,7 @@ impl App {
         }
         // Actuall wait for restart msg
         loop {
-            match self.ui_reactor.ui_rx.recv() {
+            match self.ui_reactor.recv() {
                 Message::Exit => return true,
                 Message::RestartUI => return false,
                 msg => {
@@ -292,7 +296,7 @@ impl App {
     }
 
     pub fn poll_messages(&mut self) {
-        while let Some(msg) = self.ui_reactor.ui_rx.try_recv() {
+        while let Some(msg) = self.ui_reactor.try_recv() {
             self.handle_message(msg)
         }
     }
@@ -314,7 +318,8 @@ impl App {
                 };
                 dev.device_setting.locked_in_monitor = !dev.device_setting.locked_in_monitor;
                 self.ui_reactor
-                    .mouse_control_tx
+                    .bus
+                    .mouse_control
                     .send(Message::ApplyOneDeviceSetting(SendData::new(
                         DeviceSettingItem {
                             id,
@@ -333,7 +338,8 @@ impl App {
                 };
                 dev.device_setting.switch = !dev.device_setting.switch;
                 self.ui_reactor
-                    .mouse_control_tx
+                    .bus
+                    .mouse_control
                     .send(Message::ApplyOneDeviceSetting(SendData::new(
                         DeviceSettingItem {
                             id,
@@ -383,10 +389,7 @@ impl App {
                 }
                 self.trigger_inspect_devices_status();
             }
-
-            // Fallback
-            #[allow(unreachable_patterns)]
-            _ => panic!("recv unexpected msg: {:?}", msg),
+            other => unreachable!("unexpected message routed to UI: {other:?}"),
         }
     }
 

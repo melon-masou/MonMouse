@@ -5,7 +5,7 @@ use clap::Parser;
 use log::{debug, error, info};
 use monmouse::{
     errors::Error,
-    message::{setup_reactors, GenericDevice, UINotifyNoop},
+    message::{setup_reactors, GenericDevice},
     setting::{config_string, read_config, Settings, CONFIG_FILE_NAME},
     SingleProcess,
 };
@@ -58,10 +58,7 @@ fn main() -> Result<(), Error> {
         return Ok(());
     }
 
-    let (_, mouse_control_reactor, _) = setup_reactors(
-        Box::<UINotifyNoop>::default(),
-        Box::<UINotifyNoop>::default(),
-    ); // useless, but still setup
+    let mouse_control_reactor = setup_reactors(None).mouse_control;
     let mut poller = monmouse::Eventloop::new(true, mouse_control_reactor);
 
     if args.print_devices {
