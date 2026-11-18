@@ -81,6 +81,16 @@ impl App {
         rust_i18n::set_locale(&self.state.settings.ui.language);
     }
 
+    fn apply_ui_local_settings(&mut self) -> bool {
+        match monmouse::windows::set_start_on_login(self.state.settings.ui.start_on_login) {
+            Ok(()) => true,
+            Err(error) => {
+                self.result_error_alert(format!("{}: {}", t!("msg.startup_apply_fail"), error));
+                false
+            }
+        }
+    }
+
     pub fn setup_inspect_timer(&mut self, egui_notify: &EguiNotify) {
         let egui_notify = egui_notify.clone();
         let timer = timer_spawn(
@@ -360,7 +370,9 @@ impl App {
                         let devices = std::mem::take(&mut settings.processor.devices);
                         settings.processor = self.state.settings.processor.clone();
                         settings.processor.devices = devices;
-                        self.save_config(settings);
+                        if self.apply_ui_local_settings() {
+                            self.save_config(settings);
+                        }
                     }
                     Ok(_) => (),
                     Err(error) => self.result_error_alert(format!(

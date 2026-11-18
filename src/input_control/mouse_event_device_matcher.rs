@@ -18,6 +18,7 @@ struct DeviceActivity {
 // On Windows, Cursor position events may lack a device identity.
 // MouseEventDeviceMatcher try to infer their source from recent device activity.
 pub struct MouseEventDeviceMatcher {
+    // Overlapping device activity makes the latest observation a candidate for a position event.
     last_activity: Option<DeviceActivity>,
     // Merge unidentified device activity into the last source within this many ms; -1 disables merging.
     merge_unassociated_ms: i64,

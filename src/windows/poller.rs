@@ -139,7 +139,9 @@ impl Poller {
             unset_windows_hook(hook)?;
             self.mouse_ll_hook = None;
         }
-        unsafe { set_subclass::<Self>(self.platform.hwnd, SUBCLASS_UID, None)? };
+        if let Err(e) = unsafe { set_subclass::<Self>(self.platform.hwnd, SUBCLASS_UID, None) } {
+            error!("destroy subclass callback failed: {}", e)
+        }
         HOOK_INPUT.with(|current| current.set(ptr::null_mut()));
         Ok(())
     }

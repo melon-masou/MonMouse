@@ -2,6 +2,7 @@ pub mod devices;
 pub mod display;
 pub mod input;
 pub mod overlay;
+pub mod startup;
 pub mod window;
 
 use windows::{

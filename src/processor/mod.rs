@@ -47,7 +47,7 @@ impl Device {
 pub struct Processor {
     devices: Vec<Device>,
     indexs: HashMap<DeviceId, usize>,
-    active_id: Option<usize>,
+    active_id: Option<usize>, // Index of MonMouse's current device
     relocator: MouseRelocator,
     mouse_event_device_matcher: MouseEventDeviceMatcher,
     settings: ProcessorSettings,

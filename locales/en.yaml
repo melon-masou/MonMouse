@@ -42,6 +42,7 @@ config:
     config_file: Config file
     language: Language
     inspect_device_interval_ms: Device status refresh interval (ms)
+    start_on_login: Start on login
     hide_ui_on_launch: Hide UI on launch
     merge_unassociated_events_ms: Unassociated event merge window (ms)
     show_inactive_cursors: Show inactive switch-enabled cursors
@@ -70,6 +71,7 @@ about:
 msg:
   discard_changes: "Discard changes?"
   settings_default_restored: Default settings restored
+  startup_apply_fail: Failed to update login startup
   settings_apply_fail: Failed to apply settings
   settings_applied: Settings applied
   settings_invalid_field: Some settings contain invalid values

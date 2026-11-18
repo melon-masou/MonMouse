@@ -202,6 +202,9 @@ pub struct UISettings {
 
     #[serde(default = "UISettings::default_hide_ui_on_launch")]
     pub hide_ui_on_launch: bool,
+
+    #[serde(default)]
+    pub start_on_login: bool,
 }
 
 impl Default for UISettings {
@@ -211,6 +214,7 @@ impl Default for UISettings {
             language: Self::default_language(),
             inspect_device_interval_ms: Self::default_inspect_device_interval_ms(),
             hide_ui_on_launch: Self::default_hide_ui_on_launch(),
+            start_on_login: false,
         }
     }
 }

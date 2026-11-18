@@ -34,6 +34,12 @@ impl ConfigPanel {
         });
 
         InputItem::new(
+            t!("config.desc.start_on_login"),
+            cache.field(|o| o.ui.start_on_login_field()),
+        )
+        .show(ui, |ui, value| ui.checkbox(value, "").changed());
+
+        InputItem::new(
             t!("config.desc.hide_ui_on_launch"),
             cache.field(|o| o.ui.hide_ui_on_launch_field()),
         )

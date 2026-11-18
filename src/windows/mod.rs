@@ -6,7 +6,7 @@ pub mod winwrap;
 mod wm_dispatch;
 
 use crate::errors::Error;
-use windows::core::HSTRING;
+use windows::core::{w, HSTRING};
 use windows::Win32::Foundation::HANDLE;
 
 use self::winwrap::{close_handle, create_mutex, release_mutex, try_lock_mutex};
@@ -54,4 +54,9 @@ impl Drop for SingleProcess {
         let _ = release_mutex(self.handle);
         let _ = close_handle(self.handle);
     }
+}
+
+pub fn set_start_on_login(enabled: bool) -> Result<(), Error> {
+    let name = w!("MonMouse");
+    winwrap::startup::set_start_on_login(enabled, name)
 }

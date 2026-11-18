@@ -42,6 +42,7 @@ config:
     config_file: 配置文件
     language: 语言
     inspect_device_interval_ms: 设备状态刷新间隔 (ms)
+    start_on_login: 登录时启动
     hide_ui_on_launch: 启动时隐藏界面
     merge_unassociated_events_ms: 未关联事件合并窗口 (ms)
     show_inactive_cursors: 显示启用位置恢复的非活动光标
@@ -70,6 +71,7 @@ about:
 msg:
   discard_changes: "丢弃修改？"
   settings_default_restored: 已恢复为默认配置
+  startup_apply_fail: 更新登录自启动失败
   settings_apply_fail: 应用新配置失败
   settings_applied: 新配置已应用
   settings_invalid_field: 有无效配置项值
