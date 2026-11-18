@@ -27,7 +27,7 @@ use super::{core_error, get_last_error};
 use crate::{
     ce,
     errors::{Error, Result},
-    input_control::{Button, Key, MouseAction, MousePos, SysKeyboardEvent, SysMouseEvent},
+    input_control::{Key, MouseAction, MouseButton, MousePos, SysKeyboardEvent, SysMouseEvent},
 };
 
 const RAWINPUT_MOUSE_FLAGS_ABSOLUTE: u16 = 1;
@@ -37,15 +37,15 @@ pub fn decode_mouse_event(action: u32, event: &MSLLHOOKSTRUCT) -> SysMouseEvent 
     let button = |button, down| Some(MouseAction::Button { button, down });
     let action = match action {
         WM_MOUSEMOVE => Some(MouseAction::Move),
-        WM_LBUTTONDOWN => button(Button::Left, true),
-        WM_LBUTTONUP => button(Button::Left, false),
-        WM_RBUTTONDOWN => button(Button::Right, true),
-        WM_RBUTTONUP => button(Button::Right, false),
-        WM_MBUTTONDOWN => button(Button::Middle, true),
-        WM_MBUTTONUP => button(Button::Middle, false),
+        WM_LBUTTONDOWN => button(MouseButton::Left, true),
+        WM_LBUTTONUP => button(MouseButton::Left, false),
+        WM_RBUTTONDOWN => button(MouseButton::Right, true),
+        WM_RBUTTONUP => button(MouseButton::Right, false),
+        WM_MBUTTONDOWN => button(MouseButton::Middle, true),
+        WM_MBUTTONUP => button(MouseButton::Middle, false),
         WM_XBUTTONDOWN | WM_XBUTTONUP => match event.mouseData >> 16 {
-            1 => button(Button::X1, action == WM_XBUTTONDOWN),
-            2 => button(Button::X2, action == WM_XBUTTONDOWN),
+            1 => button(MouseButton::X1, action == WM_XBUTTONDOWN),
+            2 => button(MouseButton::X2, action == WM_XBUTTONDOWN),
             _ => None,
         },
         WM_MOUSEWHEEL | WM_MOUSEHWHEEL => Some(MouseAction::Wheel {

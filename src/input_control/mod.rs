@@ -3,7 +3,7 @@ pub mod mouse_event_device_matcher;
 pub mod relocator;
 
 use serde::{Deserialize, Serialize};
-use std::fmt::Display;
+use std::{collections::BTreeSet, fmt::Display};
 
 // Runtime input-source identity, separate from the persistent device ID in settings.
 pub type DeviceId = u64;
@@ -204,7 +204,7 @@ impl Display for MonitorArea {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub enum Button {
+pub enum MouseButton {
     Left,
     Right,
     Middle,
@@ -215,8 +215,50 @@ pub enum Button {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MouseAction {
     Move,
-    Button { button: Button, down: bool },
+    Button { button: MouseButton, down: bool },
     Wheel { delta: i16, horizontal: bool },
+}
+
+// Keys and mouse buttons held by one input source.
+#[derive(Clone, Debug, Default)]
+pub struct HeldInput {
+    keys: BTreeSet<Key>,
+    buttons: BTreeSet<MouseButton>,
+}
+
+impl HeldInput {
+    pub fn pressed(&self) -> bool {
+        !self.keys.is_empty() || !self.buttons.is_empty()
+    }
+
+    pub fn key(&mut self, key: Key, down: bool) -> bool {
+        if down {
+            self.keys.insert(key);
+            true
+        } else {
+            self.keys.remove(&key)
+        }
+    }
+
+    pub fn button(&mut self, button: MouseButton, down: bool) -> bool {
+        if down {
+            self.buttons.insert(button);
+            true
+        } else {
+            self.buttons.remove(&button)
+        }
+    }
+
+    pub fn exclude(&mut self, other: &Self) {
+        self.keys.retain(|key| !other.keys.contains(key));
+        self.buttons
+            .retain(|button| !other.buttons.contains(button));
+    }
+
+    pub fn release(&mut self) -> (BTreeSet<Key>, BTreeSet<MouseButton>) {
+        let held = std::mem::take(self);
+        (held.keys, held.buttons)
+    }
 }
 
 #[cfg(test)]
