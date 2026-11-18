@@ -28,7 +28,7 @@ eframe = { version = "0.33.2", features = ["persistence", "wgpu"] }
 egui_extras = { version = "0.33.2", features = [], default-features = false }
 serde = { version = "1.0.193", features = ["derive"] }
 validator = { version = "0.21", default-features = false, features = ["derive"] }
-tray-icon = "0.21.2"
+tray-icon = { version = "0.26.1", default-features = false }
 image = "0.24.7"
 serde_yaml = { package = "yaml_serde", version = "0.10" }
 keyboard-types = "0.7.0"
