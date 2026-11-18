@@ -1,8 +1,10 @@
-use super::core_error;
+use std::collections::HashMap;
+
+use super::{core_error, hstring_from_buffer};
 use crate::ce;
 use crate::errors::Result;
 
-use windows::core::w;
+use windows::core::{w, Owned, HSTRING};
 use windows::Win32::Foundation::{COLORREF, POINT};
 use windows::Win32::Graphics::Gdi::{
     BeginPaint, CreateSolidBrush, DeleteObject, EndPaint, FillRect, GetObjectW, InvalidateRect,
@@ -10,16 +12,19 @@ use windows::Win32::Graphics::Gdi::{
     PAINTSTRUCT,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::System::Registry::{
+    RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_EXPAND_SZ, RRF_RT_REG_SZ,
+};
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, GetSystemMetricsForDpi, MDT_EFFECTIVE_DPI};
 
 use windows::Win32::UI::WindowsAndMessaging::{
     DefWindowProcW, DrawIconEx, GetClientRect, GetIconInfo, GetSystemMetrics, GetWindowLongPtrW,
     LoadImageW, PostQuitMessage, RegisterClassW, SetLayeredWindowAttributes, SetWindowLongPtrW,
-    SetWindowPos, ShowWindow, DI_NORMAL, GWLP_USERDATA, HICON, HWND_TOPMOST, ICONINFO, IDC_ARROW,
-    IMAGE_CURSOR, LR_SHARED, LWA_COLORKEY, SM_CXCURSOR, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,
-    SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SWP_NOACTIVATE, SWP_NOZORDER, SW_HIDE, SW_SHOWNOACTIVATE,
-    WM_DESTROY, WM_PAINT, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
-    WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
+    SetWindowPos, ShowWindow, DI_NORMAL, GWLP_USERDATA, HCURSOR, HICON, HWND_TOPMOST, ICONINFO,
+    IDC_ARROW, IMAGE_CURSOR, LR_LOADFROMFILE, LR_SHARED, LWA_COLORKEY, SM_CXCURSOR,
+    SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SWP_NOACTIVATE,
+    SWP_NOZORDER, SW_HIDE, SW_SHOWNOACTIVATE, WM_DESTROY, WM_PAINT, WNDCLASSW, WS_EX_LAYERED,
+    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
 };
 use windows::Win32::{
     Foundation::{HINSTANCE, HMODULE, HWND, LPARAM, LRESULT, RECT, WPARAM},
@@ -38,6 +43,8 @@ struct OverlayContext {
     transparent_brush: HBRUSH,
     cursors_list: Vec<CursorPos>,
     show_marker: bool,
+    arrow_file: Option<HSTRING>,
+    cursor_images: HashMap<i32, Owned<HCURSOR>>,
 }
 
 impl OverlayContext {
@@ -46,6 +53,8 @@ impl OverlayContext {
             transparent_brush: unsafe { CreateSolidBrush(TRANSPARENT_COLOR) },
             cursors_list: vec![],
             show_marker: false,
+            arrow_file: system_arrow_file(),
+            cursor_images: HashMap::new(),
         }
     }
 }
@@ -116,7 +125,67 @@ fn get_monitor_dpi(hmon: HMONITOR) -> Result<u32> {
     Ok(dpi_x)
 }
 
-fn load_system_cursor_for_size(size: i32) -> Result<HICON> {
+fn system_arrow_file() -> Option<HSTRING> {
+    let key = w!("Control Panel\\Cursors");
+    let value = w!("Arrow");
+    let flags = RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ;
+    let mut bytes = 0;
+    unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            key,
+            value,
+            flags,
+            None,
+            None,
+            Some(&mut bytes),
+        )
+    }
+    .ok()
+    .ok()?;
+    let mut path = vec![0u16; (bytes as usize).div_ceil(size_of::<u16>())];
+    unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            key,
+            value,
+            flags,
+            None,
+            Some(path.as_mut_ptr().cast()),
+            Some(&mut bytes),
+        )
+    }
+    .ok()
+    .ok()?;
+    let path = hstring_from_buffer(&path).ok()?;
+    if path.is_empty() {
+        return None;
+    }
+    Some(path)
+}
+
+fn load_system_cursor_for_size(
+    size: i32,
+    arrow_file: &mut Option<HSTRING>,
+    cursor_images: &mut HashMap<i32, Owned<HCURSOR>>,
+) -> Result<HICON> {
+    if let Some(cursor) = cursor_images.get(&size) {
+        return Ok(HICON(cursor.0));
+    }
+    if let Some(file) = arrow_file.as_ref() {
+        // The shared IDC_ARROW can return a cached bitmap at a different size.
+        match unsafe { LoadImageW(None, file, IMAGE_CURSOR, size, size, LR_LOADFROMFILE) } {
+            Ok(image) => {
+                cursor_images.insert(size, unsafe { Owned::new(HCURSOR(image.0)) });
+                return Ok(HICON(image.0));
+            }
+            Err(error) => {
+                log::warn!("Could not load Windows arrow cursor file: {error}");
+                *arrow_file = None;
+            }
+        }
+    }
+
     let icon = unsafe {
         ce!(LoadImageW(
             None,
@@ -195,7 +264,7 @@ fn debug_icon_info(icon: HICON) {
 // incorrect scaling.
 // Modern approaches like Direct2D could avoid these issues. But introducing a full
 // D2D rendering path would be overly complex for now, so this is left as future work.
-fn draw_cursors(ctx: &OverlayContext, hdc: HDC) -> Result<()> {
+fn draw_cursors(ctx: &mut OverlayContext, hdc: HDC) -> Result<()> {
     let vx = unsafe { GetSystemMetrics(SM_XVIRTUALSCREEN) };
     let vy = unsafe { GetSystemMetrics(SM_YVIRTUALSCREEN) };
 
@@ -206,7 +275,7 @@ fn draw_cursors(ctx: &OverlayContext, hdc: HDC) -> Result<()> {
         let hmon = unsafe { MonitorFromPoint(POINT { x: c.0, y: c.1 }, MONITOR_DEFAULTTONEAREST) };
         let dpi = get_monitor_dpi(hmon)?;
         let size = unsafe { GetSystemMetricsForDpi(SM_CXCURSOR, dpi) }; // scaling
-        let icon = load_system_cursor_for_size(size)?;
+        let icon = load_system_cursor_for_size(size, &mut ctx.arrow_file, &mut ctx.cursor_images)?;
 
         unsafe {
             let bg_brush = ctx.transparent_brush;
@@ -234,11 +303,8 @@ fn draw_cursors(ctx: &OverlayContext, hdc: HDC) -> Result<()> {
 
 fn draw_overlay(hwnd: HWND) -> LRESULT {
     let mut ps = PAINTSTRUCT::default();
-    let ctx = unsafe {
-        &*match get_overlay_context(hwnd) {
-            Some(v) => v,
-            None => return LRESULT(1),
-        }
+    let Some(ctx) = get_overlay_context(hwnd) else {
+        return LRESULT(1);
     };
 
     unsafe {
@@ -248,6 +314,7 @@ fn draw_overlay(hwnd: HWND) -> LRESULT {
         }
 
         let hdc = BeginPaint(hwnd, &mut ps);
+        let ctx = &mut *ctx;
         FillRect(hdc, &ps.rcPaint, ctx.transparent_brush);
         if let Err(e) = draw_cursors(ctx, hdc) {
             log::error!("draw cursors in overlay failed: {:?}", e);
