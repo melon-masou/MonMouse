@@ -22,6 +22,7 @@ pub type PluginKey = &'static str;
 
 // MonMouse reads this definition when it loads the DLL, before enabling the plugin.
 pub struct PluginDefine {
+    // Use a nonempty key containing only a-z, 0-9, and underscores.
     // Keep this key stable so MonMouse can find the plugin's saved settings.
     pub key: PluginKey,
     // Display name shown in the Plugins selector.

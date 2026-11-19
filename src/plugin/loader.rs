@@ -36,6 +36,16 @@ pub fn load() -> io::Result<Vec<PluginDefine>> {
     for path in plugin_paths()? {
         match load_plugin(&path) {
             Ok((plugin, dll)) => {
+                let key = plugin.key;
+                if key.is_empty()
+                    || !key
+                        .bytes()
+                        .all(|byte| matches!(byte, b'a'..=b'z' | b'0'..=b'9' | b'_'))
+                {
+                    log::warn!("Skipping {}: invalid plugin key {key:?}", path.display());
+                    drop(plugin);
+                    continue;
+                }
                 if plugins.iter().any(|loaded| loaded.key == plugin.key) {
                     log::warn!(
                         "Skipping {}: duplicate plugin key {}",
