@@ -50,7 +50,7 @@ pub trait ReactorTask: Send {
     fn subscriptions(&self) -> &'static [EventKind] {
         &[]
     }
-    // Return when the inbox receives `PluginMessage::Stop` so the host can join the thread.
+    // Return when the inbox receives `PluginMessage::Stop` to finish stopping the reactor.
     fn run(self: Box<Self>, inbox: &dyn Inbox, ctx: &dyn ReactorContext);
 }
 
@@ -61,6 +61,9 @@ pub trait PluginMain {
     fn init(&mut self, _ctx: &dyn MainContext) -> Vec<Box<dyn ReactorTask>> {
         Vec::new()
     }
+
+    // Called after the plugin finishes disabling.
+    fn stop(&mut self) {}
 
     // Create the optional interceptor that runs on the input thread.
     fn interceptor(&mut self) -> Option<PluginInterceptor> {
@@ -76,6 +79,11 @@ pub trait PluginMain {
 
     // Return true to ask for confirmation before leaving a tab with unsaved edits.
     fn has_changes(&self) -> bool {
+        false
+    }
+
+    // Keep the plugin enabled while a submitted settings save is in flight.
+    fn is_saving(&self) -> bool {
         false
     }
 

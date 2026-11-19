@@ -3,8 +3,10 @@ pub use routing::*;
 
 use std::{
     fmt::Debug,
-    sync::mpsc::{channel, sync_channel, Receiver, Sender, SyncSender, TryRecvError},
-    time::Duration,
+    sync::mpsc::{
+        channel, sync_channel, Receiver, RecvTimeoutError, Sender, SyncSender, TryRecvError,
+    },
+    time::{Duration, Instant},
 };
 
 use monmouse_lib::plugin::{PluginKey, PluginMessage};
@@ -109,6 +111,7 @@ impl<TReq, TRsp> RoundtripData<TReq, TRsp> {
 #[derive(Clone, Copy, Debug)]
 pub enum TimerDueKind {
     InspectDevice,
+    PluginStop,
 }
 
 #[derive(Debug)]
@@ -126,19 +129,21 @@ pub enum Message {
     SettingsSaved,
 
     // Plugin Messages
-    SetPluginInterceptor {
+    StartPlugin {
         key: PluginKey,
         interceptor: Option<Box<RegisteredInterceptor>>,
+        subscribers: Vec<PluginSubscriber>,
     },
-    SetPluginSubscribers {
+    InitializePluginShortcuts {
         key: PluginKey,
-        subscribers: Option<Vec<PluginSubscriber>>,
+        bindings: Vec<(String, String)>,
     },
     RegisterPluginShortcuts {
         key: PluginKey,
         bindings: Vec<(String, String)>,
-        restore_on_error: bool,
     },
+    StopPlugin(PluginKey),
+    PluginReactorStopped(PluginKey),
     PluginMessage {
         key: PluginKey,
         message: PluginMessage,
@@ -194,6 +199,7 @@ pub trait UINotify: Send + Sync {
 
 pub enum TimerOperation {
     ResetInterval(Duration),
+    WakeAt(Instant, TimerDueKind),
 }
 
 pub struct TimerOperator {
@@ -205,31 +211,56 @@ impl TimerOperator {
     pub fn update_interval(&self, dur: Duration) {
         let _ = self.op_tx.send(TimerOperation::ResetInterval(dur));
     }
+    pub fn wake_at(&self, deadline: Instant, kind: TimerDueKind) {
+        let _ = self.op_tx.send(TimerOperation::WakeAt(deadline, kind));
+    }
     pub fn stop(self) {
         drop(self.op_tx);
         let _ = self.handle.join();
     }
 }
 
-pub fn timer_spawn(
-    mut interval: Duration,
-    sender: MessageSender,
-    kind: TimerDueKind,
-) -> TimerOperator {
+pub fn timer_spawn(sender: MessageSender, kind: TimerDueKind) -> TimerOperator {
     let (op_tx, op_rx) = channel::<TimerOperation>();
 
-    let handle = std::thread::spawn(move || loop {
+    let handle = std::thread::spawn(move || {
+        let mut periodic = None::<(Duration, Instant)>;
+        let mut wakeup = None::<(Instant, TimerDueKind)>;
         loop {
-            match op_rx.try_recv() {
-                Ok(o) => match o {
-                    TimerOperation::ResetInterval(d) => interval = d,
-                },
-                Err(TryRecvError::Disconnected) => return,
-                _ => break,
+            let now = Instant::now();
+            if let Some((deadline, kind)) = wakeup {
+                if now >= deadline {
+                    wakeup = None;
+                    sender.send(Message::TimerDue(kind));
+                }
+            }
+            if let Some((interval, deadline)) = &mut periodic {
+                if now >= *deadline {
+                    *deadline = now + *interval;
+                    sender.send(Message::TimerDue(kind));
+                }
+            }
+
+            let next = periodic
+                .map(|(_, deadline)| deadline)
+                .into_iter()
+                .chain(wakeup.map(|(deadline, _)| deadline))
+                .min();
+            let operation = match next {
+                Some(deadline) => {
+                    op_rx.recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                }
+                None => op_rx.recv().map_err(|_| RecvTimeoutError::Disconnected),
+            };
+            match operation {
+                Ok(TimerOperation::ResetInterval(interval)) => {
+                    periodic = Some((interval, Instant::now() + interval));
+                }
+                Ok(TimerOperation::WakeAt(deadline, kind)) => wakeup = Some((deadline, kind)),
+                Err(RecvTimeoutError::Timeout) => (),
+                Err(RecvTimeoutError::Disconnected) => return,
             }
         }
-        std::thread::sleep(interval);
-        sender.send(Message::TimerDue(kind));
     });
 
     TimerOperator { op_tx, handle }

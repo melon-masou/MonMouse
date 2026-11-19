@@ -158,19 +158,33 @@ impl MessageDispatch {
         Ok(())
     }
 
+    fn register_plugin_shortcuts(
+        &mut self,
+        platform: &mut impl PlatformService,
+        key: PluginKey,
+        bindings: Vec<(String, String)>,
+        restore_on_error: bool,
+    ) -> Result<()> {
+        let bindings = bindings
+            .into_iter()
+            .map(|(text, action)| (text, ShortcutAction::Plugin(key, action)))
+            .collect();
+        self.shortcuts.register_shortcuts(
+            platform,
+            ShortcutSource::Plugin(key),
+            bindings,
+            restore_on_error,
+        )
+    }
+
     pub fn dispatch(
         &mut self,
         processor: &mut Processor,
         platform: &mut impl PlatformService,
-        mut message: Message,
+        message: Message,
         bus: &MessageBus,
     ) -> DispatchResult {
-        if let Message::PluginMessage { key, message } = message {
-            processor.interceptors.on_event(key, message);
-            return DispatchResult::Continue;
-        }
-
-        match &mut message {
+        match message {
             Message::Exit => return DispatchResult::Exit,
             Message::Reinitilization => {
                 // A newly opened UI can replace the raw-input registration.
@@ -178,15 +192,15 @@ impl MessageDispatch {
                     error!("Reinit register raw devices failed: {}", error);
                 }
             }
-            Message::ScanDevices(data) => {
+            Message::ScanDevices(mut data) => {
                 data.set_result(self.scan_devices(processor, platform));
-                bus.ui.send(message);
+                bus.ui.send(Message::ScanDevices(data));
             }
-            Message::InspectDevicesStatus(data) => {
+            Message::InspectDevicesStatus(mut data) => {
                 data.set_ok(processor.inspect_devices_status(platform.get_cur_tick()));
-                bus.ui.send(message);
+                bus.ui.send(Message::InspectDevicesStatus(data));
             }
-            Message::ApplyProcessorSetting(data) => {
+            Message::ApplyProcessorSetting(mut data) => {
                 // Native registration errors still prevent a successful save acknowledgement.
                 let req = data.req();
                 let result = self.apply_settings(
@@ -196,15 +210,20 @@ impl MessageDispatch {
                     req.user_requested,
                 );
                 data.set_result(result);
-                bus.ui.send(message);
+                bus.ui.send(Message::ApplyProcessorSetting(data));
             }
-            Message::ApplyOneDeviceSetting(data) => processor.apply_one_device_setting(data.take()),
-            Message::SetPluginInterceptor { key, interceptor } => {
-                processor.interceptors.set(key, interceptor.take());
+            Message::ApplyOneDeviceSetting(mut data) => {
+                processor.apply_one_device_setting(data.take());
             }
-            Message::SetPluginSubscribers { key, subscribers } => {
-                if let Some(subscribers) = subscribers.take() {
-                    for subscriber in &subscribers {
+            Message::StartPlugin {
+                key,
+                interceptor,
+                subscribers,
+            } => {
+                processor.interceptors.set(key, interceptor);
+                if !subscribers.is_empty() {
+                    self.plugin_subscribers.insert(key, subscribers);
+                    for subscriber in &self.plugin_subscribers[key] {
                         subscriber.publish(
                             EventKind::MonitorChange,
                             key,
@@ -212,36 +231,38 @@ impl MessageDispatch {
                             &bus.ui,
                         );
                     }
-                    self.plugin_subscribers.insert(key, subscribers);
-                } else {
-                    self.plugin_subscribers.remove(key);
                 }
             }
-            Message::RegisterPluginShortcuts {
-                key,
-                bindings,
-                restore_on_error,
-            } => {
-                let bindings = bindings
-                    .drain(..)
-                    .map(|(text, action)| (text, ShortcutAction::Plugin(key, action)))
-                    .collect();
-                let result = self
-                    .shortcuts
-                    .register_shortcuts(
-                        platform,
-                        ShortcutSource::Plugin(key),
-                        bindings,
-                        *restore_on_error,
-                    )
-                    .map_err(|error| error.to_string());
-                if *restore_on_error {
-                    bus.ui.send(Message::PluginMessage {
-                        key,
-                        message: PluginMessage::ShortcutRegistrationResult(result),
+            Message::PluginMessage { key, message } => {
+                processor.interceptors.on_event(key, message);
+            }
+            Message::InitializePluginShortcuts { key, bindings } => {
+                if let Err(error) = self.register_plugin_shortcuts(platform, key, bindings, false) {
+                    bus.ui.send(Message::PluginError {
+                        text: error.to_string(),
+                        alert: false,
                     });
-                } else if let Err(text) = result {
-                    bus.ui.send(Message::PluginError { text, alert: false });
+                }
+            }
+            Message::RegisterPluginShortcuts { key, bindings } => {
+                let result = self
+                    .register_plugin_shortcuts(platform, key, bindings, true)
+                    .map_err(|error| error.to_string());
+                bus.ui.send(Message::PluginMessage {
+                    key,
+                    message: PluginMessage::ShortcutRegistrationResult(result),
+                });
+            }
+            Message::StopPlugin(key) => {
+                processor.interceptors.set(key, None);
+                self.plugin_subscribers.remove(key);
+                if let Err(error) = self.shortcuts.register_shortcuts(
+                    platform,
+                    ShortcutSource::Plugin(key),
+                    Vec::new(),
+                    false,
+                ) {
+                    error!("Failed to unregister shortcuts for plugin {key}: {error}");
                 }
             }
             other => unreachable!("unexpected message routed to mouse control: {other:?}"),

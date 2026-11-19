@@ -10,8 +10,8 @@ use crate::{
 use monmouse::{
     errors::Error,
     message::{
-        timer_spawn, ApplyProcessorSettingsData, DeviceStatus, GenericDevice, Message,
-        Reactor, RoundtripData, SendData, TimerDueKind, TimerOperator,
+        timer_spawn, ApplyProcessorSettingsData, DeviceStatus, GenericDevice, Message, Reactor,
+        RoundtripData, SendData, TimerDueKind, TimerOperator,
     },
     plugin::manager::PluginManager,
     setting::{write_config, DeviceSetting, DeviceSettingItem, ProcessorSettings, Settings},
@@ -27,7 +27,7 @@ pub struct App {
     should_exit: bool,
     first_launch: bool,
     ui_reactor: Reactor,
-    inspect_timer: Option<TimerOperator>,
+    timer: TimerOperator,
 
     pub plugin_panel: PluginsPanel,
     pub plugins: PluginManager,
@@ -68,8 +68,33 @@ impl App {
     }
 
     pub fn set_plugin_enabled(&mut self, key: PluginKey, enabled: bool) {
-        if let Err(error) = self.plugins.set_enabled(key, enabled) {
+        if self.should_exit {
+            return;
+        }
+        let Some(plugin) = self.plugins.entry_mut(key) else {
+            self.result_error_alert(format!("Unknown plugin {key}"));
+            return;
+        };
+        if let Err(error) = plugin.set_enabled(enabled) {
             self.result_error_alert(error);
+            return;
+        }
+        if plugin.stopping() {
+            self.plugins.schedule_stop_timeout(&self.timer);
+        }
+        self.save_plugin_enabled(key, enabled);
+    }
+
+    fn save_plugin_enabled(&mut self, key: PluginKey, enabled: bool) {
+        let mut new_settings = self.state.saved_settings.clone();
+        let changed = if enabled {
+            new_settings.enabled_plugins.insert(key.to_owned())
+        } else {
+            new_settings.enabled_plugins.remove(key)
+        };
+        self.state.settings.enabled_plugins = new_settings.enabled_plugins.clone();
+        if changed {
+            self.save_config(new_settings);
         }
     }
 
@@ -98,9 +123,8 @@ impl App {
             )));
     }
     fn trigger_settings_changed_ui(&mut self) {
-        let duration = Duration::from_millis(self.state.settings.ui.inspect_device_interval_ms);
-        if let Some(timer) = self.inspect_timer.as_ref() {
-            timer.update_interval(duration);
+        if self.first_launch {
+            self.setup_inspect_timer();
         }
         let language = &self.state.settings.ui.language;
         rust_i18n::set_locale(language);
@@ -116,13 +140,10 @@ impl App {
         }
     }
 
-    pub fn setup_inspect_timer(&mut self) {
-        let timer = timer_spawn(
-            Duration::from_millis(self.state.settings.ui.inspect_device_interval_ms),
-            self.ui_reactor.bus.ui.clone(),
-            TimerDueKind::InspectDevice,
-        );
-        self.inspect_timer = Some(timer);
+    fn setup_inspect_timer(&self) {
+        self.timer.update_interval(Duration::from_millis(
+            self.state.settings.ui.inspect_device_interval_ms,
+        ));
     }
 
     pub fn apply_user_new_settings_async(&mut self) {
@@ -168,6 +189,7 @@ impl App {
 
 impl App {
     pub fn new(ui_reactor: Reactor) -> Self {
+        let timer = timer_spawn(ui_reactor.bus.ui.clone(), TimerDueKind::InspectDevice);
         App {
             state: AppState::default(),
             plugin_panel: PluginsPanel::default(),
@@ -178,7 +200,7 @@ impl App {
             should_exit: false,
             first_launch: false,
             ui_reactor,
-            inspect_timer: None,
+            timer,
             #[cfg(debug_assertions)]
             debug_info: DebugInfo::default(),
         }
@@ -290,29 +312,14 @@ impl App {
     }
 
     pub fn wait_for_restart_background(&mut self) -> bool /* exit? */ {
-        if self.should_exit {
-            return true;
-        }
-        // Once clearing residual pending msg
+        self.poll_messages();
         loop {
-            match self.ui_reactor.try_recv() {
-                Some(Message::Exit) => return true,
-                Some(msg) => {
-                    // Handle others msg normally
-                    self.handle_message(msg);
-                }
-                None => break,
+            if self.should_exit && self.plugins.all_stopped() {
+                return true;
             }
-        }
-        // Actuall wait for restart msg
-        loop {
             match self.ui_reactor.recv() {
-                Message::Exit => return true,
-                Message::RestartUI => return false,
-                msg => {
-                    // Handle others msg normally
-                    self.handle_message(msg);
-                }
+                Message::RestartUI if !self.should_exit => return false,
+                msg => self.handle_message(msg),
             }
         }
     }
@@ -326,7 +333,11 @@ impl App {
     pub fn handle_message(&mut self, msg: Message) {
         match msg {
             Message::Exit => {
-                self.should_exit = true;
+                if !self.should_exit {
+                    self.should_exit = true;
+                    self.ui_reactor.bus.mouse_control.send(Message::Exit);
+                    self.plugins.stop_all(&self.timer);
+                }
             }
             Message::RestartUI => (),
             Message::LockCurMouse(id) => {
@@ -380,6 +391,9 @@ impl App {
             Message::TimerDue(TimerDueKind::InspectDevice) => {
                 self.trigger_inspect_devices_status();
             }
+            Message::TimerDue(TimerDueKind::PluginStop) => {
+                self.plugins.check_stop_timeouts(&self.timer);
+            }
             Message::InspectDevicesStatus(data) => match data.take_rsp() {
                 Ok(devs) => self.update_devices_status(devs),
                 Err(e) => {
@@ -412,7 +426,14 @@ impl App {
                 self.trigger_inspect_devices_status();
             }
             Message::PluginMessage { key, message } => {
-                self.plugins.on_event(key, &message);
+                if let Some(plugin) = self.plugins.entry_mut(key) {
+                    plugin.on_event(&message);
+                }
+            }
+            Message::PluginReactorStopped(key) => {
+                if let Some(plugin) = self.plugins.entry_mut(key) {
+                    plugin.reactor_stopped();
+                }
             }
             Message::SettingsSaved => {
                 self.result_ok(t!("msg.settings_saved").to_string());

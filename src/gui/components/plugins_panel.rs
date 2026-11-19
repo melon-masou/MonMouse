@@ -18,7 +18,7 @@ impl PluginsPanel {
         app.plugins
             .entries
             .get(app.plugin_panel.selected)
-            .is_some_and(|plugin| plugin.main.has_changes())
+            .is_some_and(|plugin| plugin.enabled() && plugin.main.has_changes())
     }
 
     pub fn discard_changes(app: &mut App) {
@@ -46,6 +46,7 @@ impl PluginsPanel {
         let plugin = &app.plugins.entries[selected];
         let key = plugin.key;
         let enabled = plugin.enabled();
+        let stopping = plugin.stopping();
         let toggle = ui
             .horizontal(|ui| {
                 form_combo("PluginChoice")
@@ -55,17 +56,20 @@ impl PluginsPanel {
                             ui.selectable_value(&mut next_plugin, index, plugin.name);
                         }
                     });
-                ui.add(manage_button(if enabled {
-                    t!("plugins.disable")
-                } else {
-                    t!("plugins.enable")
-                }))
+                ui.add_enabled(
+                    plugin.can_toggle(),
+                    manage_button(if enabled || stopping {
+                        t!("plugins.disable")
+                    } else {
+                        t!("plugins.enable")
+                    }),
+                )
                 .clicked()
             })
             .inner;
 
         if next_plugin != selected {
-            let dirty = plugin.main.has_changes();
+            let dirty = enabled && plugin.main.has_changes();
             confirm_discard(app, dirty, move |app| {
                 Self::discard_changes(app);
                 app.plugin_panel.selected = next_plugin;
@@ -75,7 +79,14 @@ impl PluginsPanel {
         }
 
         if toggle {
-            app.set_plugin_enabled(key, !enabled);
+            if enabled {
+                let dirty = plugin.main.has_changes();
+                confirm_discard(app, dirty, move |app| {
+                    app.set_plugin_enabled(key, false);
+                });
+            } else {
+                app.set_plugin_enabled(key, true);
+            }
             return false;
         }
         enabled

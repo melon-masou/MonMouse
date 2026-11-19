@@ -98,11 +98,8 @@ fn main() {
     });
 
     // winit wrapped by eframe, requires UI eventloop running inside main thread
-    let result = egui_eventloop(app, egui_notify);
-    if let Err(e) = result {
-        panic!("egui eventloop exited for: {}", e);
-    }
-
+    egui_eventloop(app, egui_notify)
+        .unwrap_or_else(|error| panic!("egui eventloop exited for: {}", error));
     let _ = mouse_control_thread.join();
     drop(single_process);
 }
@@ -124,10 +121,8 @@ fn egui_eventloop(mut app: App, egui_notify: EguiNotify) -> Result<(), eframe::E
     app.apply_startup_settings();
 
     let app = Rc::new(RefCell::new(app));
-    if app.borrow_mut().on_launch_wait_start_ui() {
-        return Ok(());
-    }
-    loop {
+    let mut should_exit = app.borrow_mut().on_launch_wait_start_ui();
+    while !should_exit {
         let app_ref = app.clone();
         let egui_notify1 = egui_notify.clone();
         eframe::run_native(
@@ -140,9 +135,7 @@ fn egui_eventloop(mut app: App, egui_notify: EguiNotify) -> Result<(), eframe::E
                 Ok(Box::new(AppWrap::new(app_ref, egui_notify1)))
             }),
         )?;
-        if app.borrow_mut().wait_for_restart_background() {
-            break;
-        }
+        should_exit = app.borrow_mut().wait_for_restart_background();
     }
     Ok(())
 }

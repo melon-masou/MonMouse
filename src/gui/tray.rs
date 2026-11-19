@@ -68,9 +68,8 @@ impl Tray {
 
         if let Ok(event) = MenuEvent::receiver().try_recv() {
             if event.id == self.quit.id() {
-                self.ui.notify_close();
                 self.bus.ui.send(Message::Exit);
-                self.bus.mouse_control.send(Message::Exit);
+                self.ui.notify_close();
             }
             if event.id == self.open.id() {
                 self.bus.ui.send(Message::RestartUI);

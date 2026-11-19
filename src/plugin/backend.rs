@@ -22,11 +22,7 @@ impl MainContext for MainContextHost {
         self.router.send(target, message)
     }
 
-    fn register_shortcuts(
-        &self,
-        bindings: Vec<(String, String)>,
-        restore_on_error: bool,
-    ) -> Result<(), String> {
+    fn register_shortcuts(&self, bindings: Vec<(String, String)>) -> Result<(), String> {
         let queued = self
             .router
             .bus
@@ -34,7 +30,6 @@ impl MainContext for MainContextHost {
             .send(Message::RegisterPluginShortcuts {
                 key: self.router.key,
                 bindings,
-                restore_on_error,
             });
         if queued {
             Ok(())

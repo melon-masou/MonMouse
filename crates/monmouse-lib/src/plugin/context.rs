@@ -6,12 +6,8 @@ use std::path::Path;
 pub trait MainContext {
     fn send(&self, target: PluginTarget, message: PluginMessage) -> bool;
 
-    // Queues a shortcut update. With rollback enabled, the result arrives as a plugin event.
-    fn register_shortcuts(
-        &self,
-        bindings: Vec<(String, String)>,
-        restore_on_error: bool,
-    ) -> Result<(), String>;
+    // Queues a shortcut update. Calls after init receive a ShortcutRegistrationResult event.
+    fn register_shortcuts(&self, bindings: Vec<(String, String)>) -> Result<(), String>;
     fn config_dir(&self) -> Option<&Path>;
     fn load_settings_yaml(&self) -> Result<Option<String>, String>;
     fn save_settings_yaml(&self, yaml: &str) -> Result<(), String>;

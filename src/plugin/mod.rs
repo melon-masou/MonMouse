@@ -5,11 +5,11 @@ pub mod loader;
 pub mod manager;
 
 use std::{
-    sync::mpsc::{channel, Receiver, Sender},
-    thread::{self, JoinHandle},
+    sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender},
+    thread,
+    time::Duration,
 };
 
-use log::error;
 use monmouse_lib::plugin::{
     EventKind, Inbox, InboxError, PluginKey, PluginMessage, PluginTarget, ReactorTask,
 };
@@ -78,8 +78,7 @@ impl Inbox for HostInbox {
     fn recv(&self) -> Option<PluginMessage> {
         self.0.recv().ok()
     }
-    fn recv_timeout(&self, timeout: std::time::Duration) -> Result<PluginMessage, InboxError> {
-        use std::sync::mpsc::RecvTimeoutError;
+    fn recv_timeout(&self, timeout: Duration) -> Result<PluginMessage, InboxError> {
         self.0.recv_timeout(timeout).map_err(|error| match error {
             RecvTimeoutError::Timeout => InboxError::Timeout,
             RecvTimeoutError::Disconnected => InboxError::Disconnected,
@@ -87,9 +86,9 @@ impl Inbox for HostInbox {
     }
 }
 
+#[derive(Default)]
 pub struct PluginRuntime {
-    workers: Vec<JoinHandle<()>>,
-    key: PluginKey,
+    running_reactors: usize,
     senders: Vec<Sender<PluginMessage>>,
 }
 
@@ -99,17 +98,19 @@ impl PluginRuntime {
         context: ReactorContextHost,
         inboxes: Vec<Receiver<PluginMessage>>,
     ) -> Self {
-        let workers = tasks
-            .into_iter()
-            .zip(inboxes)
-            .map(|(task, reactor)| {
-                let context = context.clone();
-                thread::spawn(move || task.run(&HostInbox(reactor), &context))
-            })
-            .collect();
+        let running_reactors = tasks.len();
+        let key = context.router.key;
+        for (task, reactor) in tasks.into_iter().zip(inboxes) {
+            let context = context.clone();
+            let ui = context.router.bus.ui.clone();
+            thread::spawn(move || {
+                task.run(&HostInbox(reactor), &context);
+                drop(context);
+                ui.send(Message::PluginReactorStopped(key));
+            });
+        }
         Self {
-            workers,
-            key: context.router.key,
+            running_reactors,
             senders: context.router.reactors,
         }
     }
@@ -117,17 +118,18 @@ impl PluginRuntime {
     pub fn channels(count: usize) -> (Vec<Sender<PluginMessage>>, Vec<Receiver<PluginMessage>>) {
         (0..count).map(|_| channel()).unzip()
     }
-}
 
-impl Drop for PluginRuntime {
-    fn drop(&mut self) {
-        for sender in &self.senders {
+    pub fn request_stop(&mut self) {
+        for sender in self.senders.drain(..) {
             let _ = sender.send(PluginMessage::Stop);
         }
-        for worker in self.workers.drain(..) {
-            if worker.join().is_err() {
-                error!("Plugin {} reactor panicked", self.key);
-            }
-        }
+    }
+
+    fn reactor_stopped(&mut self) {
+        self.running_reactors -= 1;
+    }
+
+    fn is_stopped(&self) -> bool {
+        self.running_reactors == 0
     }
 }
