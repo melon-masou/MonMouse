@@ -5,8 +5,8 @@ use clap::Parser;
 use log::{debug, error, info};
 use monmouse::{
     errors::Error,
-    message::{setup_reactors, GenericDevice},
-    setting::{config_string, read_config, Settings, CONFIG_FILE_NAME},
+    message::setup_reactors,
+    setting::{config_string, read_config, ProcessorSettings, Settings, CONFIG_FILE_NAME},
     SingleProcess,
 };
 
@@ -58,46 +58,46 @@ fn main() -> Result<(), Error> {
         return Ok(());
     }
 
-    let mouse_control_reactor = setup_reactors(None).mouse_control;
-    let mut poller = monmouse::Eventloop::new(true, mouse_control_reactor);
-
     if args.print_devices {
-        let devices = poller.scan_devices()?;
-        print_devices(devices);
-        return Ok(());
+        return print_devices();
     }
 
     setup_logger(args.log_level)?;
-    let single_process = SingleProcess::create()?;
+    let _single_process = SingleProcess::create()?;
+    let reactors = setup_reactors(None);
+    drop(reactors.ui);
 
-    let config = read_config(&PathBuf::from(args.config_file))?;
+    let config_path = PathBuf::from(args.config_file);
+    let config = read_config(&config_path)?;
     debug!("Config loaded: {:?}", config);
-
-    poller.initialize_settings(&config.processor)?;
+    let poller = monmouse::Eventloop::new(true, reactors.control);
 
     info!("monmouse-cli started");
-    let result = mouse_control_spawn(poller);
+    let result = mouse_control_spawn(poller, &config.processor);
     match &result {
         Ok(_) => info!("monmouse-cli ended normally"),
         Err(e) => error!("monmouse-cli ended with error: {}", e),
     }
 
-    drop(single_process);
     result
 }
 
-fn mouse_control_spawn(mut poller: monmouse::Eventloop) -> Result<(), Error> {
+fn mouse_control_spawn(
+    mut poller: monmouse::Eventloop,
+    settings: &ProcessorSettings,
+) -> Result<(), Error> {
     poller.initialize()?;
-    loop {
-        if !poller.poll() {
-            break;
-        }
-    }
-    poller.terminate()?;
-    Ok(())
+    let result = (|| {
+        poller.initialize_settings(settings)?;
+        while poller.poll() {}
+        Ok(())
+    })();
+    let cleanup = poller.terminate();
+    result.and(cleanup)
 }
 
-fn print_devices(devices: Vec<GenericDevice>) {
+fn print_devices() -> Result<(), Error> {
+    let devices = monmouse::windows::list_pointer_devices()?;
     for (i, d) in devices.iter().enumerate() {
         println!("Device[{}]", i);
         println!("ID: {}", d.id);
@@ -109,4 +109,5 @@ fn print_devices(devices: Vec<GenericDevice>) {
         }
         println!("----------------");
     }
+    Ok(())
 }

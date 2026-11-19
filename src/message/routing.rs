@@ -11,6 +11,18 @@ pub struct MessageBus {
     pub mouse_control: MessageSender,
 }
 
+impl MessageBus {
+    pub fn new_reactor(&self) -> (MessageSender, Reactor) {
+        let (tx, inbox) = channel();
+        let sender = MessageSender { tx, notify: None };
+        let reactor = Reactor {
+            bus: self.clone(),
+            inbox,
+        };
+        (sender, reactor)
+    }
+}
+
 #[derive(Clone)]
 pub struct MessageSender {
     tx: Sender<Message>,
@@ -18,11 +30,14 @@ pub struct MessageSender {
 }
 
 impl MessageSender {
-    pub fn send(&self, message: Message) {
+    pub fn send(&self, message: Message) -> bool {
         if self.tx.send(message).is_ok() {
             if let Some(notify) = &self.notify {
                 notify.notify();
             }
+            true
+        } else {
+            false
         }
     }
 }
@@ -48,7 +63,7 @@ impl Reactor {
 
 pub struct Reactors {
     pub bus: MessageBus,
-    pub mouse_control: Reactor,
+    pub control: Reactor,
     pub ui: Reactor,
 }
 
@@ -74,8 +89,8 @@ pub fn setup_reactors(ui_notify: Option<Arc<dyn UINotify>>) -> Reactors {
         inbox: ui_rx,
     };
     Reactors {
+        control: mouse,
         bus,
-        mouse_control: mouse,
         ui,
     }
 }

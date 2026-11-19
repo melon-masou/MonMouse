@@ -1,4 +1,5 @@
 use log::{debug, error, trace};
+use monmouse_lib::plugin::PluginMessage;
 use windows::Win32::{
     Foundation::LPARAM,
     UI::{
@@ -19,8 +20,13 @@ use super::{
 };
 use crate::{
     input_control::{DeviceId, Positioning},
-    message::MessageBus,
-    processor::{effects::EffectsIntent, platform::PlatformService, Processor},
+    message::{Message, MessageBus},
+    processor::{
+        effects::EffectsIntent,
+        platform::PlatformService,
+        shortcuts::{ShortcutAction, ShortcutManager},
+        Processor,
+    },
 };
 
 pub struct WMDispatch;
@@ -30,6 +36,7 @@ impl WMDispatch {
         processor: &mut Processor,
         platform: &mut WinPlatformService,
         effects: &mut EffectsIntent,
+        shortcuts: &ShortcutManager,
         raw_input_buf: &mut Vec<RAWINPUT>,
         message: &MSG,
         bus: &MessageBus,
@@ -55,17 +62,22 @@ impl WMDispatch {
                 }
                 _ => (),
             },
-            WM_HOTKEY => {
-                let shortcut = platform
-                    .hotkey_mgr
-                    .get_callback(message.lParam.0 as u32)
-                    .copied();
-                if let Some(ui_message) =
-                    processor.on_shortcut(shortcut, widen_tick(message.time), effects)
-                {
-                    bus.ui.send(ui_message);
+            WM_HOTKEY => match shortcuts.action(message.wParam.0 as i32) {
+                Some(ShortcutAction::Main(id)) => {
+                    if let Some(message) =
+                        processor.on_shortcut(Some(*id), widen_tick(message.time), effects)
+                    {
+                        bus.ui.send(message);
+                    }
                 }
-            }
+                Some(ShortcutAction::Plugin(key, action)) => {
+                    bus.ui.send(Message::PluginMessage {
+                        key,
+                        message: PluginMessage::Shortcut(action.clone()),
+                    });
+                }
+                None => (),
+            },
             _ => (),
         }
     }

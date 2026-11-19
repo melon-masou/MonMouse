@@ -31,27 +31,31 @@ impl<'a, F: InputField> InputItem<'a, F> {
         ui: &mut egui::Ui,
         add_contents: impl FnOnce(&mut egui::Ui, &mut F::Value) -> bool,
     ) {
-        if let Some(tooltip) = self.tooltip {
-            ui.horizontal(|ui| {
-                ui.label(self.text.as_ref());
-                let help = ui
-                    .add(icon_button(ui, egui::RichText::new("?").small()).frame(false))
-                    .on_hover_cursor(egui::CursorIcon::PointingHand);
-                egui::Popup::from_toggle_button_response(&help)
-                    .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-                    .width(300.0)
-                    .show(|ui| {
-                        ui.add(egui::Label::new(tooltip.as_ref()).wrap());
-                    });
-            });
-        } else {
-            ui.label(self.text.as_ref());
-        }
+        input_label(ui, self.text.as_ref(), self.tooltip.as_deref());
         let changed = add_contents(ui, self.field.value());
         if let Some(error) = self.field.on_field_update(changed) {
             ui.colored_label(error_color(ui, false), error);
         }
         ui.end_row();
+    }
+}
+
+pub fn input_label(ui: &mut egui::Ui, text: &str, tooltip: Option<&str>) {
+    if let Some(tooltip) = tooltip {
+        ui.horizontal(|ui| {
+            ui.label(text);
+            let help = ui
+                .add(icon_button(ui, egui::RichText::new("?").small()).frame(false))
+                .on_hover_cursor(egui::CursorIcon::PointingHand);
+            egui::Popup::from_toggle_button_response(&help)
+                .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                .width(300.0)
+                .show(|ui| {
+                    ui.add(egui::Label::new(tooltip).wrap());
+                });
+        });
+    } else {
+        ui.label(text);
     }
 }
 

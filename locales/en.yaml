@@ -9,6 +9,7 @@ btn:
 panel:
   Devices: Devices
   Config: Config
+  Plugins: "Plugins"
   About: About
 # device_panel
 devices:
@@ -83,3 +84,8 @@ msg:
   scanned_devices: "Scanned %{number} devices"
   scan_fail: Failed to scan devices
   inspect_device_fail: Failed to refresh device status
+
+plugins:
+  enable: "Enable"
+  disable: "Disable"
+  empty: "No plugins"

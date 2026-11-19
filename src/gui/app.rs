@@ -2,15 +2,22 @@ use std::{path::PathBuf, time::Duration};
 
 #[cfg(debug_assertions)]
 use crate::components::debug::DebugInfo;
-use crate::{components::validatable_input::InputsCache, styles::Theme, PanelTag};
+use crate::{
+    components::{plugins_panel::PluginsPanel, validatable_input::InputsCache},
+    styles::Theme,
+    PanelTag,
+};
 use monmouse::{
     errors::Error,
     message::{
-        timer_spawn, ApplyProcessorSettingsData, DeviceStatus, GenericDevice, Message, Reactor,
-        RoundtripData, SendData, TimerDueKind, TimerOperator,
+        timer_spawn, ApplyProcessorSettingsData, DeviceStatus, GenericDevice, Message,
+        Reactor, RoundtripData, SendData, TimerDueKind, TimerOperator,
     },
+    plugin::manager::PluginManager,
     setting::{write_config, DeviceSetting, DeviceSettingItem, ProcessorSettings, Settings},
 };
+
+use monmouse_lib::plugin::PluginKey;
 
 pub struct App {
     pub state: AppState,
@@ -21,6 +28,10 @@ pub struct App {
     first_launch: bool,
     ui_reactor: Reactor,
     inspect_timer: Option<TimerOperator>,
+
+    pub plugin_panel: PluginsPanel,
+    pub plugins: PluginManager,
+
     #[cfg(debug_assertions)]
     pub debug_info: DebugInfo,
 }
@@ -56,6 +67,12 @@ impl App {
             .send(Message::ApplyOneDeviceSetting(SendData::new(item)));
     }
 
+    pub fn set_plugin_enabled(&mut self, key: PluginKey, enabled: bool) {
+        if let Err(error) = self.plugins.set_enabled(key, enabled) {
+            self.result_error_alert(error);
+        }
+    }
+
     pub fn trigger_user_change_settings(&mut self) {
         self.trigger_settings_changed(true);
     }
@@ -63,6 +80,8 @@ impl App {
     pub fn apply_startup_settings(&mut self) {
         // Reuse the normal settings application at startup to setup processor
         self.trigger_settings_changed(false);
+        self.plugins
+            .initialize(&self.state.settings.enabled_plugins);
     }
 
     fn trigger_settings_changed(&mut self, user_requested: bool) {
@@ -83,7 +102,8 @@ impl App {
         if let Some(timer) = self.inspect_timer.as_ref() {
             timer.update_interval(duration);
         }
-        rust_i18n::set_locale(&self.state.settings.ui.language);
+        let language = &self.state.settings.ui.language;
+        rust_i18n::set_locale(language);
     }
 
     fn apply_ui_local_settings(&mut self) -> bool {
@@ -150,6 +170,8 @@ impl App {
     pub fn new(ui_reactor: Reactor) -> Self {
         App {
             state: AppState::default(),
+            plugin_panel: PluginsPanel::default(),
+            plugins: PluginManager::default(),
             last_result: StatusBarResult::None,
             alert_errors: Vec::new(),
             config_path: None,
@@ -388,6 +410,19 @@ impl App {
                     )),
                 }
                 self.trigger_inspect_devices_status();
+            }
+            Message::PluginMessage { key, message } => {
+                self.plugins.on_event(key, &message);
+            }
+            Message::SettingsSaved => {
+                self.result_ok(t!("msg.settings_saved").to_string());
+            }
+            Message::PluginError { text, alert } => {
+                if alert {
+                    self.result_error_alert(text);
+                } else {
+                    self.result_error_silent(text);
+                }
             }
             other => unreachable!("unexpected message routed to UI: {other:?}"),
         }

@@ -9,6 +9,7 @@ btn:
 panel:
   Devices: 设备
   Config: 配置
+  Plugins: "插件"
   About: 关于
 # device_panel
 devices:
@@ -83,3 +84,8 @@ msg:
   scanned_devices: "扫描到 %{number} 个设备"
   scan_fail: 设备扫描失败
   inspect_device_fail: 刷新设备状态失败
+
+plugins:
+  enable: "启用"
+  disable: "禁用"
+  empty: "没有插件"

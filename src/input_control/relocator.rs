@@ -1,7 +1,4 @@
-use super::{
-    mouse_event_device_matcher::MatchedMouseEvent, DeviceId, MonitorArea, MonitorAreasList,
-    MousePos, Positioning,
-};
+use super::{DeviceId, MatchedMouseEvent, MonitorArea, MonitorAreasList, MousePos, Positioning};
 use crate::{setting::DeviceSetting, utils::vec_ensure_get_mut};
 
 const MOUSE_SWITCHING_MS: u64 = 100;

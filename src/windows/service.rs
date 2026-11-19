@@ -3,7 +3,6 @@ use std::collections::BTreeSet;
 use log::{debug, error, warn};
 use windows::Win32::{
     Foundation::HWND,
-    UI::Input::KeyboardAndMouse::{HOT_KEY_MODIFIERS, VIRTUAL_KEY},
     UI::Input::{RAWINPUTDEVICE, RIDEV_DEVNOTIFY, RIDEV_INPUTSINK, RIDEV_PAGEONLY},
 };
 
@@ -11,7 +10,7 @@ use super::{
     devices::{collect_all_raw_devices, is_valid_win_device, win_device_to_generic},
     winwrap::{
         display::{get_all_monitors_info, process_set_dpi_aware, set_cursor_pos, MonitorInfo},
-        input::{register_rawinput_devices, HotKeyManager},
+        input::{register_rawinput_devices, register_shortcut, unregister_shortcut},
         overlay::{create_overlay_window, refresh_overlay_window, trigger_draw_cursors, CursorPos},
         window::get_cur_tick,
     },
@@ -20,32 +19,30 @@ use crate::{
     device_type::WindowsRawinput,
     errors::{Error, Result},
     input_control::{DeviceId, MonitorArea, MonitorAreasList, MousePos},
-    keyboard::key_windows::shortcut_str_to_win,
-    message::ShortcutID,
     processor::platform::{DeviceInfo, PlatformService},
-    setting::ShortcutSettings,
 };
 
-struct ShortcutBinding {
-    action: ShortcutID,
-    modifiers: HOT_KEY_MODIFIERS,
-    key: VIRTUAL_KEY,
-    text: String,
-}
+const MAX_SHORTCUT_ID: i32 = 0xbfff;
 
 // Native resources and capabilities; control policy belongs to Processor.
 pub struct WinPlatformService {
     pub hwnd: HWND,
-    pub hotkey_mgr: HotKeyManager<ShortcutID>,
-    shortcuts: Vec<ShortcutBinding>,
+    shortcut_ids: BTreeSet<i32>,
+    next_shortcut_id: i32,
+}
+
+impl Default for WinPlatformService {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl WinPlatformService {
     pub fn new() -> Self {
         Self {
             hwnd: HWND::default(),
-            hotkey_mgr: HotKeyManager::new(),
-            shortcuts: Vec::new(),
+            shortcut_ids: BTreeSet::new(),
+            next_shortcut_id: 1,
         }
     }
 
@@ -62,32 +59,6 @@ impl WinPlatformService {
             }
         };
         self.hwnd = hwnd;
-        Ok(())
-    }
-
-    fn set_bindings(
-        manager: &mut HotKeyManager<ShortcutID>,
-        hwnd: HWND,
-        bindings: &[ShortcutBinding],
-    ) -> Result<()> {
-        manager.unregister_all(hwnd)?;
-        for binding in bindings {
-            manager
-                .register(
-                    hwnd,
-                    binding.action as i32,
-                    binding.modifiers,
-                    binding.key,
-                    false,
-                    binding.action,
-                )
-                .map_err(|error| match error {
-                    Error::ShortcutConflict(_) => {
-                        Error::ShortcutConflict(binding.text.as_str().into())
-                    }
-                    other => other,
-                })?;
-        }
         Ok(())
     }
 
@@ -156,34 +127,25 @@ impl PlatformService for WinPlatformService {
         ))
     }
 
-    fn register_shortcuts(&mut self, shortcuts: &ShortcutSettings) -> Result<()> {
-        let mut bindings = Vec::new();
-        let mut chords = BTreeSet::new();
-        for (action, text) in [
-            (ShortcutID::CurMouseLock, &shortcuts.cur_mouse_lock),
-            (ShortcutID::CurMouseSwitch, &shortcuts.cur_mouse_switch),
-            (ShortcutID::CurMouseJumpNext, &shortcuts.cur_mouse_jump_next),
-        ] {
-            if text.is_empty() {
-                continue;
-            }
-            let (modifiers, key) =
-                shortcut_str_to_win(text).ok_or_else(|| Error::InvalidShortcut(text.clone()))?;
-            if !chords.insert((modifiers.0, key.0)) {
-                return Err(Error::ShortcutConflict(text.as_str().into()));
-            }
-            bindings.push(ShortcutBinding {
-                action,
-                modifiers,
-                key,
-                text: text.clone(),
-            });
-        }
-        if let Err(error) = Self::set_bindings(&mut self.hotkey_mgr, self.hwnd, &bindings) {
-            Self::set_bindings(&mut self.hotkey_mgr, self.hwnd, &self.shortcuts)?;
-            return Err(error);
-        }
-        self.shortcuts = bindings;
+    fn register_shortcut(&mut self, text: &str) -> Result<i32> {
+        // Avoid immediately reusing an ID that may still be in a queued WM_HOTKEY.
+        let Some(id) = (self.next_shortcut_id..=MAX_SHORTCUT_ID)
+            .chain(1..self.next_shortcut_id)
+            .find(|id| !self.shortcut_ids.contains(id))
+        else {
+            return Err(Error::ShortcutRegistration(
+                "No free Win32 shortcut IDs".into(),
+            ));
+        };
+        register_shortcut(self.hwnd, id, text)?;
+        self.shortcut_ids.insert(id);
+        self.next_shortcut_id = if id == MAX_SHORTCUT_ID { 1 } else { id + 1 };
+        Ok(id)
+    }
+
+    fn unregister_shortcut(&mut self, id: i32) -> Result<()> {
+        unregister_shortcut(self.hwnd, id)?;
+        self.shortcut_ids.remove(&id);
         Ok(())
     }
 

@@ -1,13 +1,11 @@
-use std::{collections::BTreeMap, mem::size_of};
+use std::mem::size_of;
 
 use windows::{
     core::HRESULT,
     Win32::{
         Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM},
         UI::{
-            Input::KeyboardAndMouse::{
-                RegisterHotKey, UnregisterHotKey, HOT_KEY_MODIFIERS, MOD_NOREPEAT, VIRTUAL_KEY,
-            },
+            Input::KeyboardAndMouse::{RegisterHotKey, UnregisterHotKey, MOD_NOREPEAT},
             Input::{
                 GetRawInputData, RegisterRawInputDevices, HRAWINPUT, RAWINPUT, RAWINPUTDEVICE,
                 RAWINPUTHEADER, RID_DEVICE_INFO_TYPE, RID_INPUT, RIM_TYPEHID, RIM_TYPEMOUSE,
@@ -28,6 +26,7 @@ use crate::{
     ce,
     errors::{Error, Result},
     input_control::{Key, MouseAction, MouseButton, MousePos, SysKeyboardEvent, SysMouseEvent},
+    keyboard::key_windows::shortcut_str_to_win,
 };
 
 const RAWINPUT_MOUSE_FLAGS_ABSOLUTE: u16 = 1;
@@ -226,77 +225,19 @@ pub fn check_mouse_event_is_absolute(ri: &RAWINPUT) -> Option<bool> {
     }
 }
 
-pub fn register_hot_key(
-    hwnd: HWND,
-    id: i32,
-    mut modifiers: HOT_KEY_MODIFIERS,
-    key: VIRTUAL_KEY,
-    repeat: bool,
-) -> Result<u32> {
-    let callback_lparam = ((key.0 as u32) << 16) | modifiers.0;
-    if !repeat {
-        modifiers |= MOD_NOREPEAT;
-    }
-    match unsafe { RegisterHotKey(hwnd, id, modifiers, key.0 as u32) } {
-        Ok(_) => Ok(callback_lparam),
+pub fn register_shortcut(hwnd: HWND, id: i32, text: &str) -> Result<()> {
+    let Some((modifiers, key)) = shortcut_str_to_win(text) else {
+        return Err(Error::InvalidShortcut(text.to_owned()));
+    };
+    match unsafe { RegisterHotKey(hwnd, id, modifiers | MOD_NOREPEAT, key.0 as u32) } {
+        Ok(_) => Ok(()),
         Err(e) => match e.code() {
-            HRESULT_SHORTCUT_CONFLICT => Err(Error::ShortcutConflict(None.into())),
+            HRESULT_SHORTCUT_CONFLICT => Err(Error::ShortcutConflict(text.into())),
             _ => Err(core_error(e, "RegisterHotKey")),
         },
     }
 }
 
-pub fn unregister_hot_key(hwnd: HWND, id: i32) -> Result<()> {
+pub fn unregister_shortcut(hwnd: HWND, id: i32) -> Result<()> {
     unsafe { ce!(UnregisterHotKey(hwnd, id)) }
-}
-
-pub struct HotKeyManager<T> {
-    id_to_lparam: BTreeMap<i32, u32>,
-    lparam_to_cb: BTreeMap<u32, T>,
-}
-
-impl<T> HotKeyManager<T> {
-    #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
-        Self {
-            id_to_lparam: BTreeMap::new(),
-            lparam_to_cb: BTreeMap::new(),
-        }
-    }
-
-    pub fn register(
-        &mut self,
-        hwnd: HWND,
-        id: i32,
-        modifiers: HOT_KEY_MODIFIERS,
-        key: VIRTUAL_KEY,
-        repeat: bool,
-        cb: T,
-    ) -> Result<()> {
-        self.unregister(hwnd, id)?;
-        let h = register_hot_key(hwnd, id, modifiers, key, repeat)?;
-        self.id_to_lparam.insert(id, h);
-        self.lparam_to_cb.insert(h, cb);
-        Ok(())
-    }
-
-    pub fn unregister(&mut self, hwnd: HWND, id: i32) -> Result<()> {
-        if let Some(h) = self.id_to_lparam.get(&id) {
-            unregister_hot_key(hwnd, id)?;
-            self.lparam_to_cb.remove(h);
-            self.id_to_lparam.remove(&id);
-        }
-        Ok(())
-    }
-
-    pub fn unregister_all(&mut self, hwnd: HWND) -> Result<()> {
-        while let Some(&id) = self.id_to_lparam.keys().next() {
-            self.unregister(hwnd, id)?;
-        }
-        Ok(())
-    }
-
-    pub fn get_callback(&mut self, lparam: u32) -> Option<&T> {
-        self.lparam_to_cb.get(&lparam)
-    }
 }

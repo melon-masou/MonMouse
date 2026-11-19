@@ -1,5 +1,6 @@
 pub mod effects;
 pub mod message_dispatch;
+pub mod shortcuts;
 pub mod platform;
 
 use self::{
@@ -12,13 +13,14 @@ use std::collections::HashMap;
 use log::debug;
 
 use crate::input_control::{
-    mouse_event_device_matcher::{MatchedMouseEvent, MouseEventDeviceMatcher},
+    mouse_event_device_matcher::MouseEventDeviceMatcher,
     relocator::{MouseDeviceTracker, MouseRelocator, RelocatorEffect},
-    DeviceId, MonitorAreasList, MousePos, Positioning,
+    DeviceId, MatchedMouseEvent, MonitorAreasList, MousePos, Positioning,
 };
 use crate::{
     device_type::DeviceType,
     message::{DeviceStatus, GenericDevice, Message, ShortcutID},
+    plugin::interceptor::InterceptorRegistry,
     setting::{DeviceSetting, DeviceSettingItem, ProcessorSettings},
 };
 
@@ -50,6 +52,7 @@ pub struct Processor {
     active_id: Option<usize>, // Index of MonMouse's current device
     relocator: MouseRelocator,
     mouse_event_device_matcher: MouseEventDeviceMatcher,
+    pub interceptors: InterceptorRegistry,
     settings: ProcessorSettings,
     headless: bool,
 }
@@ -65,6 +68,7 @@ impl Processor {
             mouse_event_device_matcher: MouseEventDeviceMatcher::new(
                 settings.merge_unassociated_events_ms,
             ),
+            interceptors: InterceptorRegistry::default(),
             settings,
             headless,
         }
@@ -73,6 +77,10 @@ impl Processor {
     fn active_id(&self) -> Option<&String> {
         self.active_id
             .and_then(|i| self.devices[i].info.id.as_ref())
+    }
+
+    pub fn monitors(&self) -> &MonitorAreasList {
+        self.relocator.monitors()
     }
 
     pub fn update_monitors(&mut self, monitors: MonitorAreasList, effects: &mut EffectsIntent) {
@@ -178,7 +186,7 @@ impl Processor {
         Self::collect_relocator_effects(effects, effect, tick);
     }
 
-    fn on_mouse_event(&mut self, event: MatchedMouseEvent, effects: &mut EffectsIntent) {
+    pub fn on_mouse_event(&mut self, event: MatchedMouseEvent, effects: &mut EffectsIntent) {
         self.active_id = self.indexs.get(&event.device).copied();
         let Some(device) = self.active_id.and_then(|i| self.devices.get_mut(i)) else {
             effects.refresh_devices = true;
@@ -197,18 +205,13 @@ impl Processor {
     }
 
     // Input consumption updates state and pending work without calling the platform.
-    pub fn on_mouse_position(
-        &mut self,
+    pub fn match_mouse_position(
+        &self,
         position: MousePos,
         tick: u64,
-        effects: &mut EffectsIntent,
-    ) {
-        if let Some(event) = self
-            .mouse_event_device_matcher
+    ) -> Option<MatchedMouseEvent> {
+        self.mouse_event_device_matcher
             .match_position(position, tick)
-        {
-            self.on_mouse_event(event, effects);
-        }
     }
 
     pub fn on_device_activity(

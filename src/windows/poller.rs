@@ -25,7 +25,7 @@ use super::{
 };
 use crate::{
     errors::Result,
-    message::{GenericDevice, Reactor},
+    message::Reactor,
     processor::{
         effects::EffectsIntent,
         message_dispatch::{DispatchResult, MessageDispatch},
@@ -79,18 +79,12 @@ impl Poller {
         }
     }
 
-    pub fn scan_devices(&mut self) -> Result<Vec<GenericDevice>> {
-        self.message_dispatch.scan_devices(
-            Self::processor_mut(&mut self.hook_input),
-            &mut self.platform,
-        )
-    }
-
     pub fn initialize_settings(&mut self, settings: &ProcessorSettings) -> Result<()> {
         self.message_dispatch.apply_settings(
             Self::processor_mut(&mut self.hook_input),
             &mut self.platform,
             settings,
+            false,
         )
     }
 
@@ -153,6 +147,7 @@ impl Poller {
         self.message_dispatch.resolve_effects(
             Self::processor_mut(&mut self.hook_input),
             &mut self.platform,
+            &self.reactor.bus.ui,
         );
         let effects = &mut self.message_dispatch.effects;
         let inactive_cursors_redraw = {
@@ -202,8 +197,7 @@ impl Poller {
     }
 
     pub fn terminate(&mut self) -> Result<()> {
-        self.unregister_callbacks()?;
-        Ok(())
+        self.unregister_callbacks()
     }
 
     fn window_event(&mut self, message: &MSG) {
@@ -212,6 +206,7 @@ impl Poller {
             processor,
             &mut self.platform,
             &mut self.message_dispatch.effects,
+            &self.message_dispatch.shortcuts,
             &mut self.raw_input_buf,
             message,
             &self.reactor.bus,
@@ -227,7 +222,6 @@ impl Poller {
 
         self.resolve_effects();
 
-        // pool messages
         let mut running = true;
         while let Some(message) = self.reactor.try_recv() {
             let result = self.message_dispatch.dispatch(
@@ -259,15 +253,19 @@ impl MouseLowLevelHook for Poller {
         if get_cur_tick().saturating_sub(tick) > STALE_MOUSE_EVENT_MS {
             return true;
         }
-        // WH_MOUSE_LL runs synchronously on its installing thread. Input processing
-        // here does not pump messages or call the platform.
+
+        // WH_MOUSE_LL runs on the installing thread. The context's SendInput
+        // backend queues input without dispatching another hook on this stack.
         HOOK_INPUT.with(|current| unsafe {
-            let hook_input = &mut *current.get();
-            hook_input
-                .processor
-                .on_mouse_position(event.position, tick, &mut hook_input.effects);
-        });
-        true
+            let hook = &mut *current.get();
+            if hook.processor.interceptors.blocks_mouse_event(&event) {
+                return false;
+            }
+            if let Some(matched) = hook.processor.match_mouse_position(event.position, tick) {
+                hook.processor.on_mouse_event(matched, &mut hook.effects);
+            }
+            true
+        })
     }
 }
 

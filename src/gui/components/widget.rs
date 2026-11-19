@@ -426,7 +426,9 @@ impl CommonPopup {
         }
 
         let mut popup_response: Option<PopupResponse<R>> = None;
-        if state.open {
+        if state.open && !response.enabled() {
+            ui.memory_mut(|mem| mem.data.remove::<CommonPopupState>(id));
+        } else if state.open {
             let pos = self.popup_pos(ui, &response.rect);
 
             let mut popup_action = PopupAction {
@@ -562,23 +564,31 @@ pub struct ShortcutChooseState {
 
 pub struct ShortcutChoosePopup {
     id_source: egui::Id,
+    width: f32,
 }
 
 impl ShortcutChoosePopup {
     pub fn new(id_source: impl std::hash::Hash) -> Self {
         Self {
             id_source: egui::Id::new(id_source),
+            width: FIELD_WIDTH,
         }
     }
 
-    pub fn button_ui(
+    pub fn with_width(mut self, width: f32) -> Self {
+        self.width = width;
+        self
+    }
+
+    fn button_ui(
         ui: &mut egui::Ui,
         action: &mut CommonPopupHeaderAction,
         text: &str,
+        width: f32,
     ) -> egui::Response {
         let resp = ui.add(
             manage_button(if text.is_empty() { "—" } else { text })
-                .min_size(egui::vec2(FIELD_WIDTH, MANAGE_BUTTON_HEIGHT)),
+                .min_size(egui::vec2(width, MANAGE_BUTTON_HEIGHT)),
         );
         if resp.clicked() {
             action.open_state = Some(true);
@@ -645,11 +655,12 @@ impl ShortcutChoosePopup {
     }
 
     pub fn ui(mut self, ui: &mut egui::Ui, buf: &mut String) -> ShortcutInputResponse {
+        let width = self.width;
         let resp = CommonPopup::new(self.id_source)
             .width(NUMBER_WIDTH + 2.0 * BUTTON_WIDTH + 2.0 * FORM_SPACING[1])
             .ui(
                 ui,
-                |ui, action| Self::button_ui(ui, action, buf.as_str()),
+                |ui, action| Self::button_ui(ui, action, buf.as_str(), width),
                 |ui, action| self.popup_ui(ui, action),
             );
         let mut r = ShortcutInputResponse {

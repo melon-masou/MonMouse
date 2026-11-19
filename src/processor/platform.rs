@@ -1,5 +1,5 @@
 use crate::input_control::{DeviceId, MonitorAreasList, MousePos};
-use crate::{device_type::DeviceType, errors::Result, setting::ShortcutSettings};
+use crate::{device_type::DeviceType, errors::Result};
 
 // A discovered source can lack a persistent ID while still producing input.
 pub struct DeviceInfo {
@@ -14,7 +14,8 @@ pub trait PlatformService {
     fn register_raw_devices(&mut self) -> Result<()>;
     fn scan_devices(&mut self) -> Result<Vec<DeviceInfo>>;
     fn get_monitors(&mut self) -> Result<MonitorAreasList>;
-    fn register_shortcuts(&mut self, shortcuts: &ShortcutSettings) -> Result<()>;
+    fn register_shortcut(&mut self, text: &str) -> Result<i32>;
+    fn unregister_shortcut(&mut self, id: i32) -> Result<()>;
     fn refresh_overlay_window(&mut self) -> Result<()>;
     fn draw_cursors(&mut self, positions: Vec<(MousePos, usize)>, show_marker: bool);
     fn set_cursor_pos(&mut self, position: MousePos) -> Result<()>;

@@ -3,6 +3,7 @@ pub mod errors;
 pub mod input_control;
 pub mod keyboard;
 pub mod message;
+pub mod plugin;
 pub mod processor;
 pub mod setting;
 pub mod utils;

@@ -1,8 +1,13 @@
 use crate::errors::Error;
+use monmouse_lib::plugin::PluginKey;
 use monmouse_macros::InputFields;
 use serde::{Deserialize, Serialize};
-use std::io;
-use std::path::PathBuf;
+use std::{
+    fs,
+    io::{self, Write},
+    path::{Path, PathBuf},
+};
+use tempfile::NamedTempFile;
 use validator::Validate;
 
 pub mod validation;
@@ -43,6 +48,45 @@ pub fn config_string(settings: &Settings) -> Result<String, Error> {
     }
 }
 
+fn plugin_settings_path(config_dir: Option<&Path>, key: PluginKey) -> Option<PathBuf> {
+    config_dir.map(|dir| dir.join(format!("monmouse-plugins-{key}.yaml")))
+}
+
+pub fn load_plugin_settings(
+    config_dir: Option<&Path>,
+    key: PluginKey,
+) -> Result<Option<String>, String> {
+    let Some(path) = plugin_settings_path(config_dir, key) else {
+        return Ok(None);
+    };
+    match fs::read_to_string(&path) {
+        Ok(yaml) => Ok(Some(yaml)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(format!("{}: {error}", path.display())),
+    }
+}
+
+pub fn save_plugin_settings(
+    config_dir: Option<&Path>,
+    key: PluginKey,
+    yaml: &str,
+) -> Result<(), String> {
+    let path =
+        plugin_settings_path(config_dir, key).ok_or("Plugin settings path is unavailable")?;
+    let dir = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let write = || -> io::Result<()> {
+        fs::create_dir_all(dir)?;
+        let mut temporary = NamedTempFile::new_in(dir)?;
+        temporary.write_all(yaml.as_bytes())?;
+        temporary.persist(&path)?;
+        Ok(())
+    };
+    write().map_err(|error| format!("{}: {error}", path.display()))
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize, Validate, InputFields)]
 pub struct Settings {
     #[serde(default)]
@@ -52,6 +96,9 @@ pub struct Settings {
     #[serde(default)]
     #[validate(nested)]
     pub processor: ProcessorSettings,
+
+    #[serde(default, skip_serializing_if = "std::collections::BTreeSet::is_empty")]
+    pub enabled_plugins: std::collections::BTreeSet<String>,
 
     // Unknown configuration sections remain opaque.
     #[serde(flatten)]

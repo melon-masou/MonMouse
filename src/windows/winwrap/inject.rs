@@ -8,11 +8,17 @@ use windows::Win32::UI::{
     },
 };
 
+use monmouse_lib::input::{InputInjection, Key, MouseAction, MouseButton, MousePos};
+
 use super::get_last_error;
-use crate::{
-    errors::{Error, Result},
-    input_control::{Key, MouseAction, MouseButton, MousePos},
-};
+use crate::errors::{Error, Result};
+
+pub fn inject_input(input: InputInjection, extra_info: usize) -> Result<()> {
+    match input {
+        InputInjection::Mouse { position, action } => inject_mouse(position, action, extra_info),
+        InputInjection::Keyboard { key, down } => inject_keyboard(key, down, extra_info),
+    }
+}
 
 fn send(input: INPUT) -> Result<()> {
     if unsafe { SendInput(&[input], size_of::<INPUT>() as i32) } == 1 {
@@ -22,7 +28,7 @@ fn send(input: INPUT) -> Result<()> {
     }
 }
 
-pub fn inject_keyboard(key: Key, down: bool, extra_info: usize) -> Result<()> {
+fn inject_keyboard(key: Key, down: bool, extra_info: usize) -> Result<()> {
     let use_scan = key.scan != 0 && key.virtual_key != VK_PAUSE.0;
     if key.scan > 0xff || key.virtual_key > 0xfe || (!use_scan && key.virtual_key == 0) {
         return Err(Error::InvalidParam("key".into(), format!("{key:?}")));
@@ -77,11 +83,7 @@ fn absolute_coordinate(pixel: i32, origin: i32, size: i32) -> i32 {
     ((offset * 65536 + 32768) / i64::from(size)).clamp(0, 65535) as i32
 }
 
-pub fn inject_mouse(
-    position: Option<MousePos>,
-    action: MouseAction,
-    extra_info: usize,
-) -> Result<()> {
+fn inject_mouse(position: Option<MousePos>, action: MouseAction, extra_info: usize) -> Result<()> {
     let (flags, data) = match action {
         MouseAction::Move if position.is_none() => {
             return Err(Error::InvalidParam(

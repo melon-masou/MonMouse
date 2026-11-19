@@ -2,6 +2,8 @@ pub mod about_panel;
 pub mod config_panel;
 pub mod devices_panel;
 pub mod layout;
+pub mod plugin_ui;
+pub mod plugins_panel;
 pub mod status_bar;
 pub mod validatable_input;
 pub mod widget;

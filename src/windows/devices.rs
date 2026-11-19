@@ -193,6 +193,14 @@ pub fn collect_all_raw_devices() -> Result<Vec<WinDevice>> {
         .collect())
 }
 
+pub fn list_pointer_devices() -> Result<Vec<GenericDevice>> {
+    Ok(collect_all_raw_devices()?
+        .iter()
+        .filter(|device| is_valid_win_device(device))
+        .map(win_device_to_generic)
+        .collect())
+}
+
 pub fn is_valid_win_device(d: &WinDevice) -> bool {
     d.id.is_some()
 }

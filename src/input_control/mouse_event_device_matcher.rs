@@ -1,12 +1,4 @@
-use super::{DeviceId, MousePos, Positioning};
-
-#[derive(Clone, Copy, Debug)]
-pub struct MatchedMouseEvent {
-    pub device: DeviceId,
-    pub position: MousePos,
-    pub positioning: Positioning,
-    pub tick: u64,
-}
+use super::{DeviceId, MatchedMouseEvent, MousePos, Positioning};
 
 #[derive(Clone, Copy)]
 struct DeviceActivity {

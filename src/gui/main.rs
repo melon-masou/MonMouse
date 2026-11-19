@@ -15,7 +15,6 @@ mod tray;
 use std::collections::BTreeMap;
 use std::ops::Deref;
 use std::panic::PanicHookInfo;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::{cell::RefCell, panic, process, rc::Rc, thread};
 
@@ -23,12 +22,10 @@ use app::App;
 use eframe::egui::{self, FontData};
 use log::info;
 use monmouse::message::UINotify;
-use monmouse::setting::{read_config, Settings, CONFIG_FILE_NAME};
+use monmouse::plugin::{backend::ReactorContextHost, manager::PluginEntry, PluginRouter};
+use monmouse::setting::{read_config, CONFIG_FILE_NAME};
 use monmouse::SingleProcess;
-use monmouse::{
-    errors::Error,
-    message::{setup_reactors, Reactor},
-};
+use monmouse::{errors::Error, message::setup_reactors};
 use styles::{gscale, Theme};
 use tray::Tray;
 
@@ -69,8 +66,30 @@ fn main() {
     let reactors = setup_reactors(Some(Arc::new(egui_notify.clone())));
     let tray_notify = egui_notify.clone();
 
+    let mut app = App::new(reactors.ui).load_config(config, config_path.clone());
+    match monmouse::plugin::loader::load() {
+        Ok(plugins) => {
+            let config_dir = config_path.as_deref().and_then(std::path::Path::parent);
+            app.plugins.entries = plugins
+                .into_iter()
+                .map(|define| {
+                    let context = ReactorContextHost {
+                        router: PluginRouter {
+                            key: define.key,
+                            bus: reactors.bus.clone(),
+                            reactors: Vec::new(),
+                            has_interceptor: false,
+                        },
+                        inject_input: monmouse::windows::winwrap::inject::inject_input,
+                    };
+                    PluginEntry::new(define, config_dir, context)
+                })
+                .collect();
+        }
+        Err(error) => app.result_error_alert(error.to_string()),
+    }
     let mouse_control_thread = thread::spawn(move || {
-        let poller = monmouse::Eventloop::new(false, reactors.mouse_control);
+        let poller = monmouse::Eventloop::new(false, reactors.control);
         let tray = Tray::new(reactors.bus, tray_notify);
         match mouse_control_spawn(poller, tray) {
             Ok(_) => info!("mouse control eventloop exited normally"),
@@ -79,7 +98,7 @@ fn main() {
     });
 
     // winit wrapped by eframe, requires UI eventloop running inside main thread
-    let result = egui_eventloop(reactors.ui, config, config_path, egui_notify);
+    let result = egui_eventloop(app, egui_notify);
     if let Err(e) = result {
         panic!("egui eventloop exited for: {}", e);
     }
@@ -100,13 +119,7 @@ fn mouse_control_spawn(mut poller: monmouse::Eventloop, tray: Tray) -> Result<()
     Ok(())
 }
 
-fn egui_eventloop(
-    ui_reactor: Reactor,
-    config: Result<Settings, Error>,
-    config_path: Option<PathBuf>,
-    egui_notify: EguiNotify,
-) -> Result<(), eframe::Error> {
-    let mut app = App::new(ui_reactor).load_config(config, config_path);
+fn egui_eventloop(mut app: App, egui_notify: EguiNotify) -> Result<(), eframe::Error> {
     app.trigger_scan_devices();
     app.apply_startup_settings();
 
@@ -180,6 +193,7 @@ enum PanelTag {
     #[default]
     Devices,
     Config,
+    Plugins,
     About,
 }
 

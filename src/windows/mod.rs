@@ -1,13 +1,15 @@
 pub mod constants;
 mod devices;
 pub mod poller;
-mod service;
+pub mod service;
 pub mod winwrap;
 mod wm_dispatch;
 
 use crate::errors::Error;
 use windows::core::{w, HSTRING};
 use windows::Win32::Foundation::HANDLE;
+
+pub use self::devices::list_pointer_devices;
 
 use self::winwrap::{close_handle, create_mutex, release_mutex, try_lock_mutex};
 
@@ -31,7 +33,7 @@ pub struct SingleProcess {
 
 impl SingleProcess {
     pub fn create() -> Result<Self, Error> {
-        Self::new("Global\\MonmouseSingleProcessMutex")
+        Self::new("Local\\MonmouseSingleProcessMutex")
     }
 
     fn new(mutex_name: &str) -> Result<Self, Error> {

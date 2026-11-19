@@ -7,10 +7,13 @@ use std::{
     time::Duration,
 };
 
+use monmouse_lib::plugin::{PluginKey, PluginMessage};
+
 use crate::{
     device_type::DeviceType,
     errors::Error,
     input_control::Positioning,
+    plugin::{interceptor::RegisteredInterceptor, PluginSubscriber},
     setting::{DeviceSettingItem, ProcessorSettings},
 };
 
@@ -120,6 +123,30 @@ pub enum Message {
     InspectDevicesStatus(RoundtripData<(), Vec<(String, DeviceStatus)>>),
     ApplyProcessorSetting(RoundtripData<ApplyProcessorSettingsData, ()>),
     ApplyOneDeviceSetting(SendData<DeviceSettingItem>),
+    SettingsSaved,
+
+    // Plugin Messages
+    SetPluginInterceptor {
+        key: PluginKey,
+        interceptor: Option<Box<RegisteredInterceptor>>,
+    },
+    SetPluginSubscribers {
+        key: PluginKey,
+        subscribers: Option<Vec<PluginSubscriber>>,
+    },
+    RegisterPluginShortcuts {
+        key: PluginKey,
+        bindings: Vec<(String, String)>,
+        restore_on_error: bool,
+    },
+    PluginMessage {
+        key: PluginKey,
+        message: PluginMessage,
+    },
+    PluginError {
+        text: String,
+        alert: bool,
+    },
 }
 
 #[derive(Debug)]

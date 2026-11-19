@@ -8,7 +8,7 @@ default-run = "monmouse"
 build = "build.rs"
 
 [workspace]
-members = ["crates/monmouse-macros"]
+members = ["crates/monmouse-macros", "crates/monmouse-lib"]
 
 [[bin]]
 name = "monmouse-cli"
@@ -19,6 +19,7 @@ name = "monmouse"
 path = "src/gui/main.rs"
 
 [dependencies]
+monmouse-lib = { path = "crates/monmouse-lib" }
 monmouse-macros = { path = "crates/monmouse-macros" }
 thiserror = "1.0"
 log = "0.4"
@@ -34,6 +35,10 @@ serde_yaml = { package = "yaml_serde", version = "0.10" }
 keyboard-types = "0.7.0"
 rust-i18n = "4"
 fontdb = "0.23.0"
+tempfile = "3"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+libloading = "0.8.9"
 
 [target.'cfg(target_os = "windows")'.dependencies.windows]
 version = "0.58"
