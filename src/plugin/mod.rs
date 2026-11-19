@@ -5,13 +5,13 @@ pub mod loader;
 pub mod manager;
 
 use std::{
-    sync::mpsc::{channel, Sender},
+    sync::mpsc::{channel, Receiver, Sender},
     thread::{self, JoinHandle},
 };
 
 use log::error;
 use monmouse_lib::plugin::{
-    EventKind, PluginKey, PluginMessage, PluginTarget, Reactor, ReactorDefine,
+    EventKind, Inbox, InboxError, PluginKey, PluginMessage, PluginTarget, ReactorTask,
 };
 
 use crate::message::{Message, MessageBus, MessageSender};
@@ -72,6 +72,21 @@ impl PluginSubscriber {
     }
 }
 
+struct HostInbox(Receiver<PluginMessage>);
+
+impl Inbox for HostInbox {
+    fn recv(&self) -> Option<PluginMessage> {
+        self.0.recv().ok()
+    }
+    fn recv_timeout(&self, timeout: std::time::Duration) -> Result<PluginMessage, InboxError> {
+        use std::sync::mpsc::RecvTimeoutError;
+        self.0.recv_timeout(timeout).map_err(|error| match error {
+            RecvTimeoutError::Timeout => InboxError::Timeout,
+            RecvTimeoutError::Disconnected => InboxError::Disconnected,
+        })
+    }
+}
+
 pub struct PluginRuntime {
     workers: Vec<JoinHandle<()>>,
     key: PluginKey,
@@ -80,16 +95,16 @@ pub struct PluginRuntime {
 
 impl PluginRuntime {
     pub fn start(
-        tasks: Vec<ReactorDefine>,
+        tasks: Vec<Box<dyn ReactorTask>>,
         context: ReactorContextHost,
-        inboxes: Vec<Reactor>,
+        inboxes: Vec<Receiver<PluginMessage>>,
     ) -> Self {
         let workers = tasks
             .into_iter()
             .zip(inboxes)
             .map(|(task, reactor)| {
                 let context = context.clone();
-                thread::spawn(move || (task.run)(reactor, &context))
+                thread::spawn(move || task.run(&HostInbox(reactor), &context))
             })
             .collect();
         Self {
@@ -99,13 +114,8 @@ impl PluginRuntime {
         }
     }
 
-    pub fn channels(count: usize) -> (Vec<Sender<PluginMessage>>, Vec<Reactor>) {
-        (0..count)
-            .map(|_| {
-                let (sender, inbox) = channel();
-                (sender, Reactor { inbox })
-            })
-            .unzip()
+    pub fn channels(count: usize) -> (Vec<Sender<PluginMessage>>, Vec<Receiver<PluginMessage>>) {
+        (0..count).map(|_| channel()).unzip()
     }
 }
 

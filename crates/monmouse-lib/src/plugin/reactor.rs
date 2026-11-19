@@ -1,6 +1,6 @@
 use super::CustomMessage;
 use crate::input::MonitorAreasList;
-use std::{any::Any, fmt, sync::mpsc::Receiver};
+use std::{any::Any, fmt, time::Duration};
 
 impl dyn CustomMessage {
     pub fn downcast_ref<T: CustomMessage>(&self) -> Option<&T> {
@@ -46,6 +46,13 @@ impl PluginMessage {
     }
 }
 
-pub struct Reactor {
-    pub inbox: Receiver<PluginMessage>,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InboxError {
+    Timeout,
+    Disconnected,
+}
+
+pub trait Inbox {
+    fn recv(&self) -> Option<PluginMessage>;
+    fn recv_timeout(&self, timeout: Duration) -> Result<PluginMessage, InboxError>;
 }

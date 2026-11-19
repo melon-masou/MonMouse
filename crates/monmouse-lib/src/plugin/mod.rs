@@ -1,6 +1,5 @@
-use std::any::Any;
-
 use crate::input::SysMouseEvent;
+use std::any::Any;
 
 mod context;
 pub use context::*;
@@ -12,11 +11,12 @@ mod ui_settings;
 pub use ui_settings::SettingsPage;
 
 // Plugins should implement this entry point to return their definition.
-// MonMouse looks up this exact symbol in the DLL and call it to register plugins.
+// MonMouse looks up this exact symbol in the DLL and calls it to register plugins.
 //
 // #[no_mangle]
-// pub fn register_plugin_v1() -> PluginDefine
+// pub fn register_monmouse_plugin_v1() -> PluginDefine
 pub type RegisterPlugin = fn() -> PluginDefine;
+pub const REGISTER_PLUGIN_SYMBOL: &[u8] = b"register_monmouse_plugin_v1\0";
 
 pub type PluginKey = &'static str;
 
@@ -36,21 +36,21 @@ pub struct PluginDefine {
 }
 
 // The task can capture startup settings before it moves to the reactor thread.
-pub type ReactorTask = dyn FnOnce(Reactor, &dyn ReactorContext) + Send;
-
 // MonMouse starts each reactor on its own thread when the plugin is enabled.
-pub struct ReactorDefine {
-    // Return when the inbox receives `PluginMessage::Stop` so the host can join the thread.
-    pub run: Box<ReactorTask>,
+pub trait ReactorTask: Send {
     // Selects which host events are sent to the reactor's inbox.
-    pub subscriptions: &'static [EventKind],
+    fn subscriptions(&self) -> &'static [EventKind] {
+        &[]
+    }
+    // Return when the inbox receives `PluginMessage::Stop` so the host can join the thread.
+    fn run(self: Box<Self>, inbox: &dyn Inbox, ctx: &dyn ReactorContext);
 }
 
 // Implement this trait on the object that owns the plugin's main-thread state.
 pub trait PluginMain {
     // Prepare reactor tasks on the UI thread when the plugin is enabled.
     // The task index is used by `PluginTarget::Reactor`.
-    fn init(&mut self, _ctx: &dyn MainContext) -> Vec<ReactorDefine> {
+    fn init(&mut self, _ctx: &dyn MainContext) -> Vec<Box<dyn ReactorTask>> {
         Vec::new()
     }
 
@@ -79,6 +79,7 @@ pub type InterceptorMessageHandler = dyn FnMut(PluginMessage, &dyn ReactorContex
 pub type MouseEventFilter = dyn FnMut(&SysMouseEvent, &dyn ReactorContext) -> bool + Send;
 
 // Selects the callbacks the plugin runs on the input thread.
+// Callbacks must not pump Windows messages.
 #[derive(Default)]
 pub struct PluginInterceptor {
     // Handles messages addressed to this interceptor outside the native input callback.

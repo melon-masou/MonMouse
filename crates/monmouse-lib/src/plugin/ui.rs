@@ -1,6 +1,7 @@
 use std::ops::RangeInclusive;
 
 pub enum Layout<'a> {
+    Scope(&'a str),
     Toolbar,
     Row,
     Card,
@@ -107,6 +108,10 @@ impl<'a> PluginUi<'a> {
 
     pub fn request_discard(&mut self) {
         self.backend.request_discard();
+    }
+
+    pub fn scoped(&mut self, key: &str, mut body: impl FnMut(&mut PluginUi<'_>)) {
+        self.backend.layout(Layout::Scope(key), &mut body);
     }
 
     pub fn toolbar(&mut self, mut body: impl FnMut(&mut PluginUi<'_>)) {

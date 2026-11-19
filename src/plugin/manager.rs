@@ -95,9 +95,10 @@ impl PluginEntry {
             });
         }
         for (task, sender) in tasks.iter().zip(&reactors) {
-            if !task.subscriptions.is_empty() {
+            let events = task.subscriptions();
+            if !events.is_empty() {
                 subscribers.push(PluginSubscriber {
-                    events: task.subscriptions,
+                    events,
                     reactor: Some(sender.clone()),
                 });
             }

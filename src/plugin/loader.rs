@@ -6,7 +6,7 @@ use std::{
 use libloading::os::windows::{
     Library, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR, LOAD_LIBRARY_SEARCH_SYSTEM32,
 };
-use monmouse_lib::plugin::{PluginDefine, RegisterPlugin};
+use monmouse_lib::plugin::{PluginDefine, RegisterPlugin, REGISTER_PLUGIN_SYMBOL};
 
 fn plugin_paths() -> io::Result<Vec<PathBuf>> {
     let executable = std::env::current_exe()?;
@@ -72,6 +72,6 @@ fn load_plugin(path: &Path) -> Result<(PluginDefine, Library), libloading::Error
             LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32,
         )?
     };
-    let register = unsafe { *dll.get::<RegisterPlugin>(b"register_plugin_v1\0")? };
+    let register = unsafe { *dll.get::<RegisterPlugin>(REGISTER_PLUGIN_SYMBOL)? };
     Ok((register(), dll))
 }

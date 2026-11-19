@@ -49,6 +49,10 @@ impl UiBackend for EguiPluginUiBackend<'_, '_> {
         let context = &mut *self.context;
         let ui = &mut *self.ui;
         match layout {
+            Layout::Scope(key) => {
+                let id = ui.make_persistent_id(key);
+                ui.scope_builder(egui::UiBuilder::new().id(id), |ui| draw(ui, context, body));
+            }
             Layout::Toolbar => {
                 ui.horizontal(|ui| draw(ui, context, body));
                 ui.separator();
