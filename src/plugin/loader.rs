@@ -1,4 +1,5 @@
 use std::{
+    ffi::CStr,
     fs, io,
     path::{Path, PathBuf},
 };
@@ -6,7 +7,9 @@ use std::{
 use libloading::os::windows::{
     Library, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR, LOAD_LIBRARY_SEARCH_SYSTEM32,
 };
-use monmouse_lib::plugin::{PluginDefine, RegisterPlugin, REGISTER_PLUGIN_SYMBOL};
+use monmouse_lib::plugin::{
+    PluginDefine, ReadlibVersion, RegisterPlugin, LIB_VERSION_SYMBOL, REGISTER_PLUGIN_SYMBOL,
+};
 
 fn plugin_paths() -> io::Result<Vec<PathBuf>> {
     let executable = std::env::current_exe()?;
@@ -73,5 +76,14 @@ fn load_plugin(path: &Path) -> Result<(PluginDefine, Library), libloading::Error
         )?
     };
     let register = unsafe { *dll.get::<RegisterPlugin>(REGISTER_PLUGIN_SYMBOL)? };
+    if let Ok(version) = unsafe { dll.get::<ReadlibVersion>(LIB_VERSION_SYMBOL) } {
+        // The SDK export returns a NUL-terminated string in the loaded DLL.
+        let version = unsafe { CStr::from_ptr(version()) };
+        log::info!(
+            "{} uses monmouse-lib {}",
+            path.display(),
+            version.to_string_lossy()
+        );
+    }
     Ok((register(), dll))
 }

@@ -2332,7 +2332,7 @@ dependencies = [
 
 [[package]]
 name = "monmouse-lib"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "serde",
  "yaml_serde",
@@ -2340,7 +2340,7 @@ dependencies = [
 
 [[package]]
 name = "monmouse-macros"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "proc-macro2",
  "quote",

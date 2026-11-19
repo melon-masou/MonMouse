@@ -18,6 +18,14 @@ pub use ui_settings::SettingsPage;
 pub type RegisterPlugin = fn() -> PluginDefine;
 pub const REGISTER_PLUGIN_SYMBOL: &[u8] = b"register_monmouse_plugin_v1\0";
 
+// Exported by monmouse-lib itself so each plugin reports the lib version used to build its DLL.
+pub const LIB_VERSION_SYMBOL: &[u8] = b"monmouse_plugin_lib_version\0";
+pub type ReadlibVersion = unsafe extern "C" fn() -> *const std::ffi::c_char;
+#[no_mangle]
+pub extern "C" fn monmouse_plugin_lib_version() -> *const std::ffi::c_char {
+    concat!(env!("CARGO_PKG_VERSION"), "\0").as_ptr().cast()
+}
+
 pub type PluginKey = &'static str;
 
 // MonMouse reads this definition when it loads the DLL, before enabling the plugin.

@@ -1,6 +1,6 @@
 [package]
 name = "monmouse"
-version = "0.2.1"
+version.workspace = true
 edition = "2021"
 license = "MIT"
 authors = ["melon.masou <melon.masou@outlook.com>"]
@@ -9,6 +9,9 @@ build = "build.rs"
 
 [workspace]
 members = ["crates/monmouse-macros", "crates/monmouse-lib"]
+
+[workspace.package]
+version = "0.2.1"
 
 [[bin]]
 name = "monmouse-cli"
