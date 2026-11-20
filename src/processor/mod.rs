@@ -1,7 +1,7 @@
 pub mod effects;
 pub mod message_dispatch;
-pub mod shortcuts;
 pub mod platform;
+pub mod shortcuts;
 
 use self::{
     effects::{CursorDrawing, EffectsIntent},
@@ -25,6 +25,7 @@ use crate::{
 };
 
 const MOUSE_EVENT_ACTIVE_LAST_FOR_MS: u64 = 100;
+const INJECTED_CURSOR_IDLE_MS: u64 = 5_000;
 
 struct Device {
     info: DeviceInfo,
@@ -52,6 +53,7 @@ pub struct Processor {
     active_id: Option<usize>, // Index of MonMouse's current device
     relocator: MouseRelocator,
     mouse_event_device_matcher: MouseEventDeviceMatcher,
+    injected_cursor: Option<(MousePos, u64)>,
     pub interceptors: InterceptorRegistry,
     settings: ProcessorSettings,
     headless: bool,
@@ -68,6 +70,7 @@ impl Processor {
             mouse_event_device_matcher: MouseEventDeviceMatcher::new(
                 settings.merge_unassociated_events_ms,
             ),
+            injected_cursor: None,
             interceptors: InterceptorRegistry::default(),
             settings,
             headless,
@@ -84,16 +87,19 @@ impl Processor {
     }
 
     pub fn update_monitors(&mut self, monitors: MonitorAreasList, effects: &mut EffectsIntent) {
+        if self.monitors() != &monitors {
+            self.injected_cursor = None;
+        }
         self.relocator.update_monitors(monitors);
         self.devices
             .iter_mut()
             .for_each(|device| device.ctrl.reset());
         // The pending target was calculated against the previous monitor layout.
         effects.relocation = None;
-        effects.redraw_inactive_cursors = true;
+        effects.redraw_cursors = true;
     }
 
-    fn inactive_positions(&self) -> Vec<(MousePos, usize)> {
+    fn inactive_positions(&self) -> Vec<MousePos> {
         self.devices
             .iter()
             .enumerate()
@@ -104,7 +110,7 @@ impl Processor {
                 if d.info.device_type.is_dummy() || !d.ctrl.setting.switch {
                     return None;
                 }
-                d.ctrl.get_last_pos().map(|(_, pos, _)| (pos, i))
+                d.ctrl.get_last_pos().map(|(_, pos, _)| pos)
             })
             .collect()
     }
@@ -158,6 +164,9 @@ impl Processor {
         let settings = &self.settings;
         self.mouse_event_device_matcher
             .set_merge_unassociated_ms(settings.merge_unassociated_events_ms);
+        if !settings.draw_injected_cursor {
+            self.injected_cursor = None;
+        }
         let mut applied = 0;
         for item in &settings.devices {
             if let Some(device) = self
@@ -197,7 +206,7 @@ impl Processor {
     }
 
     fn collect_relocator_effects(effects: &mut EffectsIntent, effect: RelocatorEffect, tick: u64) {
-        effects.redraw_inactive_cursors |= effect.switch;
+        effects.redraw_cursors |= effect.switch;
         effects.refresh_monitors |= effect.refresh_monitors;
         if let Some(position) = effect.relocate_pos {
             effects.relocate(position, tick);
@@ -205,11 +214,7 @@ impl Processor {
     }
 
     // Input consumption updates state and pending work without calling the platform.
-    pub fn match_mouse_position(
-        &self,
-        position: MousePos,
-        tick: u64,
-    ) -> Option<MatchedMouseEvent> {
+    pub fn match_mouse_position(&self, position: MousePos, tick: u64) -> Option<MatchedMouseEvent> {
         self.mouse_event_device_matcher
             .match_position(position, tick)
     }
@@ -297,14 +302,40 @@ impl Processor {
         self.apply_processor_settings(Some(settings));
     }
 
-    pub fn inactive_cursor_drawing(&self) -> CursorDrawing {
+    pub fn observe_injected_cursor(
+        &mut self,
+        position: MousePos,
+        tick: u64,
+        effects: &mut EffectsIntent,
+    ) {
+        if self.settings.draw_injected_cursor {
+            if !effects.redraw_cursors {
+                effects.redraw_cursors |=
+                    self.injected_cursor.map(|(prev, _)| prev) != Some(position);
+            }
+            self.injected_cursor = Some((position, tick));
+        }
+    }
+
+    pub fn expire_injected_cursor(&mut self, now: u64, effects: &mut EffectsIntent) {
+        if self
+            .injected_cursor
+            .is_some_and(|(_, tick)| now.saturating_sub(tick) >= INJECTED_CURSOR_IDLE_MS)
+        {
+            self.injected_cursor = None;
+            effects.redraw_cursors = true;
+        }
+    }
+
+    pub fn cursor_drawing(&self) -> CursorDrawing {
         CursorDrawing {
-            positions: if self.settings.show_inactive_cursors {
+            inactive: if self.settings.show_inactive_cursors {
                 self.inactive_positions()
             } else {
                 Vec::new()
             },
-            show_markers: self.settings.show_inactive_cursor_markers,
+            show_inactive_markers: self.settings.show_inactive_cursor_markers,
+            injected: self.injected_cursor.map(|(position, _)| position),
         }
     }
 

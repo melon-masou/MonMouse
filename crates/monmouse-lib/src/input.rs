@@ -78,6 +78,9 @@ pub enum MouseAction {
     Wheel { delta: i16, horizontal: bool },
 }
 
+// Tag for input injected by MonMouse, carried back through the system hooks.
+pub const MONMOUSE_INPUT_TAG: usize = 0x4D4D_5052;
+
 #[derive(Clone, Copy, Debug)]
 pub enum InputInjection {
     Mouse {

@@ -48,6 +48,7 @@ config:
     merge_unassociated_events_ms: 未关联事件合并窗口 (ms)
     show_inactive_cursors: 显示启用位置恢复的非活动光标
     show_inactive_cursor_markers: 在非活动光标旁显示标记
+    draw_injected_cursor: 为注入鼠标绘制额外光标
   tip:
     locate_config_file: 在资源管理器中打开配置文件所在位置。
     inspect_device_interval_ms: 窗口打开时，界面刷新鼠标活动状态的频率。

@@ -58,6 +58,12 @@ impl ConfigPanel {
         )
         .with_tip(t!("config.tip.show_inactive_cursor_markers"))
         .show(ui, |ui, value| ui.checkbox(value, "").changed());
+
+        InputItem::new(
+            t!("config.desc.draw_injected_cursor"),
+            cache.field(|o| o.processor.draw_injected_cursor_field()),
+        )
+        .show(ui, |ui, value| ui.checkbox(value, "").changed());
     }
 
     pub fn advanced_config(ui: &mut egui::Ui, cache: &mut InputsCache<Settings>) {

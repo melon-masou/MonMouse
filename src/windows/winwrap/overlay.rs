@@ -3,13 +3,14 @@ use std::collections::HashMap;
 use super::{core_error, hstring_from_buffer};
 use crate::ce;
 use crate::errors::Result;
+use crate::input_control::MousePos;
 
 use windows::core::{w, Owned, HSTRING};
 use windows::Win32::Foundation::{COLORREF, POINT};
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, CreateSolidBrush, DeleteObject, EndPaint, FillRect, GetObjectW, InvalidateRect,
-    MonitorFromPoint, UpdateWindow, BITMAP, HBRUSH, HMONITOR, MONITOR_DEFAULTTONEAREST,
-    PAINTSTRUCT,
+    BeginPaint, CreateSolidBrush, DeleteObject, Ellipse, EndPaint, FillRect, GetObjectW,
+    InvalidateRect, MonitorFromPoint, Polygon, RectVisible, UpdateWindow, BITMAP, HBRUSH, HMONITOR,
+    MONITOR_DEFAULTTONEAREST, PAINTSTRUCT,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Registry::{
@@ -37,12 +38,21 @@ use windows::Win32::{
 const TRANSPARENT_COLOR: COLORREF = COLORREF(0x00090807);
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct CursorPos(pub i32, pub i32, pub usize); // x, y, id
+pub enum CursorMarker {
+    None,
+    Inactive,
+    Injected,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct CursorPos {
+    pub position: MousePos,
+    pub marker: CursorMarker,
+}
 
 struct OverlayContext {
     transparent_brush: HBRUSH,
     cursors_list: Vec<CursorPos>,
-    show_marker: bool,
     arrow_file: Option<HSTRING>,
     cursor_images: HashMap<i32, Owned<HCURSOR>>,
 }
@@ -52,7 +62,6 @@ impl OverlayContext {
         OverlayContext {
             transparent_brush: unsafe { CreateSolidBrush(TRANSPARENT_COLOR) },
             cursors_list: vec![],
-            show_marker: false,
             arrow_file: system_arrow_file(),
             cursor_images: HashMap::new(),
         }
@@ -68,8 +77,8 @@ impl Drop for OverlayContext {
 }
 
 fn cursor_dirty_rect(c: &CursorPos, vx: i32, vy: i32) -> RECT {
-    let x = c.0 - vx;
-    let y = c.1 - vy;
+    let x = c.position.x - vx;
+    let y = c.position.y - vy;
     const PAD: i32 = 128;
     RECT {
         left: x - PAD,
@@ -81,14 +90,14 @@ fn cursor_dirty_rect(c: &CursorPos, vx: i32, vy: i32) -> RECT {
 
 // Should be called in same thread with overlay window eventloop, as
 // a lock-free context is used to save cursors list for rendering.
-pub fn trigger_draw_cursors(hwnd: HWND, new_list: Vec<CursorPos>, show_marker: bool) {
+pub fn trigger_draw_cursors(hwnd: HWND, new_list: Vec<CursorPos>) {
     let ctx = unsafe {
         &mut *match get_overlay_context(hwnd) {
             Some(v) => v,
             None => return,
         }
     };
-    if ctx.cursors_list == new_list && ctx.show_marker == show_marker {
+    if ctx.cursors_list == new_list {
         return;
     }
     let show = !new_list.is_empty() && ctx.cursors_list.is_empty();
@@ -96,13 +105,19 @@ pub fn trigger_draw_cursors(hwnd: HWND, new_list: Vec<CursorPos>, show_marker: b
     unsafe {
         let vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
         let vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
-        for c in ctx.cursors_list.iter().chain(new_list.iter()) {
-            let dirty = cursor_dirty_rect(c, vx, vy);
-            let _ = InvalidateRect(hwnd, Some(&dirty), false);
+        for index in 0..ctx.cursors_list.len().max(new_list.len()) {
+            let old = ctx.cursors_list.get(index);
+            let new = new_list.get(index);
+            if old == new {
+                continue;
+            }
+            for cursor in old.into_iter().chain(new) {
+                let dirty = cursor_dirty_rect(cursor, vx, vy);
+                let _ = InvalidateRect(hwnd, Some(&dirty), false);
+            }
         }
     }
     ctx.cursors_list = new_list;
-    ctx.show_marker = show_marker;
     if show {
         show_overlay(hwnd);
     }
@@ -269,12 +284,34 @@ fn draw_cursors(ctx: &mut OverlayContext, hdc: HDC) -> Result<()> {
     let vy = unsafe { GetSystemMetrics(SM_YVIRTUALSCREEN) };
 
     for c in &ctx.cursors_list {
-        let x = c.0 - vx;
-        let y = c.1 - vy;
+        let position = c.position;
+        let x = position.x - vx;
+        let y = position.y - vy;
 
-        let hmon = unsafe { MonitorFromPoint(POINT { x: c.0, y: c.1 }, MONITOR_DEFAULTTONEAREST) };
+        let hmon = unsafe {
+            MonitorFromPoint(
+                POINT {
+                    x: position.x,
+                    y: position.y,
+                },
+                MONITOR_DEFAULTTONEAREST,
+            )
+        };
         let dpi = get_monitor_dpi(hmon)?;
         let size = unsafe { GetSystemMetricsForDpi(SM_CXCURSOR, dpi) }; // scaling
+        let bounds = RECT {
+            left: if c.marker == CursorMarker::Inactive {
+                x - size / 4 - size / 8
+            } else {
+                x
+            },
+            top: y,
+            right: x + size,
+            bottom: y + size,
+        };
+        if !unsafe { RectVisible(hdc, &bounds) }.as_bool() {
+            continue;
+        }
         let icon = load_system_cursor_for_size(size, &mut ctx.arrow_file, &mut ctx.cursor_images)?;
 
         unsafe {
@@ -283,18 +320,39 @@ fn draw_cursors(ctx: &mut OverlayContext, hdc: HDC) -> Result<()> {
                 hdc, x, y, icon, size, size, 0, bg_brush, DI_NORMAL
             ))?;
 
-            if ctx.show_marker {
-                let marker_r = size / 8;
-                let cx = x - (size / 4);
-                let cy = y + (size / 4);
-                use windows::Win32::Graphics::Gdi::Ellipse;
-                let _ = Ellipse(
-                    hdc,
-                    cx - marker_r,
-                    cy - marker_r,
-                    cx + marker_r,
-                    cy + marker_r,
-                );
+            match c.marker {
+                CursorMarker::None => (),
+                CursorMarker::Inactive => {
+                    let marker_r = size / 8;
+                    let cx = x - (size / 4);
+                    let cy = y + (size / 4);
+                    let _ = Ellipse(
+                        hdc,
+                        cx - marker_r,
+                        cy - marker_r,
+                        cx + marker_r,
+                        cy + marker_r,
+                    );
+                }
+                CursorMarker::Injected => {
+                    let half_width = (size / 8).max(2);
+                    let height = (f64::from(half_width) * 3.0_f64.sqrt()).round() as i32;
+                    let center = x + size - 1 - half_width;
+                    let _ = Polygon(
+                        hdc,
+                        &[
+                            POINT { x: center, y },
+                            POINT {
+                                x: center - half_width,
+                                y: y + height,
+                            },
+                            POINT {
+                                x: center + half_width,
+                                y: y + height,
+                            },
+                        ],
+                    );
+                }
             }
         }
     }

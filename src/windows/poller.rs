@@ -1,6 +1,7 @@
 use std::{cell::Cell, mem::size_of, ptr};
 
 use log::{debug, error, trace};
+use monmouse_lib::input::MONMOUSE_INPUT_TAG;
 use windows::Win32::{
     Foundation::{LPARAM, WPARAM},
     UI::{
@@ -150,11 +151,11 @@ impl Poller {
             &self.reactor.bus.ui,
         );
         let effects = &mut self.message_dispatch.effects;
-        let inactive_cursors_redraw = {
-            if effects.redraw_inactive_cursors {
-                effects.redraw_inactive_cursors = false;
+        let cursor_drawing = {
+            if effects.redraw_cursors {
+                effects.redraw_cursors = false;
                 let processor = Self::processor_mut(&mut self.hook_input);
-                Some(processor.inactive_cursor_drawing())
+                Some(processor.cursor_drawing())
             } else {
                 None
             }
@@ -172,8 +173,8 @@ impl Poller {
             }
             effects.refresh_overlay = false;
         }
-        if let Some(drawing) = inactive_cursors_redraw {
-            platform.draw_cursors(drawing.positions, drawing.show_markers);
+        if let Some(drawing) = cursor_drawing {
+            platform.draw_cursors(drawing);
         }
     }
 
@@ -260,6 +261,13 @@ impl MouseLowLevelHook for Poller {
             let hook = &mut *current.get();
             if hook.processor.interceptors.blocks_mouse_event(&event) {
                 return false;
+            }
+            if event.injected {
+                hook.processor
+                    .observe_injected_cursor(event.position, tick, &mut hook.effects);
+                if event.extra_info == MONMOUSE_INPUT_TAG {
+                    return true;
+                }
             }
             if let Some(matched) = hook.processor.match_mouse_position(event.position, tick) {
                 hook.processor.on_mouse_event(matched, &mut hook.effects);

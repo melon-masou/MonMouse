@@ -48,6 +48,7 @@ config:
     merge_unassociated_events_ms: Unassociated event merge window (ms)
     show_inactive_cursors: Show inactive switch-enabled cursors
     show_inactive_cursor_markers: Show marker near inactive cursors
+    draw_injected_cursor: Draw another cursor for injected events
   tip:
     locate_config_file: Show the config file in File Explorer.
     inspect_device_interval_ms: How often the UI refreshes mouse activity status while the window is open.

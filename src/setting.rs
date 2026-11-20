@@ -158,6 +158,9 @@ pub struct ProcessorSettings {
     #[serde(default = "ProcessorSettings::default_show_inactive_cursor_markers")]
     pub show_inactive_cursor_markers: bool,
 
+    #[serde(default)]
+    pub draw_injected_cursor: bool,
+
     #[serde(default = "ProcessorSettings::default_devices")]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     #[validate(nested)]
@@ -174,6 +177,7 @@ impl Default for ProcessorSettings {
             merge_unassociated_events_ms: Self::default_merge_unassociated_events_ms(),
             show_inactive_cursors: Self::default_show_inactive_cursors(),
             show_inactive_cursor_markers: Self::default_show_inactive_cursor_markers(),
+            draw_injected_cursor: false,
             devices: Self::default_devices(),
             shortcuts: ShortcutSettings::default(),
         }

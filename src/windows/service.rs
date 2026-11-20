@@ -11,7 +11,10 @@ use super::{
     winwrap::{
         display::{get_all_monitors_info, process_set_dpi_aware, set_cursor_pos, MonitorInfo},
         input::{register_rawinput_devices, register_shortcut, unregister_shortcut},
-        overlay::{create_overlay_window, refresh_overlay_window, trigger_draw_cursors, CursorPos},
+        overlay::{
+            create_overlay_window, refresh_overlay_window, trigger_draw_cursors, CursorMarker,
+            CursorPos,
+        },
         window::get_cur_tick,
     },
 };
@@ -19,7 +22,10 @@ use crate::{
     device_type::WindowsRawinput,
     errors::{Error, Result},
     input_control::{DeviceId, MonitorArea, MonitorAreasList, MousePos},
-    processor::platform::{DeviceInfo, PlatformService},
+    processor::{
+        effects::CursorDrawing,
+        platform::{DeviceInfo, PlatformService},
+    },
 };
 
 const MAX_SHORTCUT_ID: i32 = 0xbfff;
@@ -153,12 +159,25 @@ impl PlatformService for WinPlatformService {
         refresh_overlay_window(self.hwnd)
     }
 
-    fn draw_cursors(&mut self, positions: Vec<(MousePos, usize)>, show_marker: bool) {
-        let cursors = positions
+    fn draw_cursors(&mut self, drawing: CursorDrawing) {
+        let inactive_marker = if drawing.show_inactive_markers {
+            CursorMarker::Inactive
+        } else {
+            CursorMarker::None
+        };
+        let cursors = drawing
+            .inactive
             .into_iter()
-            .map(|(pos, id)| CursorPos(pos.x, pos.y, id))
+            .map(|position| CursorPos {
+                position,
+                marker: inactive_marker,
+            })
+            .chain(drawing.injected.map(|position| CursorPos {
+                position,
+                marker: CursorMarker::Injected,
+            }))
             .collect();
-        trigger_draw_cursors(self.hwnd, cursors, show_marker);
+        trigger_draw_cursors(self.hwnd, cursors);
     }
 
     fn set_cursor_pos(&mut self, position: MousePos) -> Result<()> {

@@ -86,7 +86,7 @@ impl MessageDispatch {
         };
         processor.update_devices(devices);
         self.effects.refresh_devices = false;
-        self.effects.redraw_inactive_cursors = true;
+        self.effects.redraw_cursors = true;
         Ok(())
     }
 
@@ -154,7 +154,7 @@ impl MessageDispatch {
             error!("Could not register startup shortcuts: {error}");
         }
         processor.apply_new_settings(settings.clone());
-        self.effects.redraw_inactive_cursors = true;
+        self.effects.redraw_cursors = true;
         Ok(())
     }
 
@@ -286,6 +286,7 @@ impl MessageDispatch {
                 PluginMessage::MonitorChange(processor.monitors().clone())
             });
         }
+        processor.expire_injected_cursor(platform.get_cur_tick(), &mut self.effects);
     }
 
     fn publish_plugin_event(
