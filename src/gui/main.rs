@@ -22,7 +22,6 @@ use app::App;
 use eframe::egui::{self, FontData};
 use log::info;
 use monmouse::message::UINotify;
-use monmouse::plugin::{backend::ReactorContextHost, manager::PluginEntry, PluginRouter};
 use monmouse::setting::{read_config, CONFIG_FILE_NAME};
 use monmouse::SingleProcess;
 use monmouse::{errors::Error, message::setup_reactors};
@@ -66,28 +65,7 @@ fn main() {
     let reactors = setup_reactors(Some(Arc::new(egui_notify.clone())));
     let tray_notify = egui_notify.clone();
 
-    let mut app = App::new(reactors.ui).load_config(config, config_path.clone());
-    match monmouse::plugin::loader::load() {
-        Ok(plugins) => {
-            let config_dir = config_path.as_deref().and_then(std::path::Path::parent);
-            app.plugins.entries = plugins
-                .into_iter()
-                .map(|define| {
-                    let context = ReactorContextHost {
-                        router: PluginRouter {
-                            key: define.key,
-                            bus: reactors.bus.clone(),
-                            reactors: Vec::new(),
-                            has_interceptor: false,
-                        },
-                        inject_input: monmouse::windows::winwrap::inject::inject_input,
-                    };
-                    PluginEntry::new(define, config_dir, context)
-                })
-                .collect();
-        }
-        Err(error) => app.result_error_alert(error.to_string()),
-    }
+    let app = App::new(reactors.ui).load_config(config, config_path);
     let mouse_control_thread = thread::spawn(move || {
         let poller = monmouse::Eventloop::new(false, reactors.control);
         let tray = Tray::new(reactors.bus, tray_notify);

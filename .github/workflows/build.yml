@@ -28,8 +28,7 @@ jobs:
         cache-on-failure: true
     - name: Build
       shell: cmd
-      run: |
-        cargo build --release
+      run: cargo build --release
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       if: inputs.release_name == ''

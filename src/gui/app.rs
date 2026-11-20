@@ -1,4 +1,7 @@
-use std::{path::PathBuf, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 #[cfg(debug_assertions)]
 use crate::components::debug::DebugInfo;
@@ -16,8 +19,6 @@ use monmouse::{
     plugin::manager::PluginManager,
     setting::{write_config, DeviceSetting, DeviceSettingItem, ProcessorSettings, Settings},
 };
-
-use monmouse_lib::plugin::PluginKey;
 
 pub struct App {
     pub state: AppState,
@@ -67,25 +68,21 @@ impl App {
             .send(Message::ApplyOneDeviceSetting(SendData::new(item)));
     }
 
-    pub fn set_plugin_enabled(&mut self, key: PluginKey, enabled: bool) {
+    pub fn set_plugin_enabled(&mut self, key: &str, enabled: bool) {
         if self.should_exit {
             return;
         }
-        let Some(plugin) = self.plugins.entry_mut(key) else {
-            self.result_error_alert(format!("Unknown plugin {key}"));
-            return;
-        };
-        if let Err(error) = plugin.set_enabled(enabled) {
+        if let Err(error) = self.plugins.set_enabled(key, enabled) {
             self.result_error_alert(error);
             return;
         }
-        if plugin.stopping() {
+        if !enabled {
             self.plugins.schedule_stop_timeout(&self.timer);
         }
         self.save_plugin_enabled(key, enabled);
     }
 
-    fn save_plugin_enabled(&mut self, key: PluginKey, enabled: bool) {
+    fn save_plugin_enabled(&mut self, key: &str, enabled: bool) {
         let mut new_settings = self.state.saved_settings.clone();
         let changed = if enabled {
             new_settings.enabled_plugins.insert(key.to_owned())
@@ -193,7 +190,7 @@ impl App {
         App {
             state: AppState::default(),
             plugin_panel: PluginsPanel::default(),
-            plugins: PluginManager::default(),
+            plugins: PluginManager::new(ui_reactor.bus.clone()),
             last_result: StatusBarResult::None,
             alert_errors: Vec::new(),
             config_path: None,
@@ -225,6 +222,12 @@ impl App {
             )),
         };
         self.state.config_cache = InputsCache::new(self.state.settings.clone());
+        if let Err(error) = self
+            .plugins
+            .discover(config_path.as_deref().and_then(Path::parent))
+        {
+            self.result_error_alert(error.to_string());
+        }
         self.config_path = config_path;
         self
     }
@@ -426,12 +429,12 @@ impl App {
                 self.trigger_inspect_devices_status();
             }
             Message::PluginMessage { key, message } => {
-                if let Some(plugin) = self.plugins.entry_mut(key) {
+                if let Some(plugin) = self.plugins.plugin_mut(key) {
                     plugin.on_event(&message);
                 }
             }
             Message::PluginReactorStopped(key) => {
-                if let Some(plugin) = self.plugins.entry_mut(key) {
+                if let Some(plugin) = self.plugins.plugin_mut(key) {
                     plugin.reactor_stopped();
                 }
             }

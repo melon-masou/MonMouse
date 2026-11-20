@@ -1,5 +1,5 @@
 use eframe::egui;
-use monmouse::plugin::manager::PluginEntry;
+use monmouse::plugin::manager::Plugin;
 use monmouse_lib::plugin::{Draw, Input, Layout, PluginUi, StatusLight, UiBackend};
 
 use super::{
@@ -16,7 +16,7 @@ struct Context<'a> {
     discard: bool,
 }
 
-pub fn plugin_ui(ui: &mut egui::Ui, plugin: &mut PluginEntry, tab: usize, language: &str) -> bool {
+pub fn plugin_ui(ui: &mut egui::Ui, plugin: &mut Plugin, tab: usize, language: &str) -> bool {
     let mut context = Context {
         language,
         discard: false,

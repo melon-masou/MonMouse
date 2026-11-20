@@ -2,6 +2,7 @@ pub mod backend;
 pub mod interceptor;
 #[cfg(target_os = "windows")]
 pub mod loader;
+#[cfg(target_os = "windows")]
 pub mod manager;
 
 use std::{

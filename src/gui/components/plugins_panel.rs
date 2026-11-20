@@ -1,4 +1,5 @@
 use eframe::egui;
+use monmouse::plugin::manager::PluginEntry;
 
 use super::{
     layout::confirm_discard,
@@ -18,15 +19,11 @@ impl PluginsPanel {
         app.plugins
             .entries
             .get(app.plugin_panel.selected)
-            .is_some_and(|plugin| plugin.enabled() && plugin.main.has_changes())
+            .is_some_and(PluginEntry::has_changes)
     }
 
     pub fn discard_changes(app: &mut App) {
-        if let Some(plugin) = app.plugins.entries.get_mut(app.plugin_panel.selected) {
-            if plugin.main.has_changes() {
-                plugin.main.discard_changes();
-            }
-        }
+        app.plugins.entries[app.plugin_panel.selected].discard_changes();
     }
 
     pub fn ui(ui: &mut egui::Ui, app: &mut App) {
@@ -43,22 +40,20 @@ impl PluginsPanel {
     fn plugin_controls(ui: &mut egui::Ui, app: &mut App) -> bool {
         let selected = app.plugin_panel.selected;
         let mut next_plugin = selected;
-        let plugin = &app.plugins.entries[selected];
-        let key = plugin.key;
-        let enabled = plugin.enabled();
-        let stopping = plugin.stopping();
+        let entry = &app.plugins.entries[selected];
+        let enabled = entry.enabled();
         let toggle = ui
             .horizontal(|ui| {
                 form_combo("PluginChoice")
-                    .selected_text(plugin.name)
+                    .selected_text(entry.name())
                     .show_ui(ui, |ui| {
-                        for (index, plugin) in app.plugins.entries.iter().enumerate() {
-                            ui.selectable_value(&mut next_plugin, index, plugin.name);
+                        for (index, entry) in app.plugins.entries.iter().enumerate() {
+                            ui.selectable_value(&mut next_plugin, index, entry.name());
                         }
                     });
                 ui.add_enabled(
-                    plugin.can_toggle(),
-                    manage_button(if enabled || stopping {
+                    entry.can_toggle(),
+                    manage_button(if enabled || entry.stopping() {
                         t!("plugins.disable")
                     } else {
                         t!("plugins.enable")
@@ -69,8 +64,7 @@ impl PluginsPanel {
             .inner;
 
         if next_plugin != selected {
-            let dirty = enabled && plugin.main.has_changes();
-            confirm_discard(app, dirty, move |app| {
+            confirm_discard(app, Self::has_changes(app), move |app| {
                 Self::discard_changes(app);
                 app.plugin_panel.selected = next_plugin;
                 app.plugin_panel.selected_tab = 0;
@@ -79,13 +73,13 @@ impl PluginsPanel {
         }
 
         if toggle {
+            let key = entry.key().to_owned();
             if enabled {
-                let dirty = plugin.main.has_changes();
-                confirm_discard(app, dirty, move |app| {
-                    app.set_plugin_enabled(key, false);
+                confirm_discard(app, Self::has_changes(app), move |app| {
+                    app.set_plugin_enabled(&key, false);
                 });
             } else {
-                app.set_plugin_enabled(key, true);
+                app.set_plugin_enabled(&key, true);
             }
             return false;
         }
@@ -94,12 +88,15 @@ impl PluginsPanel {
 
     fn plugin_tabs(ui: &mut egui::Ui, app: &mut App) {
         let selected = app.plugin_panel.selected;
-        let plugin = &mut app.plugins.entries[selected];
+        let entry = &mut app.plugins.entries[selected];
+        let Some(plugin) = entry.plugin_mut() else {
+            return;
+        };
         let selected_tab = app.plugin_panel.selected_tab;
 
         let next_tab = Self::select_tab(ui, plugin.tabs, selected_tab);
         if next_tab != selected_tab {
-            let dirty = plugin.main.has_changes();
+            let dirty = entry.has_changes();
             confirm_discard(app, dirty, move |app| {
                 Self::discard_changes(app);
                 app.plugin_panel.selected_tab = next_tab;
@@ -110,7 +107,7 @@ impl PluginsPanel {
         let discard_requested =
             plugin_ui(ui, plugin, selected_tab, &app.state.settings.ui.language);
         if discard_requested {
-            let dirty = plugin.main.has_changes();
+            let dirty = entry.has_changes();
             confirm_discard(app, dirty, Self::discard_changes);
         }
     }

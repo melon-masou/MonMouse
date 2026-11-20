@@ -1,6 +1,7 @@
 use std::{
     collections::BTreeSet,
-    path::Path,
+    io,
+    path::{Path, PathBuf},
     time::{Duration, Instant},
 };
 
@@ -13,9 +14,9 @@ use monmouse_lib::plugin::{
 use super::{
     backend::{MainContextHost, ReactorContextHost},
     interceptor::RegisteredInterceptor,
-    PluginRuntime, PluginSubscriber,
+    loader, PluginRouter, PluginRuntime, PluginSubscriber,
 };
-use crate::message::{Message, TimerDueKind, TimerOperator};
+use crate::message::{Message, MessageBus, TimerDueKind, TimerOperator};
 
 const STOP_TIMEOUT: Duration = Duration::from_secs(3);
 
@@ -26,22 +27,55 @@ enum PluginState {
     StopTimedOut,
 }
 
-#[derive(Default)]
 pub struct PluginManager {
     pub entries: Vec<PluginEntry>,
+    config_dir: Option<PathBuf>,
+    bus: MessageBus,
 }
 
 impl PluginManager {
+    pub fn new(bus: MessageBus) -> Self {
+        Self {
+            entries: Vec::new(),
+            config_dir: None,
+            bus,
+        }
+    }
+
+    pub fn discover(&mut self, config_dir: Option<&Path>) -> io::Result<()> {
+        self.config_dir = config_dir.map(Path::to_path_buf);
+        self.entries = loader::discover()?
+            .into_iter()
+            .map(|(key, path)| PluginEntry {
+                key,
+                path,
+                plugin: None,
+            })
+            .collect();
+        Ok(())
+    }
+
     pub fn initialize(&mut self, enabled: &BTreeSet<String>) {
-        for plugin in &mut self.entries {
-            if enabled.contains(plugin.key) {
-                plugin.start();
+        for entry in &mut self.entries {
+            if enabled.contains(&entry.key) {
+                if let Err(text) = entry.set_enabled(true, self.config_dir.as_deref(), &self.bus) {
+                    self.bus.ui.send(Message::PluginError { text, alert: true });
+                }
             }
         }
     }
 
+    pub fn set_enabled(&mut self, key: &str, enabled: bool) -> Result<(), String> {
+        let entry = self
+            .entries
+            .iter_mut()
+            .find(|entry| entry.key == key)
+            .ok_or_else(|| format!("Unknown plugin {key}"))?;
+        entry.set_enabled(enabled, self.config_dir.as_deref(), &self.bus)
+    }
+
     pub fn stop_all(&mut self, timer: &TimerOperator) {
-        for plugin in &mut self.entries {
+        for plugin in self.entries.iter_mut().filter_map(PluginEntry::plugin_mut) {
             plugin.stop_reactors();
         }
         self.schedule_stop_timeout(timer);
@@ -50,12 +84,12 @@ impl PluginManager {
     pub fn all_stopped(&self) -> bool {
         self.entries
             .iter()
-            .all(|plugin| !plugin.enabled() && !plugin.stopping())
+            .all(|entry| !entry.enabled() && !entry.stopping())
     }
 
     pub fn check_stop_timeouts(&mut self, timer: &TimerOperator) {
         let now = Instant::now();
-        for plugin in &mut self.entries {
+        for plugin in self.entries.iter_mut().filter_map(PluginEntry::plugin_mut) {
             plugin.check_stop_timeout(now);
         }
         self.schedule_stop_timeout(timer);
@@ -65,22 +99,97 @@ impl PluginManager {
         if let Some(deadline) = self
             .entries
             .iter()
-            .filter_map(|plugin| plugin.stop_deadline)
+            .filter_map(PluginEntry::stop_deadline)
             .min()
         {
             timer.wake_at(deadline, TimerDueKind::PluginStop);
         }
     }
 
-    pub fn entry_mut(&mut self, key: PluginKey) -> Option<&mut PluginEntry> {
-        self.entries.iter_mut().find(|plugin| plugin.key == key)
+    pub fn plugin_mut(&mut self, key: PluginKey) -> Option<&mut Plugin> {
+        self.entries
+            .iter_mut()
+            .find(|entry| entry.key == key)?
+            .plugin_mut()
     }
 }
 
 pub struct PluginEntry {
+    key: String,
+    path: PathBuf,
+    plugin: Option<Plugin>,
+}
+
+impl PluginEntry {
+    pub fn key(&self) -> &str {
+        &self.key
+    }
+
+    pub fn name(&self) -> &str {
+        self.plugin
+            .as_ref()
+            .map_or(self.key.as_str(), |plugin| plugin.name)
+    }
+
+    fn loaded(&self) -> bool {
+        self.plugin.is_some()
+    }
+
+    pub fn enabled(&self) -> bool {
+        self.plugin.as_ref().is_some_and(Plugin::enabled)
+    }
+
+    pub fn stopping(&self) -> bool {
+        self.plugin.as_ref().is_some_and(Plugin::stopping)
+    }
+
+    pub fn can_toggle(&self) -> bool {
+        self.plugin.as_ref().is_none_or(Plugin::can_toggle)
+    }
+
+    pub fn has_changes(&self) -> bool {
+        self.plugin
+            .as_ref()
+            .is_some_and(|plugin| plugin.enabled() && plugin.main.has_changes())
+    }
+
+    pub fn discard_changes(&mut self) {
+        if let Some(plugin) = self.plugin_mut() {
+            if plugin.main.has_changes() {
+                plugin.main.discard_changes();
+            }
+        }
+    }
+
+    pub fn plugin_mut(&mut self) -> Option<&mut Plugin> {
+        self.plugin.as_mut()
+    }
+
+    fn stop_deadline(&self) -> Option<Instant> {
+        self.plugin.as_ref()?.stop_deadline
+    }
+
+    fn set_enabled(
+        &mut self,
+        enabled: bool,
+        config_dir: Option<&Path>,
+        bus: &MessageBus,
+    ) -> Result<(), String> {
+        if enabled && !self.loaded() {
+            let define = loader::load(&self.path, &self.key)?;
+            self.plugin = Some(Plugin::new(define, config_dir, bus));
+        }
+        if let Some(plugin) = &mut self.plugin {
+            plugin.set_enabled(enabled)?;
+        }
+        Ok(())
+    }
+}
+
+pub struct Plugin {
     pub key: PluginKey,
     pub name: &'static str,
-    pub main: Box<dyn PluginMain>,
+    main: Box<dyn PluginMain>,
     pub tabs: &'static [&'static str],
 
     state: PluginState,
@@ -91,12 +200,17 @@ pub struct PluginEntry {
     reactor_context: ReactorContextHost,
 }
 
-impl PluginEntry {
-    pub fn new(
-        define: PluginDefine,
-        config_dir: Option<&Path>,
-        reactor_context: ReactorContextHost,
-    ) -> Self {
+impl Plugin {
+    fn new(define: PluginDefine, config_dir: Option<&Path>, bus: &MessageBus) -> Self {
+        let reactor_context = ReactorContextHost {
+            router: PluginRouter {
+                key: define.key,
+                bus: bus.clone(),
+                reactors: Vec::new(),
+                has_interceptor: false,
+            },
+            inject_input: crate::windows::winwrap::inject::inject_input,
+        };
         Self {
             key: define.key,
             name: define.name,
@@ -115,15 +229,15 @@ impl PluginEntry {
         }
     }
 
-    pub fn enabled(&self) -> bool {
+    fn enabled(&self) -> bool {
         matches!(self.state, PluginState::Running)
     }
 
-    pub fn stopping(&self) -> bool {
+    fn stopping(&self) -> bool {
         matches!(self.state, PluginState::Stopping)
     }
 
-    pub fn can_toggle(&self) -> bool {
+    fn can_toggle(&self) -> bool {
         match self.state {
             PluginState::Disabled => true,
             PluginState::Running => !self.main.is_saving(),
@@ -131,7 +245,7 @@ impl PluginEntry {
         }
     }
 
-    pub fn set_enabled(&mut self, enabled: bool) -> Result<(), String> {
+    fn set_enabled(&mut self, enabled: bool) -> Result<(), String> {
         match (&self.state, enabled) {
             (PluginState::Disabled, true) => self.start(),
             (PluginState::Stopping, true) => return Err("Plugin is stopping".into()),

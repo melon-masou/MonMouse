@@ -11,64 +11,55 @@ use monmouse_lib::plugin::{
     PluginDefine, ReadlibVersion, RegisterPlugin, LIB_VERSION_SYMBOL, REGISTER_PLUGIN_SYMBOL,
 };
 
-fn plugin_paths() -> io::Result<Vec<PathBuf>> {
-    let executable = std::env::current_exe()?;
-    let entries = match fs::read_dir(executable.with_file_name("plugins")) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(error) => return Err(error),
-    };
-    let mut paths = Vec::new();
-    for entry in entries {
+pub fn discover() -> io::Result<Vec<(String, PathBuf)>> {
+    let mut directory = std::env::current_exe()?;
+    directory.pop();
+
+    let mut plugins = Vec::new();
+    for entry in fs::read_dir(directory)? {
         let entry = entry?;
         let path = entry.path();
-        if path
-            .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("dll"))
+        let Some(key) = path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .and_then(|stem| stem.strip_prefix("monmouse_plugins_"))
+        else {
+            continue;
+        };
+        if !key.is_empty()
+            && key
+                .bytes()
+                .all(|byte| matches!(byte, b'a'..=b'z' | b'0'..=b'9' | b'_'))
+            && path
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("dll"))
             && entry.file_type()?.is_file()
         {
-            paths.push(path);
+            plugins.push((key.to_owned(), path));
         }
     }
-    paths.sort();
-    Ok(paths)
-}
-
-pub fn load() -> io::Result<Vec<PluginDefine>> {
-    let mut plugins: Vec<PluginDefine> = Vec::new();
-    for path in plugin_paths()? {
-        match load_plugin(&path) {
-            Ok((plugin, dll)) => {
-                let key = plugin.key;
-                if key.is_empty()
-                    || !key
-                        .bytes()
-                        .all(|byte| matches!(byte, b'a'..=b'z' | b'0'..=b'9' | b'_'))
-                {
-                    log::warn!("Skipping {}: invalid plugin key {key:?}", path.display());
-                    drop(plugin);
-                    continue;
-                }
-                if plugins.iter().any(|loaded| loaded.key == plugin.key) {
-                    log::warn!(
-                        "Skipping {}: duplicate plugin key {}",
-                        path.display(),
-                        plugin.key
-                    );
-                    drop(plugin);
-                    continue;
-                }
-                // Registered tabs, tasks and messages can use DLL code until process exit.
-                std::mem::forget(dll);
-                plugins.push(plugin);
-            }
-            Err(error) => log::warn!("Could not load plugin {}: {error}", path.display()),
-        }
-    }
+    plugins.sort();
+    plugins.dedup_by(|a, b| a.0 == b.0);
     Ok(plugins)
 }
 
-fn load_plugin(path: &Path) -> Result<(PluginDefine, Library), libloading::Error> {
+pub fn load(path: &Path, key: &str) -> Result<PluginDefine, String> {
+    let (dll, plugin) = load_plugin(path)
+        .map_err(|error| format!("Could not load plugin {}: {error}", path.display()))?;
+    if plugin.key != key {
+        return Err(format!(
+            "Plugin {} declares key {:?}, expected {key:?}",
+            path.display(),
+            plugin.key
+        ));
+    }
+
+    // Registered tabs, tasks and messages can use DLL code until process exit.
+    std::mem::forget(dll);
+    Ok(plugin)
+}
+
+fn load_plugin(path: &Path) -> Result<(Library, PluginDefine), libloading::Error> {
     let dll = unsafe {
         Library::load_with_flags(
             path,
@@ -85,5 +76,5 @@ fn load_plugin(path: &Path) -> Result<(PluginDefine, Library), libloading::Error
             version.to_string_lossy()
         );
     }
-    Ok((register(), dll))
+    Ok((dll, register()))
 }
