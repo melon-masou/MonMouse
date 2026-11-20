@@ -67,7 +67,7 @@ features = [
 ]
 
 [target.'cfg(target_os = "windows")'.build-dependencies]
-which = "5.0.0"
+find-msvc-tools = "0.1"
 
 [profile.release]
 strip = true

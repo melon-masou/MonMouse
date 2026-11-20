@@ -2,18 +2,22 @@ use eframe::egui;
 
 use crate::app::{App, StatusBarResult};
 
-use super::widget::{error_color, icon_button, indicator_ui, NotificationPopup};
+use super::widget::{error_color, indicator_ui, NotificationPopup};
 
 pub fn status_bar_ui(ui: &mut egui::Ui, app: &mut App) {
     let msg_with_bottons = |ui: &mut egui::Ui, ok: bool, msg: &String| {
         #[cfg(debug_assertions)]
-        if ui
-            .add(icon_button(ui, "📋").frame(false))
-            .on_hover_text(t!("btn.Copy"))
-            .clicked()
         {
-            ui.ctx().copy_text(msg.clone());
+            use super::widget::icon_button;
+            if ui
+                .add(icon_button(ui, "📋").frame(false))
+                .on_hover_text(t!("btn.Copy"))
+                .clicked()
+            {
+                ui.ctx().copy_text(msg.clone());
+            }
         }
+
         indicator_ui(ui, error_color(ui, ok));
         ui.label(msg.as_str()).on_hover_text(msg.as_str());
     };

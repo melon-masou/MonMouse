@@ -1,5 +1,4 @@
 use std::{env, fs::File, io::Write, path::PathBuf, process};
-use which::which;
 
 // macro_rules! warn {
 //     ($($tokens: tt)*) => {
@@ -46,15 +45,18 @@ fn windows_rc_compile(content: String, out_dir: &str, rc_file: &str, lib_file: &
     let mut write_file = File::create(&rc_file).unwrap();
     write!(write_file, "{}", content).unwrap();
 
-    let rc_exe = env::var("RC_EXEC")
-        .map(PathBuf::from)
-        .or_else(|_| which("rc"))
-        .unwrap();
+    let mut rc = match env::var_os("RC_EXEC") {
+        Some(path) => process::Command::new(path),
+        None => {
+            let target = env::var("TARGET").unwrap();
+            find_msvc_tools::find(&target, "rc.exe")
+                .expect("Could not find rc.exe. Install the Windows SDK or set RC_EXEC.")
+        }
+    };
 
     let output = run_command(
         "rc",
-        process::Command::new(rc_exe)
-            .arg(format!("/fo{}", lib_file.display()))
+        rc.arg(format!("/fo{}", lib_file.display()))
             .arg(format!("{}", rc_file.display())),
     );
     if !output.status.success() {
