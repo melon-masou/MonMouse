@@ -102,6 +102,7 @@ mapper:
   from: 来源按键
   to: 目标按键
   send_target: 发送目标
+  select_targets: 选择目标
   local: 本地
   add: 添加
   remove: 删除

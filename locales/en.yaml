@@ -101,7 +101,8 @@ mapper:
   rules: Rules
   from: Source keys
   to: Destination keys
-  send_target: Send target
+  send_target: Send targets
+  select_targets: Select targets
   local: Local
   add: Add
   remove: Remove

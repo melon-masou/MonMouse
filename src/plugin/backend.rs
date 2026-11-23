@@ -47,7 +47,7 @@ impl MainContext for MainContextHost {
             targets
                 .into_iter()
                 .map(|definition| SendTargetOption {
-                    target: SendTarget {
+                    target: SendTarget::Plugin {
                         plugin: self.router.key.to_owned(),
                         callback: definition.callback,
                     },

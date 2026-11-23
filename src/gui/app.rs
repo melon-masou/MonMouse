@@ -170,7 +170,12 @@ impl App {
                 .processor
                 .mappings
                 .iter()
-                .any(|rule| rule.from.is_empty() || rule.to.is_empty() || rule.validate().is_err())
+                .any(|rule| {
+                    rule.from.is_empty()
+                        || rule.to.is_empty()
+                        || rule.send_targets.is_empty()
+                        || rule.validate().is_err()
+                })
         {
             self.result_error_alert(t!("msg.settings_invalid_field").to_string());
             return;

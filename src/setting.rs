@@ -145,21 +145,64 @@ impl DeviceSetting {
     }
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize, Validate, InputFields)]
+#[derive(Clone, Debug, Serialize, Deserialize, Validate, InputFields)]
 pub struct MappingRule {
     #[validate(custom(function = "validation::shortcut::<false>"))]
     pub from: String,
     #[validate(custom(function = "validation::shortcut::<true>"))]
     pub to: String,
-    // None sends input locally; Some addresses a plugin interceptor callback.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub send_target: Option<SendTarget>,
+    #[serde(default = "MappingRule::default_send_targets")]
+    pub send_targets: Vec<SendTarget>,
+}
+
+impl MappingRule {
+    fn default_send_targets() -> Vec<SendTarget> {
+        vec![SendTarget::Local]
+    }
+}
+
+impl Default for MappingRule {
+    fn default() -> Self {
+        Self {
+            from: String::new(),
+            to: String::new(),
+            send_targets: Self::default_send_targets(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SendTarget {
-    pub plugin: String,
-    pub callback: String,
+#[serde(try_from = "String", into = "String")]
+pub enum SendTarget {
+    Local,
+    Plugin { plugin: String, callback: String },
+}
+
+impl TryFrom<String> for SendTarget {
+    type Error = String;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if value == "local" {
+            return Ok(Self::Local);
+        }
+        let (plugin, callback) = value
+            .split_once(':')
+            .filter(|(plugin, _)| !plugin.is_empty())
+            .ok_or_else(|| "Expected 'local' or 'plugin:callback'".to_owned())?;
+        Ok(Self::Plugin {
+            plugin: plugin.to_owned(),
+            callback: callback.to_owned(),
+        })
+    }
+}
+
+impl From<SendTarget> for String {
+    fn from(target: SendTarget) -> Self {
+        match target {
+            SendTarget::Local => "local".to_owned(),
+            SendTarget::Plugin { plugin, callback } => format!("{plugin}:{callback}"),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

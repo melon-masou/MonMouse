@@ -1,7 +1,7 @@
 use eframe::egui;
 use monmouse::{
     plugin::manager::PluginManager,
-    setting::{MappingRule, Settings},
+    setting::{MappingRule, SendTarget, Settings},
 };
 
 use super::{
@@ -45,43 +45,58 @@ impl MapperPanel {
                             .with_mouse_buttons()
                             .ui(ui, &mut rule.to)
                             .changed();
-                        let selected = match &rule.send_target {
-                            None => t!("mapper.local").to_string(),
-                            Some(selected) => {
-                                let mut name = None;
-                                plugins.for_each_send_target_option(|option| {
-                                    if &option.target == selected {
-                                        name = Some(option.name.clone());
-                                    }
-                                });
-                                name.unwrap_or_else(|| {
-                                    format!("{}/{}", selected.plugin, selected.callback)
-                                })
-                            }
-                        };
+                        let selected = rule
+                            .send_targets
+                            .iter()
+                            .map(|target| match target {
+                                SendTarget::Local => t!("mapper.local").to_string(),
+                                SendTarget::Plugin { plugin, callback } => {
+                                    let mut name = None;
+                                    plugins.for_each_send_target_option(|option| {
+                                        if &option.target == target {
+                                            name = Some(option.name.clone());
+                                        }
+                                    });
+                                    name.unwrap_or_else(|| format!("{plugin}:{callback}"))
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                            .join(", ");
                         form_combo(("SendTarget", index))
                             .width(FIELD_WIDTH)
                             .truncate()
-                            .selected_text(selected)
+                            .selected_text(if selected.is_empty() {
+                                t!("mapper.select_targets").to_string()
+                            } else {
+                                selected.clone()
+                            })
+                            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
                             .show_ui(ui, |ui| {
-                                changed |= ui
-                                    .selectable_value(
-                                        &mut rule.send_target,
-                                        None,
-                                        t!("mapper.local"),
-                                    )
-                                    .changed();
+                                let mut local = rule.send_targets.contains(&SendTarget::Local);
+                                if ui.checkbox(&mut local, t!("mapper.local")).changed() {
+                                    if local {
+                                        rule.send_targets.push(SendTarget::Local);
+                                    } else {
+                                        rule.send_targets
+                                            .retain(|target| target != &SendTarget::Local);
+                                    }
+                                    changed = true;
+                                }
                                 plugins.for_each_send_target_option(|option| {
-                                    let selected =
-                                        rule.send_target.as_ref() == Some(&option.target);
-                                    if ui.selectable_label(selected, &option.name).clicked()
-                                        && !selected
-                                    {
-                                        rule.send_target = Some(option.target.clone());
+                                    let mut selected = rule.send_targets.contains(&option.target);
+                                    if ui.checkbox(&mut selected, &option.name).changed() {
+                                        if selected {
+                                            rule.send_targets.push(option.target.clone());
+                                        } else {
+                                            rule.send_targets
+                                                .retain(|target| target != &option.target);
+                                        }
                                         changed = true;
                                     }
                                 });
-                            });
+                            })
+                            .response
+                            .on_hover_text(selected);
                         if ui.add(manage_button(t!("mapper.remove"))).clicked() {
                             remove = Some(index);
                         }

@@ -37,7 +37,7 @@ use crate::{
         shortcuts::ShortcutAction,
         Processor,
     },
-    setting::ProcessorSettings,
+    setting::{ProcessorSettings, SendTarget},
 };
 
 const POLL_MSGS: u32 = 20;
@@ -240,30 +240,31 @@ impl Poller {
                 });
             }
             Some(ShortcutAction::Mapping(mapping)) => {
-                let result = if let Some(target) = &mapping.send_target {
-                    if self.hook_input.processor.interceptors.on_mapping(
-                        &target.plugin,
-                        &target.callback,
-                        &mapping.to,
-                    ) {
-                        Ok(())
-                    } else {
-                        Err(format!(
-                            "Plugin mapping handler unavailable: {}",
-                            target.plugin
-                        ))
+                for target in &mapping.send_targets {
+                    let result = match target {
+                        SendTarget::Plugin { plugin, callback } => {
+                            if self.hook_input.processor.interceptors.on_mapping(
+                                plugin,
+                                callback,
+                                &mapping.to,
+                            ) {
+                                Ok(())
+                            } else {
+                                Err(format!("Plugin mapping handler unavailable: {plugin}"))
+                            }
+                        }
+                        SendTarget::Local => monmouse_lib::keyboard::parse_chord(&mapping.to, true)
+                            .and_then(|buttons| {
+                                super::winwrap::inject::inject_input(
+                                    InputInjection::Shortcut { buttons },
+                                    MONMOUSE_INPUT_TAG,
+                                )
+                                .map_err(|error| error.to_string())
+                            }),
+                    };
+                    if let Err(error) = result {
+                        error!("Could not send mapped shortcut: {error}");
                     }
-                } else {
-                    monmouse_lib::keyboard::parse_chord(&mapping.to, true).and_then(|buttons| {
-                        super::winwrap::inject::inject_input(
-                            InputInjection::Shortcut { buttons },
-                            MONMOUSE_INPUT_TAG,
-                        )
-                        .map_err(|error| error.to_string())
-                    })
-                };
-                if let Err(error) = result {
-                    error!("Could not send mapped shortcut: {error}");
                 }
             }
             None => (),
