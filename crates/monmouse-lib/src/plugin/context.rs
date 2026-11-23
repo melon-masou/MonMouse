@@ -1,5 +1,5 @@
-use super::{CustomMessage, PluginMessage, PluginTarget};
-use crate::input::InputInjection;
+use super::{CustomMessage, PluginMessage, PluginTarget, SendTarget};
+use crate::{input::InputInjection, keyboard::Button};
 use serde::{de::DeserializeOwned, Serialize};
 use std::path::Path;
 
@@ -14,6 +14,8 @@ pub trait MainContext {
     // Show the host's save confirmation after a successful user-requested save.
     fn report_settings_saved(&self);
     fn report_error(&self, text: &str, alert: bool);
+
+    fn register_send_targets(&self, targets: Vec<SendTarget>) -> Result<(), String>;
 }
 
 impl dyn MainContext + '_ {
@@ -38,6 +40,7 @@ impl dyn MainContext + '_ {
 pub trait ReactorContext {
     fn send(&self, target: PluginTarget, message: PluginMessage) -> bool;
     fn inject_input(&self, input: InputInjection, extra_info: usize) -> Result<(), String>;
+    fn inject_shortcut(&self, shortcut: &[Button], down: bool) -> Result<(), String>;
 }
 
 impl dyn ReactorContext + '_ {

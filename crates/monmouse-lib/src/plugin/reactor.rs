@@ -1,5 +1,5 @@
 use super::CustomMessage;
-use crate::input::MonitorAreasList;
+use crate::input::{InputInjection, MonitorAreasList};
 use std::{any::Any, fmt, time::Duration};
 
 impl dyn CustomMessage {
@@ -31,6 +31,14 @@ pub enum PluginTarget {
     Interceptor,
 }
 
+// IDs are stable within a plugin; the host namespaces them with the plugin key.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SendTarget {
+    pub id: String,
+    pub name: String,
+    pub receiver: PluginTarget,
+}
+
 #[derive(Debug)]
 pub enum PluginMessage {
     MonitorChange(MonitorAreasList),
@@ -38,6 +46,10 @@ pub enum PluginMessage {
     Shortcut(String),
     ShortcutRegistrationResult(Result<(), String>),
     Stop,
+    SendInput {
+        target: String,
+        inputs: Vec<InputInjection>,
+    },
 }
 
 impl PluginMessage {

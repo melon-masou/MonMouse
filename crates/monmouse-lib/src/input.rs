@@ -62,7 +62,7 @@ impl Display for MousePos {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum MouseButton {
     Left,
     Right,
@@ -81,7 +81,7 @@ pub enum MouseAction {
 // Tag for input injected by MonMouse, carried back through the system hooks.
 pub const MONMOUSE_INPUT_TAG: usize = 0x4D4D_5052;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InputInjection {
     Mouse {
         position: Option<MousePos>,

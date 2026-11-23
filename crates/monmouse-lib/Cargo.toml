@@ -4,5 +4,6 @@ version.workspace = true
 edition = "2021"
 
 [dependencies]
+keyboard-types = "0.7.0"
 serde = { version = "1", features = ["derive"] }
 serde_yaml = { package = "yaml_serde", version = "0.10" }

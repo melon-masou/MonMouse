@@ -2,6 +2,7 @@ use std::{collections::BTreeMap, time::Duration};
 
 use log::{debug, error};
 use monmouse_lib::plugin::{EventKind, PluginKey, PluginMessage};
+use validator::Validate;
 
 use super::{
     effects::EffectsIntent,
@@ -127,8 +128,11 @@ impl MessageDispatch {
         settings: &ProcessorSettings,
         user_requested: bool,
     ) -> Result<()> {
+        settings
+            .validate()
+            .map_err(|error| crate::errors::Error::InvalidConfigFile(error.to_string()))?;
         let shortcuts = &settings.shortcuts;
-        let bindings = vec![
+        let mut bindings = vec![
             (
                 shortcuts.cur_mouse_lock.clone(),
                 ShortcutAction::Main(ShortcutID::CurMouseLock),
@@ -146,6 +150,17 @@ impl MessageDispatch {
                 ShortcutAction::Main(ShortcutID::CurMouseJumpNext),
             ),
         ];
+        for mapping in &settings.mappings {
+            let shortcut = monmouse_lib::keyboard::parse_chord(&mapping.to, true)
+                .map_err(crate::errors::Error::InvalidConfigFile)?;
+            bindings.push((
+                mapping.from.clone(),
+                ShortcutAction::Mapping {
+                    shortcut,
+                    target: mapping.send_target.clone(),
+                },
+            ));
+        }
         if let Err(error) = self.shortcuts.register_shortcuts(
             platform,
             ShortcutSource::Main,

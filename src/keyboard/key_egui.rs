@@ -1,8 +1,5 @@
 use eframe::egui::{Key, Modifiers};
-use keyboard_types::Code;
-use keyboard_types::Modifiers as KM;
-
-use super::modifier_or;
+use monmouse_lib::keyboard::{modifier_or, Code, Modifiers as KM};
 
 #[cfg(target_os = "windows")]
 const EGUI_COMMAND: KM = KM::CONTROL;

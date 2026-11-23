@@ -145,6 +145,23 @@ impl DeviceSetting {
     }
 }
 
+#[derive(Clone, Debug, Default, Serialize, Deserialize, Validate, InputFields)]
+pub struct MappingRule {
+    #[validate(length(min = 1), custom(function = "validation::shortcut::<false>"))]
+    pub from: String,
+    #[validate(length(min = 1), custom(function = "validation::shortcut::<true>"))]
+    pub to: String,
+    // None sends input locally; Some identifies a registered send target.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub send_target: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct SendTargetOption {
+    pub id: String,
+    pub name: String,
+}
+
 // Settings for processor
 #[derive(Clone, Debug, Serialize, Deserialize, Validate, InputFields)]
 pub struct ProcessorSettings {
@@ -169,6 +186,10 @@ pub struct ProcessorSettings {
     #[serde(default = "ShortcutSettings::default")]
     #[validate(nested)]
     pub shortcuts: ShortcutSettings,
+
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[validate(nested)]
+    pub mappings: Vec<MappingRule>,
 }
 
 impl Default for ProcessorSettings {
@@ -180,6 +201,7 @@ impl Default for ProcessorSettings {
             draw_injected_cursor: false,
             devices: Self::default_devices(),
             shortcuts: ShortcutSettings::default(),
+            mappings: Vec::new(),
         }
     }
 }
@@ -227,15 +249,19 @@ impl ProcessorSettings {
 #[derive(Clone, Debug, Default, Serialize, Deserialize, Validate, InputFields)]
 pub struct ShortcutSettings {
     #[serde(default = "empty_string")]
+    #[validate(custom(function = "validation::shortcut::<false>"))]
     pub cur_mouse_freeze: String,
 
     #[serde(default = "empty_string")]
+    #[validate(custom(function = "validation::shortcut::<false>"))]
     pub cur_mouse_lock: String,
 
     #[serde(default = "empty_string")]
+    #[validate(custom(function = "validation::shortcut::<false>"))]
     pub cur_mouse_switch: String,
 
     #[serde(default = "empty_string")]
+    #[validate(custom(function = "validation::shortcut::<false>"))]
     pub cur_mouse_jump_next: String,
 }
 
