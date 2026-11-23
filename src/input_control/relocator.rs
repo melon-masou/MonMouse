@@ -3,6 +3,7 @@ use crate::{setting::DeviceSetting, utils::vec_ensure_get_mut};
 
 const MOUSE_SWITCHING_MS: u64 = 100;
 const MOUSE_SWITCHING_JUMP_RESET_PX: i32 = 200;
+const MOUSE_EDGE_BLOCK_THRESHOLD_PX: u32 = 4;
 
 #[derive(Debug)]
 pub struct MouseDeviceTracker {
@@ -64,6 +65,7 @@ impl MouseDeviceTracker {
 
 #[derive(Default, Clone, Copy)]
 pub struct RelocatorEffect {
+    pub block_movement: bool,
     pub switch: bool,
     pub refresh_monitors: bool,
     pub relocate_pos: Option<MousePos>,
@@ -190,6 +192,7 @@ impl MouseRelocator {
 
         ctrl.positioning = event.positioning;
         if ctrl.movement_locked {
+            effect.block_movement = true;
             ctrl.update_pos(&self.cur_pos, event.tick);
             return effect;
         }
@@ -239,8 +242,17 @@ impl MouseRelocator {
             if let Some(area) = &ctrl.locked_area {
                 let new_pos = area.capture_pos(&pos);
                 if new_pos != pos {
-                    self.cur_pos = new_pos;
-                    effect.relocate_pos = Some(new_pos);
+                    let at_edge = (new_pos.x != pos.x && new_pos.x == self.cur_pos.x)
+                        || (new_pos.y != pos.y && new_pos.y == self.cur_pos.y);
+                    let small_movement = new_pos.x.abs_diff(self.cur_pos.x)
+                        <= MOUSE_EDGE_BLOCK_THRESHOLD_PX
+                        && new_pos.y.abs_diff(self.cur_pos.y) <= MOUSE_EDGE_BLOCK_THRESHOLD_PX;
+                    if at_edge && small_movement {
+                        effect.block_movement = true;
+                    } else {
+                        self.cur_pos = new_pos;
+                        effect.relocate_pos = Some(new_pos);
+                    }
                     return;
                 }
             } else if let Some(area) = self.monitors.locate(&pos) {

@@ -208,7 +208,7 @@ impl Processor {
             return true;
         };
         let effect = self.relocator.on_mouse_event(&event, &mut device.ctrl);
-        let allow_event = !device.ctrl.movement_locked || action != Some(MouseAction::Move);
+        let allow_event = !effect.block_movement || action != Some(MouseAction::Move);
         Self::collect_relocator_effects(effects, effect, event.tick);
         allow_event
     }
