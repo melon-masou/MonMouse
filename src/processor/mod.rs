@@ -15,7 +15,7 @@ use log::debug;
 use crate::input_control::{
     mouse_event_device_matcher::MouseEventDeviceMatcher,
     relocator::{MouseDeviceTracker, MouseRelocator, RelocatorEffect},
-    DeviceId, MatchedMouseEvent, MonitorAreasList, MousePos, Positioning,
+    DeviceId, MatchedMouseEvent, MonitorAreasList, MouseAction, MousePos, Positioning,
 };
 use crate::{
     device_type::DeviceType,
@@ -195,14 +195,22 @@ impl Processor {
         Self::collect_relocator_effects(effects, effect, tick);
     }
 
-    pub fn on_mouse_event(&mut self, event: MatchedMouseEvent, effects: &mut EffectsIntent) {
+    // Returns whether the matched input event should be passed through.
+    pub fn on_mouse_event(
+        &mut self,
+        event: MatchedMouseEvent,
+        action: Option<MouseAction>,
+        effects: &mut EffectsIntent,
+    ) -> bool {
         self.active_id = self.indexs.get(&event.device).copied();
         let Some(device) = self.active_id.and_then(|i| self.devices.get_mut(i)) else {
             effects.refresh_devices = true;
-            return;
+            return true;
         };
         let effect = self.relocator.on_mouse_event(&event, &mut device.ctrl);
+        let allow_event = !device.ctrl.movement_locked || action != Some(MouseAction::Move);
         Self::collect_relocator_effects(effects, effect, event.tick);
+        allow_event
     }
 
     fn collect_relocator_effects(effects: &mut EffectsIntent, effect: RelocatorEffect, tick: u64) {
@@ -272,7 +280,19 @@ impl Processor {
             .collect()
     }
 
-    fn rebuild_devices_list(&mut self, devices: Vec<Device>) {
+    fn rebuild_devices_list(&mut self, mut devices: Vec<Device>) {
+        for device in &mut devices {
+            let Some(id) = &device.info.id else {
+                continue;
+            };
+            if let Some(previous) = self
+                .devices
+                .iter()
+                .find(|previous| previous.info.id.as_ref() == Some(id))
+            {
+                device.ctrl.inherit_runtime_settings(&previous.ctrl);
+            }
+        }
         self.devices = devices;
         self.indexs = self
             .devices
@@ -346,6 +366,11 @@ impl Processor {
         effects: &mut EffectsIntent,
     ) -> Option<Message> {
         match id {
+            Some(ShortcutID::CurMouseFreeze) => {
+                if let Some(device) = self.active_id.and_then(|i| self.devices.get_mut(i)) {
+                    device.ctrl.movement_locked = !device.ctrl.movement_locked;
+                }
+            }
             Some(ShortcutID::CurMouseLock) => {
                 debug!("Shortcut cur_mouse_lock pressed");
                 if self.headless {

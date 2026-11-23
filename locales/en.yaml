@@ -55,11 +55,13 @@ config:
     merge_unassociated_events_ms: Time window for merging mouse events that cannot be matched to a real device into the virtual unassociated device. Use -1 to disable merging.
     show_inactive_cursors: Keep showing cursors for switch-enabled mice even when they are not the active mouse.
     show_inactive_cursor_markers: Draw a small marker near inactive cursors to distinguish them from the active cursor.
+    cur_mouse_freeze: Toggle movement for the current mouse. Buttons and scrolling remain available.
     cur_mouse_lock: Toggle whether the current mouse is locked to the current monitor.
     cur_mouse_jump_next: Move the current mouse cursor to the next monitor.
     cur_mouse_switch: Toggle switch for the current mouse. When enabled, switching to this mouse restores its last position.
   shortcut:
-    cur_mouse_lock: Toggle current mouse lock
+    cur_mouse_lock: Toggle current mouse lock to current monitor
+    cur_mouse_freeze: Toggle current mouse movement lock
     cur_mouse_switch: Toggle current mouse switch
     cur_mouse_jump_next: Jump mouse to next monitor
   validate:

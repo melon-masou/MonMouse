@@ -55,11 +55,13 @@ config:
     merge_unassociated_events_ms: 将无法匹配到真实设备的鼠标事件合并到虚拟的未关联设备上的时间窗口。填 -1 可关闭合并。
     show_inactive_cursors: 即使鼠标当前不活跃，也继续显示启用位置恢复的光标。
     show_inactive_cursor_markers: 在非活动光标附近显示小标记，用来和活动光标区分。
+    cur_mouse_freeze: 开关当前鼠标的移动锁定，保留按键和滚轮。
     cur_mouse_lock: 开关当前鼠标是否锁定在当前屏幕内。
     cur_mouse_jump_next: 跳转鼠标到下一显示器。
     cur_mouse_switch: 开关当前鼠标位置恢复。启用后，切回这只鼠标时会恢复它上次的位置。
   shortcut:
-    cur_mouse_lock: 开关当前鼠标屏幕锁定
+    cur_mouse_lock: 开关当前鼠标锁定在屏幕内
+    cur_mouse_freeze: 开关当前鼠标移动锁定
     cur_mouse_switch: 开关当前鼠标位置恢复
     cur_mouse_jump_next: 将鼠标跳转到下一显示器
   validate:

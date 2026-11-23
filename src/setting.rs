@@ -227,6 +227,9 @@ impl ProcessorSettings {
 #[derive(Clone, Debug, Default, Serialize, Deserialize, Validate, InputFields)]
 pub struct ShortcutSettings {
     #[serde(default = "empty_string")]
+    pub cur_mouse_freeze: String,
+
+    #[serde(default = "empty_string")]
     pub cur_mouse_lock: String,
 
     #[serde(default = "empty_string")]

@@ -117,6 +117,17 @@ impl ConfigPanel {
         });
 
         InputItem::new(
+            t!("config.shortcut.cur_mouse_freeze"),
+            cache.field(|o| o.processor.shortcuts.cur_mouse_freeze_field()),
+        )
+        .with_tip(t!("config.tip.cur_mouse_freeze"))
+        .show(ui, |ui, shortcut| {
+            ShortcutChoosePopup::new("cur_mouse_freeze")
+                .ui(ui, shortcut)
+                .changed()
+        });
+
+        InputItem::new(
             t!("config.shortcut.cur_mouse_switch"),
             cache.field(|o| o.processor.shortcuts.cur_mouse_switch_field()),
         )

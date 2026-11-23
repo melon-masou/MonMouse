@@ -166,6 +166,7 @@ pub enum ShortcutID {
     CurMouseLock = 1000,
     CurMouseJumpNext = 1001,
     CurMouseSwitch = 1002,
+    CurMouseFreeze = 1003,
 }
 
 pub struct SignalSender(SyncSender<()>);

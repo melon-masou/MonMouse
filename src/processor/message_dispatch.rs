@@ -134,6 +134,10 @@ impl MessageDispatch {
                 ShortcutAction::Main(ShortcutID::CurMouseLock),
             ),
             (
+                shortcuts.cur_mouse_freeze.clone(),
+                ShortcutAction::Main(ShortcutID::CurMouseFreeze),
+            ),
+            (
                 shortcuts.cur_mouse_switch.clone(),
                 ShortcutAction::Main(ShortcutID::CurMouseSwitch),
             ),

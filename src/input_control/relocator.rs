@@ -8,6 +8,7 @@ const MOUSE_SWITCHING_JUMP_RESET_PX: i32 = 200;
 pub struct MouseDeviceTracker {
     pub id: DeviceId,
     pub setting: DeviceSetting,
+    pub movement_locked: bool,
 
     last_active_tick: u64, // in ms
     last_active_pos: MousePos,
@@ -21,11 +22,16 @@ impl MouseDeviceTracker {
         MouseDeviceTracker {
             id,
             setting,
+            movement_locked: false,
             last_active_tick: 0,
             last_active_pos: MousePos::default(),
             positioning: Positioning::Unknown,
             locked_area: None,
         }
+    }
+
+    pub fn inherit_runtime_settings(&mut self, previous: &Self) {
+        self.movement_locked = previous.movement_locked;
     }
 
     pub fn update_settings(&mut self, new_setting: &DeviceSetting) {
@@ -183,6 +189,10 @@ impl MouseRelocator {
         let mut effect = RelocatorEffect::default();
 
         ctrl.positioning = event.positioning;
+        if ctrl.movement_locked {
+            ctrl.update_pos(&self.cur_pos, event.tick);
+            return effect;
+        }
         if self.is_switching(event.tick) {
             if self.is_big_switching_jump(&event.position) {
                 effect.relocate_pos = Some(self.cur_pos);

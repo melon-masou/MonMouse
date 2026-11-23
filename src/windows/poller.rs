@@ -270,7 +270,9 @@ impl MouseLowLevelHook for Poller {
                 }
             }
             if let Some(matched) = hook.processor.match_mouse_position(event.position, tick) {
-                hook.processor.on_mouse_event(matched, &mut hook.effects);
+                return hook
+                    .processor
+                    .on_mouse_event(matched, event.action, &mut hook.effects);
             }
             true
         })
