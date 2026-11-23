@@ -1,12 +1,13 @@
 use std::collections::BTreeMap;
 
 use log::warn;
-use monmouse_lib::{keyboard::Button, plugin::PluginKey};
+use monmouse_lib::plugin::PluginKey;
 
 use super::platform::PlatformService;
 use crate::{
     errors::{Error, Result},
     message::ShortcutID,
+    setting::MappingRule,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -18,16 +19,13 @@ pub enum ShortcutSource {
 pub enum ShortcutAction {
     Main(ShortcutID),
     Plugin(PluginKey, String),
-    Mapping {
-        shortcut: Vec<Button>,
-        target: Option<String>,
-    },
+    Mapping(MappingRule),
 }
 
 impl ShortcutAction {
     fn source(&self) -> ShortcutSource {
         match self {
-            Self::Main(_) | Self::Mapping { .. } => ShortcutSource::Main,
+            Self::Main(_) | Self::Mapping(_) => ShortcutSource::Main,
             Self::Plugin(key, _) => ShortcutSource::Plugin(key),
         }
     }

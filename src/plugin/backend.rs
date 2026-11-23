@@ -1,13 +1,16 @@
-use std::path::{Path, PathBuf};
+use std::{
+    cell::RefCell,
+    path::{Path, PathBuf},
+};
 
 use monmouse_lib::{
     input::InputInjection,
-    plugin::{MainContext, PluginMessage, PluginTarget, ReactorContext},
+    plugin::{MainContext, PluginMessage, PluginTarget, ReactorContext, SendTargetDefinition},
 };
 
 use crate::{
     message::Message,
-    setting::{load_plugin_settings, save_plugin_settings},
+    setting::{load_plugin_settings, save_plugin_settings, SendTarget, SendTargetOption},
 };
 
 use super::PluginRouter;
@@ -15,6 +18,7 @@ use super::PluginRouter;
 pub struct MainContextHost {
     pub router: PluginRouter,
     pub config_dir: Option<PathBuf>,
+    pub send_targets: RefCell<Vec<SendTargetOption>>,
 }
 
 impl MainContext for MainContextHost {
@@ -36,6 +40,21 @@ impl MainContext for MainContextHost {
         } else {
             Err("Processor stopped".into())
         }
+    }
+
+    fn register_send_targets(&self, targets: Vec<SendTargetDefinition>) {
+        self.send_targets.replace(
+            targets
+                .into_iter()
+                .map(|definition| SendTargetOption {
+                    target: SendTarget {
+                        plugin: self.router.key.to_owned(),
+                        callback: definition.callback,
+                    },
+                    name: definition.name,
+                })
+                .collect(),
+        );
     }
 
     fn config_dir(&self) -> Option<&Path> {
@@ -65,7 +84,7 @@ impl MainContext for MainContextHost {
 #[derive(Clone)]
 pub struct ReactorContextHost {
     pub router: PluginRouter,
-    pub inject_input: fn(InputInjection, usize) -> crate::errors::Result<()>,
+    pub inject_inputs: fn(&[InputInjection], usize) -> crate::errors::Result<()>,
 }
 
 impl ReactorContext for ReactorContextHost {
@@ -74,6 +93,7 @@ impl ReactorContext for ReactorContextHost {
     }
 
     fn inject_input(&self, input: InputInjection, extra_info: usize) -> Result<(), String> {
-        (self.inject_input)(input, extra_info).map_err(|error| error.to_string())
+        (self.inject_inputs)(std::slice::from_ref(&input), extra_info)
+            .map_err(|error| error.to_string())
     }
 }

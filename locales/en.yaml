@@ -1,5 +1,7 @@
 lang: English
 btn:
+  MouseLeft: LeftMouse
+  MouseRight: RightMouse
   Discard: "Discard"
   Cancel: "Cancel"
   Close: Close
@@ -7,6 +9,7 @@ btn:
   Clear: Clear
   Confirm: Confirm
 panel:
+  Mapper: Mapper
   Devices: Devices
   Config: Config
   Plugins: "Plugins"
@@ -65,6 +68,7 @@ config:
     cur_mouse_switch: Toggle current mouse switch
     cur_mouse_jump_next: Jump mouse to next monitor
   validate:
+    invalid_shortcut: Invalid shortcut
     invalid_value: Not a valid value
     value_should_among: Value must be between
     length_should_among: Length must be between
@@ -92,3 +96,12 @@ plugins:
   enable: "Enable"
   disable: "Disable"
   empty: "No plugins"
+
+mapper:
+  rules: Rules
+  from: Source keys
+  to: Destination keys
+  send_target: Send target
+  local: Local
+  add: Add
+  remove: Remove

@@ -163,6 +163,7 @@ fn ui_options_main_window() -> eframe::NativeOptions {
 enum PanelTag {
     #[default]
     Devices,
+    Mapper,
     Config,
     Plugins,
     About,

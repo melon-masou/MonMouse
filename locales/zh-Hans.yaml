@@ -1,5 +1,7 @@
 lang: "简体中文"
 btn:
+  MouseLeft: 鼠标左键
+  MouseRight: 鼠标右键
   Discard: "丢弃"
   Cancel: "取消"
   Close: 关闭
@@ -7,6 +9,7 @@ btn:
   Clear: 清空
   Confirm: 确认
 panel:
+  Mapper: 映射
   Devices: 设备
   Config: 配置
   Plugins: "插件"
@@ -65,6 +68,7 @@ config:
     cur_mouse_switch: 开关当前鼠标位置恢复
     cur_mouse_jump_next: 将鼠标跳转到下一显示器
   validate:
+    invalid_shortcut: 无效的快捷键
     invalid_value: 无效的值
     value_should_among: 值应在范围内
     length_should_among: 长度应在范围内
@@ -92,3 +96,12 @@ plugins:
   enable: "启用"
   disable: "禁用"
   empty: "没有插件"
+
+mapper:
+  rules: 规则
+  from: 来源按键
+  to: 目标按键
+  send_target: 发送目标
+  local: 本地
+  add: 添加
+  remove: 删除

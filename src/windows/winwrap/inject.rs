@@ -8,27 +8,103 @@ use windows::Win32::UI::{
     },
 };
 
-use monmouse_lib::input::{InputInjection, Key, MouseAction, MouseButton, MousePos};
+use monmouse_lib::{
+    input::{InputInjection, Key, MouseAction, MouseButton, MousePos},
+    keyboard::Button,
+};
 
 use super::get_last_error;
-use crate::errors::{Error, Result};
+use crate::{
+    errors::{Error, Result},
+    keyboard::key_windows::key_to_win,
+};
 
 pub fn inject_input(input: InputInjection, extra_info: usize) -> Result<()> {
-    match input {
-        InputInjection::Mouse { position, action } => inject_mouse(position, action, extra_info),
-        InputInjection::Keyboard { key, down } => inject_keyboard(key, down, extra_info),
-    }
+    inject_inputs(std::slice::from_ref(&input), extra_info)
 }
 
-fn send(input: INPUT) -> Result<()> {
-    if unsafe { SendInput(&[input], size_of::<INPUT>() as i32) } == 1 {
+pub fn inject_inputs(inputs: &[InputInjection], extra_info: usize) -> Result<()> {
+    let mut native_inputs = Vec::new();
+    for input in inputs {
+        match input {
+            InputInjection::Mouse { position, action } => {
+                native_inputs.push(mouse_input(*position, *action, extra_info)?);
+            }
+            InputInjection::Keyboard { key, down } => {
+                native_inputs.push(keyboard_input(*key, *down, extra_info)?);
+            }
+            InputInjection::Shortcut { buttons } => {
+                native_inputs.extend(shortcut_inputs(buttons, extra_info)?);
+            }
+        }
+    }
+    if native_inputs.is_empty()
+        || unsafe { SendInput(&native_inputs, size_of::<INPUT>() as i32) }
+            == native_inputs.len() as u32
+    {
         Ok(())
     } else {
         Err(get_last_error("SendInput"))
     }
 }
 
-fn inject_keyboard(key: Key, down: bool, extra_info: usize) -> Result<()> {
+fn shortcut_inputs(buttons: &[Button], extra_info: usize) -> Result<Vec<INPUT>> {
+    let held: Vec<_> = [
+        VK_LCONTROL,
+        VK_RCONTROL,
+        VK_LSHIFT,
+        VK_RSHIFT,
+        VK_LMENU,
+        VK_RMENU,
+        VK_LWIN,
+        VK_RWIN,
+    ]
+    .into_iter()
+    .filter(|key| unsafe { GetAsyncKeyState(i32::from(key.0)) } < 0)
+    .collect();
+    let mut inputs = Vec::new();
+    for key in held.iter().rev() {
+        inputs.push(virtual_key_input(*key, false, extra_info)?);
+    }
+    for button in buttons {
+        inputs.push(button_input(*button, true, extra_info)?);
+    }
+    for button in buttons.iter().rev() {
+        inputs.push(button_input(*button, false, extra_info)?);
+    }
+    for key in held {
+        inputs.push(virtual_key_input(key, true, extra_info)?);
+    }
+    Ok(inputs)
+}
+
+fn button_input(button: Button, down: bool, extra_info: usize) -> Result<INPUT> {
+    match button {
+        Button::Keyboard(code) => {
+            let key = key_to_win(code).ok_or_else(|| {
+                Error::InvalidParam("shortcut".into(), format!("Unsupported key: {code:?}"))
+            })?;
+            virtual_key_input(key, down, extra_info)
+        }
+        Button::Mouse(button) => {
+            mouse_input(None, MouseAction::Button { button, down }, extra_info)
+        }
+    }
+}
+
+fn virtual_key_input(key: VIRTUAL_KEY, down: bool, extra_info: usize) -> Result<INPUT> {
+    keyboard_input(
+        Key {
+            virtual_key: key.0,
+            scan: 0,
+            extended: matches!(key.0, 0x21..=0x28 | 0x2d..=0x2e | 0x5b..=0x5d | 0xa3 | 0xa5),
+        },
+        down,
+        extra_info,
+    )
+}
+
+fn keyboard_input(key: Key, down: bool, extra_info: usize) -> Result<INPUT> {
     let use_scan = key.scan != 0 && key.virtual_key != VK_PAUSE.0;
     if key.scan > 0xff || key.virtual_key > 0xfe || (!use_scan && key.virtual_key == 0) {
         return Err(Error::InvalidParam("key".into(), format!("{key:?}")));
@@ -44,7 +120,7 @@ fn inject_keyboard(key: Key, down: bool, extra_info: usize) -> Result<()> {
     if !down {
         flags |= KEYEVENTF_KEYUP;
     }
-    send(INPUT {
+    Ok(INPUT {
         r#type: INPUT_KEYBOARD,
         Anonymous: INPUT_0 {
             ki: KEYBDINPUT {
@@ -83,7 +159,11 @@ fn absolute_coordinate(pixel: i32, origin: i32, size: i32) -> i32 {
     ((offset * 65536 + 32768) / i64::from(size)).clamp(0, 65535) as i32
 }
 
-fn inject_mouse(position: Option<MousePos>, action: MouseAction, extra_info: usize) -> Result<()> {
+fn mouse_input(
+    position: Option<MousePos>,
+    action: MouseAction,
+    extra_info: usize,
+) -> Result<INPUT> {
     let (flags, data) = match action {
         MouseAction::Move if position.is_none() => {
             return Err(Error::InvalidParam(
@@ -124,7 +204,7 @@ fn inject_mouse(position: Option<MousePos>, action: MouseAction, extra_info: usi
         mouse.dy = absolute_coordinate(position.y, top, height);
         mouse.dwFlags |= MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK;
     }
-    send(INPUT {
+    Ok(INPUT {
         r#type: INPUT_MOUSE,
         Anonymous: INPUT_0 { mi: mouse },
     })

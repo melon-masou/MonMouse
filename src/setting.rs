@@ -147,18 +147,24 @@ impl DeviceSetting {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, Validate, InputFields)]
 pub struct MappingRule {
-    #[validate(length(min = 1), custom(function = "validation::shortcut::<false>"))]
+    #[validate(custom(function = "validation::shortcut::<false>"))]
     pub from: String,
-    #[validate(length(min = 1), custom(function = "validation::shortcut::<true>"))]
+    #[validate(custom(function = "validation::shortcut::<true>"))]
     pub to: String,
-    // None sends input locally; Some identifies a registered send target.
+    // None sends input locally; Some addresses a plugin interceptor callback.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub send_target: Option<String>,
+    pub send_target: Option<SendTarget>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SendTarget {
+    pub plugin: String,
+    pub callback: String,
 }
 
 #[derive(Clone, Debug)]
 pub struct SendTargetOption {
-    pub id: String,
+    pub target: SendTarget,
     pub name: String,
 }
 

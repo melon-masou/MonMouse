@@ -2315,7 +2315,6 @@ dependencies = [
  "find-msvc-tools",
  "fontdb",
  "image 0.24.9",
- "keyboard-types 0.7.0",
  "libloading",
  "log",
  "monmouse-lib",
@@ -2334,6 +2333,7 @@ dependencies = [
 name = "monmouse-lib"
 version = "0.2.1"
 dependencies = [
+ "keyboard-types 0.7.0",
  "serde",
  "yaml_serde",
 ]

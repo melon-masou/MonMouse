@@ -1,17 +1,14 @@
 #![allow(dead_code)]
 
 use eframe::{
-    egui::{self, Widget},
+    egui::{self, AtomExt, Widget},
     epaint::Color32,
 };
 use monmouse::{
-    keyboard::{
-        build_modifiers,
-        key_egui::{egui_to_key, egui_to_modifier},
-        shortcut_to_str, META_STR,
-    },
+    keyboard::key_egui::{egui_to_key, egui_to_modifier},
     message::DeviceStatus,
 };
+use monmouse_lib::keyboard::{build_modifiers, shortcut_to_str, META_STR};
 
 #[inline]
 fn theme_red(dark: bool) -> Color32 {
@@ -59,12 +56,13 @@ pub const SECTION_SPACING: f32 = 10.0;
 pub const FORM_SPACING: [f32; 2] = [40.0, 8.0];
 
 pub fn manage_button<'a>(text: impl Into<egui::WidgetText>) -> egui::Button<'a> {
-    egui::Button::new(text.into().strong()).min_size(egui::vec2(BUTTON_WIDTH, MANAGE_BUTTON_HEIGHT))
+    egui::Button::new(text.into().strong().atom_grow(true))
+        .min_size(egui::vec2(BUTTON_WIDTH, MANAGE_BUTTON_HEIGHT))
 }
 
 pub fn icon_button<'a>(ui: &egui::Ui, text: impl Into<egui::WidgetText>) -> egui::Button<'a> {
     let side = ui.spacing().interact_size.y;
-    egui::Button::new(text).min_size(egui::vec2(side, side))
+    egui::Button::new(text.into().atom_grow(true)).min_size(egui::vec2(side, side))
 }
 
 pub fn text_input(text: &mut dyn egui::TextBuffer, char_limit: usize) -> egui::TextEdit<'_> {
@@ -565,6 +563,7 @@ pub struct ShortcutChooseState {
 pub struct ShortcutChoosePopup {
     id_source: egui::Id,
     width: f32,
+    allow_mouse_buttons: bool,
 }
 
 impl ShortcutChoosePopup {
@@ -572,11 +571,17 @@ impl ShortcutChoosePopup {
         Self {
             id_source: egui::Id::new(id_source),
             width: FIELD_WIDTH,
+            allow_mouse_buttons: false,
         }
     }
 
     pub fn with_width(mut self, width: f32) -> Self {
         self.width = width;
+        self
+    }
+
+    pub fn with_mouse_buttons(mut self) -> Self {
+        self.allow_mouse_buttons = true;
         self
     }
 
@@ -612,6 +617,20 @@ impl ShortcutChoosePopup {
         changed |= ui.checkbox(&mut state.meta_checked, META_STR).clicked();
         changed |= ui.checkbox(&mut state.shift_checked, "Shift").clicked();
 
+        let mut selected_mouse = None;
+        if self.allow_mouse_buttons {
+            ui.horizontal(|ui| {
+                for (key, label) in [
+                    ("MouseLeft", t!("btn.MouseLeft")),
+                    ("MouseRight", t!("btn.MouseRight")),
+                ] {
+                    if ui.selectable_label(state.key_input == key, label).clicked() {
+                        selected_mouse = Some(key);
+                    }
+                }
+            });
+        }
+
         ui.horizontal(|ui| {
             changed |= shortcut_input_ui(ui, &mut state, false, action.just_open, |textinput| {
                 textinput.desired_width(NUMBER_WIDTH)
@@ -628,6 +647,11 @@ impl ShortcutChoosePopup {
             }
         });
 
+        if let Some(key) = selected_mouse {
+            state.key_input = key.to_owned();
+            changed = true;
+            ui.memory_mut(|mem| mem.stop_text_input());
+        }
         state.changed |= changed;
         if changed {
             ui.memory_mut(|mem| mem.data.insert_persisted(id, state.clone()));
@@ -640,16 +664,13 @@ impl ShortcutChoosePopup {
             return "".to_owned();
         }
 
-        let modifiers = match build_modifiers(
+        let modifiers = build_modifiers(
             state.ctrl_checked,
             state.alt_checked,
             state.shift_checked,
             state.meta_checked,
-        ) {
-            Some(v) => v,
-            None => return "".to_owned(),
-        };
-        let mut s = shortcut_to_str(Some(modifiers), None);
+        );
+        let mut s = shortcut_to_str(modifiers, None);
         s.push_str(state.key_input.as_str());
         s
     }

@@ -23,7 +23,9 @@ impl PluginsPanel {
     }
 
     pub fn discard_changes(app: &mut App) {
-        app.plugins.entries[app.plugin_panel.selected].discard_changes();
+        if let Some(entry) = app.plugins.entries.get_mut(app.plugin_panel.selected) {
+            entry.discard_changes();
+        }
     }
 
     pub fn ui(ui: &mut egui::Ui, app: &mut App) {

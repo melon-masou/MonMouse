@@ -16,7 +16,10 @@ use super::{
     interceptor::RegisteredInterceptor,
     loader, PluginRouter, PluginRuntime, PluginSubscriber,
 };
-use crate::message::{Message, MessageBus, TimerDueKind, TimerOperator};
+use crate::{
+    message::{Message, MessageBus, TimerDueKind, TimerOperator},
+    setting::SendTargetOption,
+};
 
 const STOP_TIMEOUT: Duration = Duration::from_secs(3);
 
@@ -39,6 +42,21 @@ impl PluginManager {
             entries: Vec::new(),
             config_dir: None,
             bus,
+        }
+    }
+
+    pub fn for_each_send_target_option(&self, mut visit: impl FnMut(&SendTargetOption)) {
+        for plugin in self
+            .entries
+            .iter()
+            .filter_map(|entry| entry.plugin.as_ref())
+        {
+            if !plugin.enabled() || !plugin.main_context.router.has_interceptor {
+                continue;
+            }
+            for option in plugin.main_context.send_targets.borrow().iter() {
+                visit(option);
+            }
         }
     }
 
@@ -209,7 +227,7 @@ impl Plugin {
                 reactors: Vec::new(),
                 has_interceptor: false,
             },
-            inject_input: crate::windows::winwrap::inject::inject_input,
+            inject_inputs: crate::windows::winwrap::inject::inject_inputs,
         };
         Self {
             key: define.key,
@@ -224,6 +242,7 @@ impl Plugin {
             main_context: MainContextHost {
                 router: reactor_context.router.clone(),
                 config_dir: config_dir.map(Path::to_path_buf),
+                send_targets: Default::default(),
             },
             reactor_context,
         }
@@ -318,6 +337,7 @@ impl Plugin {
         if !self.enabled() {
             return;
         }
+        self.main_context.send_targets.borrow_mut().clear();
         self.state = PluginState::Stopping;
         self.stop_deadline = Some(Instant::now() + STOP_TIMEOUT);
         self.runtime.request_stop();

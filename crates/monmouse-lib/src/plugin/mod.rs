@@ -92,6 +92,7 @@ pub trait PluginMain {
 }
 
 pub type InterceptorMessageHandler = dyn FnMut(PluginMessage, &dyn ReactorContext) + Send;
+pub type InterceptorMappingHandler = dyn FnMut(&str, &str, &dyn ReactorContext) + Send;
 pub type MouseEventFilter = dyn FnMut(&SysMouseEvent, &dyn ReactorContext) -> bool + Send;
 
 // Selects the callbacks the plugin runs on the input thread.
@@ -100,6 +101,8 @@ pub type MouseEventFilter = dyn FnMut(&SysMouseEvent, &dyn ReactorContext) -> bo
 pub struct PluginInterceptor {
     // Handles messages addressed to this interceptor outside the native input callback.
     pub on_event: Option<Box<InterceptorMessageHandler>>,
+    // Receives (callback, to, context), with the configured destination unchanged.
+    pub on_mapping: Option<Box<InterceptorMappingHandler>>,
     // Runs before mouse device matching. All filters run in plugin key order.
     // The event is blocked if any filter returns true.
     pub block_mouse_event: Option<Box<MouseEventFilter>>,

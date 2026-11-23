@@ -1,12 +1,15 @@
 use std::{cell::Cell, mem::size_of, ptr};
 
 use log::{debug, error, trace};
-use monmouse_lib::input::MONMOUSE_INPUT_TAG;
+use monmouse_lib::{
+    input::{InputInjection, MONMOUSE_INPUT_TAG},
+    plugin::PluginMessage,
+};
 use windows::Win32::{
     Foundation::{LPARAM, WPARAM},
     UI::{
         Input::RAWINPUT,
-        WindowsAndMessaging::{HHOOK, MSG, MSLLHOOKSTRUCT},
+        WindowsAndMessaging::{HHOOK, MSG, MSLLHOOKSTRUCT, WM_HOTKEY},
     },
 };
 
@@ -26,11 +29,12 @@ use super::{
 };
 use crate::{
     errors::Result,
-    message::Reactor,
+    message::{Message, Reactor},
     processor::{
         effects::EffectsIntent,
         message_dispatch::{DispatchResult, MessageDispatch},
         platform::PlatformService,
+        shortcuts::ShortcutAction,
         Processor,
     },
     setting::ProcessorSettings,
@@ -108,7 +112,7 @@ impl Poller {
                 "A mouse hook is already registered on this thread"
             )
         });
-        // Both callbacks use only their own fixed resources, never dispatcher state.
+        // Callbacks use only their own fixed resources, never dispatcher state.
         // No resource borrow spans native dispatch or output calls.
         let pointer = &raw mut *self.hook_input;
         unsafe {
@@ -119,16 +123,14 @@ impl Poller {
             )?
         };
         HOOK_INPUT.with(|current| current.set(&raw mut *self.hook_input));
-        match set_windows_hook(HookWrap::mouse_ll::<Self>()) {
-            Ok(hook) => {
-                self.mouse_ll_hook = Some(hook);
-                Ok(())
-            }
+        self.mouse_ll_hook = match set_windows_hook(HookWrap::mouse_ll::<Self>()) {
+            Ok(hook) => Some(hook),
             Err(error) => {
                 self.unregister_callbacks()?;
-                Err(error)
+                return Err(error);
             }
-        }
+        };
+        Ok(())
     }
     fn unregister_callbacks(&mut self) -> Result<()> {
         if let Some(hook) = self.mouse_ll_hook {
@@ -202,16 +204,70 @@ impl Poller {
     }
 
     fn window_event(&mut self, message: &MSG) {
+        if message.message == WM_HOTKEY {
+            self.on_shortcut(message);
+            return;
+        }
         let processor = Self::processor_mut(&mut self.hook_input);
         WMDispatch::dispatch(
             processor,
             &mut self.platform,
             &mut self.message_dispatch.effects,
-            &self.message_dispatch.shortcuts,
             &mut self.raw_input_buf,
             message,
-            &self.reactor.bus,
         );
+    }
+
+    fn on_shortcut(&mut self, message: &MSG) {
+        match self
+            .message_dispatch
+            .shortcuts
+            .action(message.wParam.0 as i32)
+        {
+            Some(ShortcutAction::Main(id)) => {
+                if let Some(message) = self.hook_input.processor.on_shortcut(
+                    Some(*id),
+                    widen_tick(message.time),
+                    &mut self.message_dispatch.effects,
+                ) {
+                    self.reactor.bus.ui.send(message);
+                }
+            }
+            Some(ShortcutAction::Plugin(key, action)) => {
+                self.reactor.bus.ui.send(Message::PluginMessage {
+                    key,
+                    message: PluginMessage::Shortcut(action.clone()),
+                });
+            }
+            Some(ShortcutAction::Mapping(mapping)) => {
+                let result = if let Some(target) = &mapping.send_target {
+                    if self.hook_input.processor.interceptors.on_mapping(
+                        &target.plugin,
+                        &target.callback,
+                        &mapping.to,
+                    ) {
+                        Ok(())
+                    } else {
+                        Err(format!(
+                            "Plugin mapping handler unavailable: {}",
+                            target.plugin
+                        ))
+                    }
+                } else {
+                    monmouse_lib::keyboard::parse_chord(&mapping.to, true).and_then(|buttons| {
+                        super::winwrap::inject::inject_input(
+                            InputInjection::Shortcut { buttons },
+                            MONMOUSE_INPUT_TAG,
+                        )
+                        .map_err(|error| error.to_string())
+                    })
+                };
+                if let Err(error) = result {
+                    error!("Could not send mapped shortcut: {error}");
+                }
+            }
+            None => (),
+        }
     }
 
     pub fn poll(&mut self) -> bool {

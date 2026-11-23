@@ -1,3 +1,4 @@
+use crate::keyboard::Button;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 
@@ -81,7 +82,7 @@ pub enum MouseAction {
 // Tag for input injected by MonMouse, carried back through the system hooks.
 pub const MONMOUSE_INPUT_TAG: usize = 0x4D4D_5052;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum InputInjection {
     Mouse {
         position: Option<MousePos>,
@@ -90,6 +91,10 @@ pub enum InputInjection {
     Keyboard {
         key: Key,
         down: bool,
+    },
+    // One complete shortcut; the injection backend expands presses and reversed releases.
+    Shortcut {
+        buttons: Vec<Button>,
     },
 }
 

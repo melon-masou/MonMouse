@@ -3,7 +3,8 @@ use std::fmt;
 use monmouse_lib::{
     input::SysMouseEvent,
     plugin::{
-        InterceptorMessageHandler, MouseEventFilter, PluginInterceptor, PluginKey, PluginMessage,
+        InterceptorMappingHandler, InterceptorMessageHandler, MouseEventFilter, PluginInterceptor,
+        PluginKey, PluginMessage,
     },
 };
 
@@ -25,12 +26,15 @@ impl fmt::Debug for RegisteredInterceptor {
 #[derive(Default)]
 pub struct InterceptorRegistry {
     message_handlers: Vec<(ReactorContextHost, Box<InterceptorMessageHandler>)>,
+    mapping_handlers: Vec<(ReactorContextHost, Box<InterceptorMappingHandler>)>,
     mouse_filters: Vec<(ReactorContextHost, Box<MouseEventFilter>)>,
 }
 
 impl InterceptorRegistry {
     pub fn set(&mut self, key: PluginKey, interceptor: Option<Box<RegisteredInterceptor>>) {
         self.message_handlers
+            .retain(|(context, _)| context.router.key != key);
+        self.mapping_handlers
             .retain(|(context, _)| context.router.key != key);
         self.mouse_filters
             .retain(|(context, _)| context.router.key != key);
@@ -41,6 +45,9 @@ impl InterceptorRegistry {
         let RegisteredInterceptor { context, handler } = *interceptor;
         if let Some(on_event) = handler.on_event {
             self.message_handlers.push((context.clone(), on_event));
+        }
+        if let Some(on_mapping) = handler.on_mapping {
+            self.mapping_handlers.push((context.clone(), on_mapping));
         }
         if let Some(filter) = handler.block_mouse_event {
             self.mouse_filters.push((context, filter));
@@ -57,6 +64,18 @@ impl InterceptorRegistry {
         {
             handler(message, context);
         }
+    }
+
+    pub fn on_mapping(&mut self, key: &str, callback: &str, to: &str) -> bool {
+        let Some((context, handler)) = self
+            .mapping_handlers
+            .iter_mut()
+            .find(|(context, _)| context.router.key == key)
+        else {
+            return false;
+        };
+        handler(callback, to, context);
+        true
     }
 
     pub fn blocks_mouse_event(&mut self, event: &SysMouseEvent) -> bool {

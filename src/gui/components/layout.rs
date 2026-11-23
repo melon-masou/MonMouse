@@ -7,6 +7,7 @@ use crate::{
         about_panel::AboutPanel,
         config_panel::ConfigPanel,
         devices_panel::DevicesPanel,
+        mapper_panel::MapperPanel,
         plugins_panel::PluginsPanel,
         status_bar::{status_bar_ui, status_popup_show},
         validatable_input::InputsCache,
@@ -37,6 +38,7 @@ pub fn layout_ui(ctx: &egui::Context, app: &mut App) {
                 }
             };
             tab_button(PanelTag::Devices);
+            tab_button(PanelTag::Mapper);
             tab_button(PanelTag::Config);
             tab_button(PanelTag::Plugins);
             tab_button(PanelTag::About);
@@ -49,6 +51,7 @@ pub fn layout_ui(ctx: &egui::Context, app: &mut App) {
             .inner_margin(egui::Margin::symmetric(SECTION_SPACING as i8, 0))
             .show(ui, |ui| match app.state.cur_panel {
                 PanelTag::Devices => DevicesPanel::ui(ui, app),
+                PanelTag::Mapper => MapperPanel::ui(ui, app),
                 PanelTag::Config => ConfigPanel::ui(ui, app),
                 PanelTag::Plugins => PluginsPanel::ui(ui, app),
                 PanelTag::About => AboutPanel::ui(ui),
@@ -63,6 +66,7 @@ fn switch_panel(app: &mut App, tag: PanelTag) {
     }
     let dirty = match app.state.cur_panel {
         PanelTag::Config => app.state.config_cache.has_changes(),
+        PanelTag::Mapper => app.state.mapper_cache.has_changes(),
         PanelTag::Plugins => PluginsPanel::has_changes(app),
         _ => false,
     };
@@ -70,6 +74,9 @@ fn switch_panel(app: &mut App, tag: PanelTag) {
         match app.state.cur_panel {
             PanelTag::Config => {
                 app.state.config_cache = InputsCache::new(app.state.settings.clone())
+            }
+            PanelTag::Mapper => {
+                app.state.mapper_cache = InputsCache::new(app.state.settings.clone())
             }
             PanelTag::Plugins => PluginsPanel::discard_changes(app),
             _ => (),

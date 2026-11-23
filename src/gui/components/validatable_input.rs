@@ -218,7 +218,7 @@ impl<T: Validate> InputsCache<T> {
     }
 }
 
-fn validation_error_text(errors: ValidationErrors) -> String {
+pub fn validation_error_text(errors: ValidationErrors) -> String {
     let mut messages = Vec::new();
     for errors in errors.into_errors().into_values() {
         match errors {
@@ -237,6 +237,9 @@ fn validation_error_text(errors: ValidationErrors) -> String {
 }
 
 fn field_error_text(error: &ValidationError) -> String {
+    if error.code == "shortcut" {
+        return t!("config.validate.invalid_shortcut").to_string();
+    }
     if let Some(message) = &error.message {
         return message.to_string();
     }
@@ -250,5 +253,5 @@ fn field_error_text(error: &ValidationError) -> String {
             return format!("{} {}-{}", label, min, max);
         }
     }
-    error.to_string()
+    t!("config.validate.invalid_value").to_string()
 }

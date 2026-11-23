@@ -1,12 +1,11 @@
 use log::{debug, error, trace};
-use monmouse_lib::plugin::PluginMessage;
 use windows::Win32::{
     Foundation::LPARAM,
     UI::{
         Input::{HRAWINPUT, RAWINPUT},
         WindowsAndMessaging::{
             MSG, PBT_APMRESUMEAUTOMATIC, PBT_APMRESUMESUSPEND, WM_DISPLAYCHANGE, WM_DPICHANGED,
-            WM_HOTKEY, WM_INPUT, WM_INPUT_DEVICE_CHANGE, WM_POWERBROADCAST,
+            WM_INPUT, WM_INPUT_DEVICE_CHANGE, WM_POWERBROADCAST,
         },
     },
 };
@@ -20,13 +19,7 @@ use super::{
 };
 use crate::{
     input_control::{DeviceId, Positioning},
-    message::{Message, MessageBus},
-    processor::{
-        effects::EffectsIntent,
-        platform::PlatformService,
-        shortcuts::{ShortcutAction, ShortcutManager},
-        Processor,
-    },
+    processor::{effects::EffectsIntent, platform::PlatformService, Processor},
 };
 
 pub struct WMDispatch;
@@ -36,10 +29,8 @@ impl WMDispatch {
         processor: &mut Processor,
         platform: &mut WinPlatformService,
         effects: &mut EffectsIntent,
-        shortcuts: &ShortcutManager,
         raw_input_buf: &mut Vec<RAWINPUT>,
         message: &MSG,
-        bus: &MessageBus,
     ) {
         match message.message {
             WM_INPUT => Self::on_raw_input(
@@ -61,22 +52,6 @@ impl WMDispatch {
                     }
                 }
                 _ => (),
-            },
-            WM_HOTKEY => match shortcuts.action(message.wParam.0 as i32) {
-                Some(ShortcutAction::Main(id)) => {
-                    if let Some(message) =
-                        processor.on_shortcut(Some(*id), widen_tick(message.time), effects)
-                    {
-                        bus.ui.send(message);
-                    }
-                }
-                Some(ShortcutAction::Plugin(key, action)) => {
-                    bus.ui.send(Message::PluginMessage {
-                        key,
-                        message: PluginMessage::Shortcut(action.clone()),
-                    });
-                }
-                None => (),
             },
             _ => (),
         }

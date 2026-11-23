@@ -35,7 +35,6 @@ validator = { version = "0.21", default-features = false, features = ["derive"] 
 tray-icon = { version = "0.26.1", default-features = false }
 image = "0.24.7"
 serde_yaml = { package = "yaml_serde", version = "0.10" }
-keyboard-types = "0.7.0"
 rust-i18n = "4"
 fontdb = "0.23.0"
 tempfile = "3"

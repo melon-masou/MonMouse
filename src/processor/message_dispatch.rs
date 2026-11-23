@@ -150,17 +150,13 @@ impl MessageDispatch {
                 ShortcutAction::Main(ShortcutID::CurMouseJumpNext),
             ),
         ];
-        for mapping in &settings.mappings {
-            let shortcut = monmouse_lib::keyboard::parse_chord(&mapping.to, true)
-                .map_err(crate::errors::Error::InvalidConfigFile)?;
-            bindings.push((
-                mapping.from.clone(),
-                ShortcutAction::Mapping {
-                    shortcut,
-                    target: mapping.send_target.clone(),
-                },
-            ));
-        }
+        bindings.extend(
+            settings
+                .mappings
+                .iter()
+                .cloned()
+                .map(|mapping| (mapping.from.clone(), ShortcutAction::Mapping(mapping))),
+        );
         if let Err(error) = self.shortcuts.register_shortcuts(
             platform,
             ShortcutSource::Main,

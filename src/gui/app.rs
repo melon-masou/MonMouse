@@ -1,3 +1,5 @@
+use validator::Validate;
+
 use std::{
     path::{Path, PathBuf},
     time::Duration,
@@ -149,11 +151,39 @@ impl App {
             return;
         }
         let mut processor = self.state.config_cache.object().processor.clone();
-        // Devices are edited independently of the Config draft.
+        // Devices have an independent editor.
         processor.devices = self.state.settings.processor.devices.clone();
         self.state.settings.ui = self.state.config_cache.object().ui.clone();
         self.state.settings.processor = processor;
+        self.state.mapper_cache = InputsCache::new(self.state.settings.clone());
         self.state.config_cache.clear_changes();
+        self.state.saving = true;
+        self.trigger_user_change_settings();
+    }
+
+    pub fn apply_mapper_settings_async(&mut self) {
+        if self.state.mapper_cache.has_errors()
+            || self
+                .state
+                .mapper_cache
+                .object()
+                .processor
+                .mappings
+                .iter()
+                .any(|rule| rule.from.is_empty() || rule.to.is_empty() || rule.validate().is_err())
+        {
+            self.result_error_alert(t!("msg.settings_invalid_field").to_string());
+            return;
+        }
+        self.state.settings.processor.mappings =
+            self.state.mapper_cache.object().processor.mappings.clone();
+        self.state
+            .config_cache
+            .object_mut()
+            .processor
+            .mappings
+            .clone_from(&self.state.settings.processor.mappings);
+        self.state.mapper_cache.clear_changes();
         self.state.saving = true;
         self.trigger_user_change_settings();
     }
@@ -222,6 +252,7 @@ impl App {
             )),
         };
         self.state.config_cache = InputsCache::new(self.state.settings.clone());
+        self.state.mapper_cache = InputsCache::new(self.state.settings.clone());
         if let Err(error) = self
             .plugins
             .discover(config_path.as_deref().and_then(Path::parent))
@@ -303,6 +334,7 @@ impl App {
                 })
                 .collect(),
             shortcuts: self.state.settings.processor.shortcuts.clone(),
+            mappings: self.state.settings.processor.mappings.clone(),
             ..self.state.settings.processor
         }
     }
@@ -515,6 +547,7 @@ pub struct AppState {
     pub saved_settings: Settings,
     pub managed_devices: Vec<DeviceUIState>,
     pub config_cache: InputsCache<Settings>,
+    pub mapper_cache: InputsCache<Settings>,
     pub saving: bool,
     pub cur_panel: PanelTag,
     pub discard_action: Option<DiscardAction>,
